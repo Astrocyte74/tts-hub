@@ -1,0 +1,234 @@
+import { useMemo, useState } from 'react';
+import clsx from 'clsx';
+import type { VoiceGroup, VoiceProfile } from '../types';
+
+interface VoiceSelectorProps {
+  voices: VoiceProfile[];
+  groups?: VoiceGroup[];
+  selected: string[];
+  onToggle: (voiceId: string) => void;
+  onClear: () => void;
+  activeGroup?: string;
+  onGroupChange?: (groupId: string) => void;
+}
+
+interface GroupedVoices {
+  id: string;
+  label: string;
+  flag?: string;
+  voices: VoiceProfile[];
+  totalCount?: number;
+}
+
+function groupVoicesByLocale(voices: VoiceProfile[]): GroupedVoices[] {
+  const groups = new Map<string, VoiceProfile[]>();
+
+  voices.forEach((voice) => {
+    const key = voice.locale ?? 'unknown';
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key)!.push(voice);
+  });
+
+  return Array.from(groups.entries())
+    .map(([locale, voiceList]) => ({
+      id: locale,
+      label: locale === 'unknown' ? 'Other' : locale,
+      voices: voiceList.sort((a, b) => a.label.localeCompare(b.label)),
+      totalCount: voiceList.length,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function buildDisplayGroups(
+  voices: VoiceProfile[],
+  providedGroups: VoiceGroup[] | undefined,
+  filter: Set<string>,
+  activeGroup: string,
+): GroupedVoices[] {
+  if (providedGroups?.length) {
+    const voiceMap = new Map(voices.map((voice) => [voice.id, voice]));
+    const groups: GroupedVoices[] = [];
+    providedGroups.forEach((group) => {
+      if (activeGroup !== 'all' && group.id !== activeGroup) {
+        return;
+      }
+      const items: VoiceProfile[] = [];
+      group.voices.forEach((voiceId) => {
+        const voice = voiceMap.get(voiceId);
+        if (voice && filter.has(voice.id)) {
+          items.push(voice);
+        }
+      });
+      if (items.length) {
+        groups.push({
+          id: group.id,
+          label: group.label,
+          flag: group.flag,
+          voices: items.sort((a, b) => a.label.localeCompare(b.label)),
+          totalCount: group.count,
+        });
+      }
+    });
+    if (groups.length) {
+      return groups;
+    }
+  }
+
+  const filteredVoices = voices.filter((voice) => filter.has(voice.id));
+  return groupVoicesByLocale(filteredVoices);
+}
+
+export function VoiceSelector({ voices, groups, selected, onToggle, onClear, activeGroup = 'all', onGroupChange }: VoiceSelectorProps) {
+  const [query, setQuery] = useState('');
+
+  const voicesAfterGroup = useMemo(() => {
+    if (!groups?.length || activeGroup === 'all') {
+      return voices;
+    }
+    const match = groups.find((group) => group.id === activeGroup);
+    if (!match) {
+      return voices;
+    }
+    const allowed = new Set(match.voices);
+    return voices.filter((voice) => allowed.has(voice.id));
+  }, [activeGroup, groups, voices]);
+
+  const filteredVoices = useMemo(() => {
+    if (!query.trim()) {
+      return voicesAfterGroup;
+    }
+    const lower = query.toLowerCase();
+    return voicesAfterGroup.filter((voice) => {
+      return (
+        voice.id.toLowerCase().includes(lower) ||
+        voice.label.toLowerCase().includes(lower) ||
+        (voice.locale && voice.locale.toLowerCase().includes(lower)) ||
+        voice.tags.some((tag) => tag.toLowerCase().includes(lower))
+      );
+    });
+  }, [query, voicesAfterGroup]);
+
+  const filteredIds = useMemo(() => new Set(filteredVoices.map((voice) => voice.id)), [filteredVoices]);
+  const displayGroups = useMemo(
+    () => buildDisplayGroups(voices, groups, filteredIds, activeGroup),
+    [voices, groups, filteredIds, activeGroup],
+  );
+
+  const handleGroupToggle = (groupId: string) => {
+    if (!onGroupChange) {
+      return;
+    }
+    if (groupId === 'all') {
+      onGroupChange('all');
+    } else if (activeGroup === groupId) {
+      onGroupChange('all');
+    } else {
+      onGroupChange(groupId);
+    }
+  };
+
+  return (
+    <section className="panel">
+      <header className="panel__header">
+        <div>
+          <h2 className="panel__title">Voices</h2>
+          <p className="panel__subtitle">{voices.length} available</p>
+        </div>
+        <button className="panel__button" type="button" onClick={onClear}>
+          Clear
+        </button>
+      </header>
+      <div className="panel__search">
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search voices, locales, tags..."
+          className="panel__search-input"
+          aria-label="Search voices"
+        />
+      </div>
+      <div className="voice-grid">
+        {displayGroups.map((group) => (
+          <div key={group.id} className="voice-grid__group">
+            <p className="voice-grid__group-title">
+              {group.flag ? (
+                <span className="voice-grid__group-flag" role="img" aria-hidden="true">
+                  {group.flag}
+                </span>
+              ) : null}
+              <span>{group.label}</span>
+              <span className="voice-grid__group-count">
+                {group.totalCount && group.totalCount !== group.voices.length
+                  ? `(${group.voices.length}/${group.totalCount})`
+                  : `(${group.voices.length})`}
+              </span>
+            </p>
+            <div className="voice-grid__items">
+              {group.voices.map((voice) => {
+                const isSelected = selected.includes(voice.id);
+                return (
+                  <button
+                    type="button"
+                    key={voice.id}
+                    className={clsx('voice-card', { 'voice-card--selected': isSelected })}
+                    onClick={() => onToggle(voice.id)}
+                  >
+                    <span className="voice-card__label">{voice.label}</span>
+                    <span className="voice-card__meta">
+                      {voice.accent ? (
+                        <span className="voice-card__meta-pill" title={voice.accent.label}>
+                          <span aria-hidden="true">{voice.accent.flag}</span>
+                          <span className="voice-card__meta-pill-text">{voice.accent.label}</span>
+                        </span>
+                      ) : null}
+                      {voice.locale ? <span>{voice.locale}</span> : null}
+                      {voice.gender ? <span>{voice.gender}</span> : null}
+                    </span>
+                    {voice.tags.length ? (
+                      <span className="voice-card__tags">
+                        {voice.tags.map((tag) => (
+                          <span key={tag}>{tag}</span>
+                        ))}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        {displayGroups.length === 0 ? <p className="panel__empty">No voices match the current search.</p> : null}
+      </div>
+      {groups?.length ? (
+        <div className="voice-filter-chips" role="group" aria-label="Filter voices by group">
+          <button
+            type="button"
+            className={clsx('voice-filter-chip', { 'voice-filter-chip--active': activeGroup === 'all' })}
+            onClick={() => handleGroupToggle('all')}
+          >
+            <span className="voice-filter-chip__label">All</span>
+            <span className="voice-filter-chip__count">{voices.length}</span>
+          </button>
+          {groups.map((group) => (
+            <button
+              type="button"
+              key={group.id}
+              className={clsx('voice-filter-chip', { 'voice-filter-chip--active': activeGroup === group.id })}
+              onClick={() => handleGroupToggle(group.id)}
+            >
+              {group.flag ? (
+                <span className="voice-filter-chip__flag" role="img" aria-hidden="true">
+                  {group.flag}
+                </span>
+              ) : null}
+              <span className="voice-filter-chip__label">{group.label}</span>
+              <span className="voice-filter-chip__count">{group.count}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}

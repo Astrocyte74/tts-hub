@@ -1,0 +1,147 @@
+# Kokoro Playground TWVV
+
+Modern Kokoro text-to-speech playground built with a Flask backend and a React + Vite single-page app. This branch consolidates the feature set of the original Kokoro project with the maintainable tooling introduced in the TWVV experiments.
+
+- **Backend** — Flask service exposing `/api` endpoints for synthesis, auditions, voice metadata, and health checks.
+- **Frontend** — React + TypeScript SPA with React Query, announcer-aware auditions, grouped voice browser, and WaveSurfer playback.
+- **Launcher** — POSIX shell script (`Start Kokoro Playground.command`) that provisions dependencies, downloads Kokoro models, and runs both backend and frontend (or production-only Flask hosting).
+
+---
+
+## Prerequisites
+
+- macOS or Linux shell (launcher uses POSIX utilities).
+- Python 3.10+ (Python 3.11 preferred).
+- Node.js 18+ (for Vite dev server / builds).
+- ~350 MB free disk for Kokoro model + voice bank.
+
+---
+
+## Quick Start
+
+### 1. Configure Environment
+
+Optional: duplicate `.env.example` to `.env` and adjust values:
+
+```bash
+cp .env.example .env
+```
+
+Key toggles:
+
+- `KOKORO_AUTO_DOWNLOAD=1` — auto-download Kokoro model and voices if missing.
+- `KOKORO_MODE=dev|prod` — dev starts Vite, prod builds the SPA and serves via Flask only.
+- `KOKORO_MODEL` / `KOKORO_VOICES` — override default paths if you already have the assets.
+- `API_PREFIX` / `VITE_API_PREFIX` — customise the `/api` prefix used by both backend and SPA.
+
+### 2. Launch (Dev Mode)
+
+```bash
+./Start\ Kokoro\ Playground.command
+```
+
+The script will:
+
+1. Source `.env` (if present).
+2. Create/upgrade `.venv` and install backend dependencies on demand.
+3. Install frontend dependencies on first run.
+4. Download Kokoro assets when `KOKORO_AUTO_DOWNLOAD=1` and files are missing.
+5. Start the Flask API on `http://127.0.0.1:7860`.
+6. Start the Vite dev server on `http://127.0.0.1:5173`.
+
+Leave the terminal window open—closing it stops both services.
+
+### 3. Production Mode
+
+```bash
+KOKORO_MODE=prod ./Start\ Kokoro\ Playground.command
+```
+
+Production mode builds `frontend/dist/`, skips Vite, and serves the static bundle directly via Flask. Visit `http://127.0.0.1:7860` to use the UI.
+
+### Manual Workflow (Optional)
+
+```bash
+# Backend
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r backend/requirements.txt
+python backend/app.py
+
+# Frontend
+cd frontend
+npm install
+npm run dev
+```
+
+---
+
+## Configuration Reference (`.env`)
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `BACKEND_HOST` / `BACKEND_PORT` | Flask bind address/port. | `127.0.0.1` / `7860` |
+| `KOKORO_AUTO_DOWNLOAD` | `1` to auto-download models if missing, `0` to require manual placement. | `1` |
+| `KOKORO_MODEL_URL` / `KOKORO_VOICES_URL` | Download sources for model & voices. | Official Kokoro release URLs |
+| `KOKORO_MODEL` / `KOKORO_VOICES` | Absolute or relative paths to assets (overrides defaults). | `./models/...` |
+| `KOKORO_MODE` | `dev` (Flask + Vite) or `prod` (Flask with built SPA). | `dev` |
+| `API_PREFIX` | Prefix for backend API routes (without slashes). | `api` |
+| `VITE_HOST` / `VITE_PORT` | Vite dev server host & port. | `127.0.0.1` / `5173` |
+| `VITE_API_BASE_URL` | Optional full URL the SPA should use (defaults to same-origin). | – |
+| `VITE_API_PREFIX` | SPA-side API prefix (defaults to `API_PREFIX`). | `api` |
+| `OLLAMA_URL` / `OLLAMA_MODEL` | Configure Ollama integration for random text prompts. | `http://127.0.0.1:11434` / `phi3:latest` |
+
+For additional frontend-specific variables see `frontend/.env.example`.
+
+---
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+| --- | --- | --- |
+| `/api/meta` | GET | Runtime info: API prefix, port, model/voice presence, random-text categories, bundle status, Ollama availability. |
+| `/api/health` | GET | Basic health check used by the launcher. |
+| `/api/voices` | GET | Flat list of voice profiles with locale metadata. |
+| `/api/voices_grouped` | GET | Accent-aware voice buckets with flag metadata for the selector chips. |
+| `/api/random_text` | GET | Returns sample text plus category info; calls Ollama when available. |
+| `/api/ollama_models` | GET | Lists cached Ollama models; 503 when Ollama offline. |
+| `/api/synthesise` (`/api/synthesize`) | POST | Generate a single clip. Body: `{ text, voice, speed, language, trimSilence }`. |
+| `/api/audition` | POST | Stitch multi-voice audition with optional announcer. Body includes `voices[]`, `announcer`, `gapSeconds`. |
+| `/audio/<filename>` | GET | Stream generated WAV files. |
+
+The backend also serves `frontend/dist/` assets when Vite is not running (production mode).
+
+---
+
+## Frontend Highlights
+
+- Announcer-aware audition builder with template strings and gap control.
+- Voice browser with accent/flag filters (powered by `/api/voices_grouped`), quick search, and multi-select.
+- Random text helpers with automatic category updates from `/api/meta`.
+- React Query for data fetching and cache synchronisation.
+- WaveSurfer.js playback for generated clips, with persistent history and download links.
+- LocalStorage persistence for script, voices, announcer, and playback preferences.
+
+---
+
+## Repository Layout
+
+```
+backend/    Flask API and requirements
+frontend/   React + Vite SPA
+models/     Kokoro model and voice assets (auto-created)
+out/        Generated WAV files
+Start Kokoro Playground.command  Launcher script (POSIX shell)
+PROJECT_OVERVIEW.md              Architectural overview
+```
+
+---
+
+## Verification
+
+- `bash -n Start\ Kokoro\ Playground.command` — lint launcher syntax.
+- `python3 -m py_compile backend/app.py` — sanity-check backend imports.
+- `npm run lint` / `npm run build` in `frontend/` — ensure SPA builds cleanly.
+- Launch via script (dev & prod) to confirm `/api/meta` and UI respond with grouped voices and announcer controls.
+
+Enjoy the upgraded Kokoro Playground! Contributions via issues or pull requests are welcome.
