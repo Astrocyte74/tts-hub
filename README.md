@@ -118,6 +118,13 @@ The backend also serves `frontend/dist/` assets when Vite is not running (produc
 - Announcer-aware audition builder with template strings and gap control.
 - Voice browser with accent/flag filters (powered by `/api/voices_grouped`), quick search, and multi-select.
 - Random text helpers with automatic category updates from `/api/meta`.
+
+### Engine Notes
+
+- **XTTS v2** – the optional launcher `Start Kokoro Playground (XTTS Server).command` starts a persistent FastAPI server on port 3333 and exports `XTTS_SERVER_URL` so synthesise requests skip CLI warm-up. The script will stop any existing process bound to that port before launching a fresh server; logs stream to `/tmp/kokoro_xtts_server.log`.
+- **ChatTTS** – presets are exposed as selectable voices (`chattts_preset_<id>`). Selecting multiple presets (or the random speaker) enables audition mode just like Kokoro/XTTS/OpenVoice; speaker/seed metadata is managed automatically, so no separate “speaker” dropdown is required.
+- **OpenVoice** – the voice cards include a “Learn how to add custom references” modal and inline preview button. References live under `openvoice/resources/…` and are served via `/audio/openvoice/<path>`.
+- **Auditions** – all engines now share the same audition pipeline. Per-voice overrides (styles, presets, seeds) propagate automatically when building a reel, and announcer segments are synthesised through the selected engine for consistent output.
 - React Query for data fetching and cache synchronisation.
 - WaveSurfer.js playback for generated clips, with persistent history and download links.
 - LocalStorage persistence for script, voices, announcer, and playback preferences.
