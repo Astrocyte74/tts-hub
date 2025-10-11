@@ -5,7 +5,7 @@ The Kokoro ONNX model and voice bank downloaded for this project live at:
 - Model: `/Users/markdarby/projects/kokoro_twvv/models/kokoro-v1.0.onnx`
 - Voices: `/Users/markdarby/projects/kokoro_twvv/models/voices-v1.0.bin`
 
-You can point other local projects at these files instead of duplicating downloads. If you still maintain the legacy `~/projects/kokoro` repo, its `models/` directory remains compatible—just update the environment variables accordingly.
+You can point other local projects at these files instead of duplicating downloads.
 
 ## 1. Ensure Python Environment
 
@@ -78,7 +78,7 @@ ln -s /Users/markdarby/projects/kokoro_twvv/models/kokoro-v1.0.onnx /path/to/oth
 ln -s /Users/markdarby/projects/kokoro_twvv/models/voices-v1.0.bin /path/to/other-project/models/voices-v1.0.bin
 ```
 
-Symlinking avoids duplicate ~337MB downloads while keeping per-project folder structures intact.
+A symbolic link (“symlink”) is a lightweight pointer that makes the original file appear at another path without duplicating it. Symlinking avoids duplicate ~337MB downloads while keeping per-project folder structures intact.
 
 ## 5. Notes
 
