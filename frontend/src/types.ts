@@ -46,6 +46,7 @@ export interface VoiceCatalogue {
   voices: VoiceProfile[];
   accentGroups: VoiceGroup[];
   count: number;
+  styles?: string[];
   message?: string;
 }
 
@@ -64,6 +65,7 @@ export interface SynthesisRequest {
   language: string;
   trimSilence: boolean;
   engine?: string;
+  style?: string;
 }
 
 export interface SynthesisResponseShape {

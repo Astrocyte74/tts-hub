@@ -533,9 +533,7 @@ def get_openvoice_voice_map() -> Dict[str, Dict[str, Any]]:
                 continue
             if path.suffix.lower() not in OPENVOICE_SUPPORTED_EXTENSIONS:
                 continue
-            language = _normalise_openvoice_language(path.parent.name if path.parent != reference_root else path.name)
-            if "chinese" in path.stem.lower():
-                language = "Chinese"
+            language = "English"
             base_id = f"openvoice_{_slugify_voice_id(path.stem)}"
             voice_id = base_id
             counter = 1
@@ -610,6 +608,7 @@ def build_openvoice_voice_payload() -> Dict[str, Any]:
         "accentGroups": accent_groups,
         "groups": accent_groups,
         "count": len(voices),
+        "styles": styles_map.get("English", []),
         "message": message,
     }
 

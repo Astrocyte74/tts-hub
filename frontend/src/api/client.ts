@@ -199,6 +199,7 @@ export async function fetchVoices(engineId?: string): Promise<VoiceCatalogue> {
   const available = payload['available'] !== false;
   const count = typeof payload['count'] === 'number' ? (payload['count'] as number) : voices.length;
   const message = typeof payload['message'] === 'string' ? (payload['message'] as string) : undefined;
+  const styles = Array.isArray(payload['styles']) ? (payload['styles'] as string[]) : [];
 
   return {
     engine,
@@ -206,6 +207,7 @@ export async function fetchVoices(engineId?: string): Promise<VoiceCatalogue> {
     voices,
     accentGroups,
     count,
+    styles,
     message,
   };
 }

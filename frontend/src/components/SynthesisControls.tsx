@@ -21,6 +21,9 @@ interface SynthesisControlsProps {
   onTrimSilenceChange: (value: boolean) => void;
   autoPlay: boolean;
   onAutoPlayChange: (value: boolean) => void;
+  styleOptions?: string[];
+  selectedStyle?: string;
+  onStyleChange?: (value: string) => void;
 }
 
 export function SynthesisControls({
@@ -38,6 +41,9 @@ export function SynthesisControls({
   onTrimSilenceChange,
   autoPlay,
   onAutoPlayChange,
+  styleOptions = [],
+  selectedStyle,
+  onStyleChange,
 }: SynthesisControlsProps) {
   const selectedEngine = engines.find((engine) => engine.id === engineId);
   const description = engineMessage ?? selectedEngine?.description;
@@ -67,6 +73,25 @@ export function SynthesisControls({
           <p className="panel__hint panel__hint--notice">Status: {status}</p>
         ) : null}
       </div>
+      {styleOptions.length && onStyleChange ? (
+        <label className="field">
+          <span className="field__label">Style</span>
+          <select
+            value={selectedStyle ?? (styleOptions[0] ?? 'default')}
+            onChange={(event) => onStyleChange(event.target.value)}
+            disabled={!engineAvailable}
+          >
+            {styleOptions.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+            {selectedStyle && !styleOptions.includes(selectedStyle) ? (
+              <option value={selectedStyle}>{selectedStyle}</option>
+            ) : null}
+          </select>
+        </label>
+      ) : null}
       <div className="grid grid--two">
         <label className="field">
           <span className="field__label">Language</span>

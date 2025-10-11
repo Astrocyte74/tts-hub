@@ -16,7 +16,7 @@ import {
   fetchVoiceGroups,
   synthesiseClip,
 } from './api/client';
-import type { RandomTextResult, SynthesisResult, VoiceCatalogue, VoiceProfile } from './types';
+import type { RandomTextResult, SynthesisRequest, SynthesisResult, VoiceCatalogue, VoiceProfile } from './types';
 
 const FALLBACK_CATEGORIES = ['any', 'narration', 'promo', 'dialogue', 'news', 'story', 'whimsy'];
 const DEFAULT_LANGUAGE = 'en-us';
@@ -60,6 +60,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [extraCategories, setExtraCategories] = useState<string[]>([]);
 
+  const [openvoiceStyle, setOpenvoiceStyle] = useLocalStorage('kokoro:openvoiceStyle', 'default');
   const [engineId, setEngineId] = useLocalStorage('kokoro:engine', DEFAULT_ENGINE);
   const metaQuery = useQuery({ queryKey: ['meta'], queryFn: fetchMeta, staleTime: 5 * 60 * 1000 });
   const voicesQuery = useQuery({
@@ -101,7 +102,10 @@ function App() {
     setVoiceGroupFilter('all');
     setAnnouncerVoice(null);
     setAnnouncerEnabled(false);
-  }, [engineId, setSelectedVoices, setVoiceGroupFilter, setAnnouncerVoice, setAnnouncerEnabled]);
+    if (engineId !== 'openvoice') {
+      setOpenvoiceStyle('default');
+    }
+  }, [engineId, setSelectedVoices, setVoiceGroupFilter, setAnnouncerVoice, setAnnouncerEnabled, setOpenvoiceStyle]);
 
   const voiceCatalogue = voicesQuery.data as VoiceCatalogue | undefined;
   const voices = useMemo(() => voiceCatalogue?.voices ?? [], [voiceCatalogue]);
@@ -119,11 +123,25 @@ function App() {
   }, [voiceGroupsQuery.data, voiceCatalogue?.accentGroups, metaQuery.data?.accent_groups, engineId]);
   const accentGroups = voiceGroupData;
   const voiceCount = voiceCatalogue?.count ?? voices.length;
+  const styleOptions = useMemo(() => voiceCatalogue?.styles ?? [], [voiceCatalogue?.styles]);
   const engineAvailable = voiceCatalogue ? voiceCatalogue.available : selectedEngine?.available ?? true;
   const engineMessage = voiceCatalogue?.message ?? selectedEngine?.description;
   const ollamaAvailable = metaQuery.data?.ollama_available ?? false;
   const kokoroReady = metaQuery.data ? metaQuery.data.has_model && metaQuery.data.has_voices : true;
   const backendReady = engineId === 'kokoro' ? engineAvailable && kokoroReady : engineAvailable;
+
+  useEffect(() => {
+    if (engineId !== 'openvoice') {
+      return;
+    }
+    if (styleOptions.length) {
+      if (!openvoiceStyle || !styleOptions.includes(openvoiceStyle)) {
+        setOpenvoiceStyle(styleOptions[0]);
+      }
+    } else if (openvoiceStyle !== 'default') {
+      setOpenvoiceStyle('default');
+    }
+  }, [engineId, styleOptions, openvoiceStyle, setOpenvoiceStyle]);
 
   useEffect(() => {
     if (!accentGroups.length) {
@@ -267,14 +285,18 @@ function App() {
 
     for (const voice of selectedVoices) {
       try {
-        await synthMutation.mutateAsync({
+        const payload: SynthesisRequest & { style?: string } = {
           text: script,
           voice,
           language: normaliseLanguage(language),
           speed: Number(speed),
           trimSilence: Boolean(trimSilence),
           engine: engineId,
-        });
+        };
+        if (engineId === 'openvoice') {
+          payload.style = openvoiceStyle || 'default';
+        }
+        await synthMutation.mutateAsync(payload);
       } catch (err) {
         console.error(err);
         break;
@@ -416,6 +438,9 @@ function App() {
             onTrimSilenceChange={(value) => setTrimSilence(value)}
             autoPlay={Boolean(autoPlay)}
             onAutoPlayChange={(value) => setAutoPlay(value)}
+            styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
+            selectedStyle={engineId === 'openvoice' ? openvoiceStyle : undefined}
+            onStyleChange={engineId === 'openvoice' ? setOpenvoiceStyle : undefined}
           />
           {engineId === 'kokoro' && engineAvailable ? (
             <AnnouncerControls
