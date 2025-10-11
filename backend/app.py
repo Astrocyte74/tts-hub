@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import threading
 import time
 import uuid
@@ -37,6 +38,18 @@ VOICES_PATH = Path(os.environ.get("KOKORO_VOICES", str(APP_ROOT / "models" / "vo
 BACKEND_HOST = os.environ.get("BACKEND_HOST", os.environ.get("HOST", "127.0.0.1"))
 BACKEND_PORT = int(os.environ.get("BACKEND_PORT", os.environ.get("PORT", "7860")))
 API_PREFIX = os.environ.get("API_PREFIX", os.environ.get("VITE_API_PREFIX", "api")).strip("/")
+
+TTS_HUB_ROOT = APP_ROOT.parent
+XTTS_ROOT = Path(os.environ.get("XTTS_ROOT", TTS_HUB_ROOT / "XTTS")).expanduser()
+XTTS_SERVICE_DIR = Path(os.environ.get("XTTS_SERVICE_DIR", XTTS_ROOT / "tts-service")).expanduser()
+XTTS_PYTHON = Path(os.environ.get("XTTS_PYTHON", XTTS_SERVICE_DIR / ".venv" / "bin" / "python")).expanduser()
+XTTS_VOICE_DIR = Path(os.environ.get("XTTS_VOICE_DIR", XTTS_SERVICE_DIR / "voices")).expanduser()
+XTTS_OUTPUT_FORMAT = os.environ.get("XTTS_OUTPUT_FORMAT", "wav").lower()
+XTTS_TIMEOUT_SECONDS = float(os.environ.get("XTTS_TIMEOUT", "120"))
+XTTS_SUPPORTED_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg"}
+
+_xtts_voice_cache: Dict[str, Path] = {}
+_xtts_voice_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # Custom error
@@ -239,11 +252,229 @@ def build_kokoro_voice_payload() -> Dict[str, Any]:
     voices = load_voice_profiles()
     accent_groups = group_voices_by_accent(voices)
     return {
+        "engine": "kokoro",
+        "available": MODEL_PATH.exists() and VOICES_PATH.exists(),
         "voices": [serialise_voice_profile(voice) for voice in voices],
         "accentGroups": accent_groups,
         "groups": accent_groups,
         "count": len(voices),
     }
+
+
+def _slugify_voice_id(name: str) -> str:
+    slug_chars: list[str] = []
+    for char in name.lower():
+        if char.isalnum():
+            slug_chars.append(char)
+        elif char in {' ', '-', '_'}:
+            slug_chars.append('_')
+    slug = ''.join(slug_chars).strip('_')
+    return slug or name.lower()
+
+
+def get_xtts_voice_map() -> Dict[str, Path]:
+    voice_dir = XTTS_VOICE_DIR
+    mapping: Dict[str, Path] = {}
+    if voice_dir.exists():
+        for path in sorted(voice_dir.iterdir()):
+            if not path.is_file():
+                continue
+            if path.suffix.lower() not in XTTS_SUPPORTED_EXTENSIONS:
+                continue
+            base_id = _slugify_voice_id(path.stem)
+            unique_id = base_id
+            counter = 1
+            while unique_id in mapping:
+                counter += 1
+                unique_id = f"{base_id}_{counter}"
+            mapping[unique_id] = path.resolve()
+    with _xtts_voice_lock:
+        _xtts_voice_cache.clear()
+        _xtts_voice_cache.update(mapping)
+    return dict(mapping)
+
+
+def build_xtts_voice_payload() -> Dict[str, Any]:
+    mapping = get_xtts_voice_map()
+    voices: List[Dict[str, Any]] = []
+    for voice_id, voice_path in mapping.items():
+        label = voice_path.stem.replace('_', ' ').title()
+        voices.append(
+            {
+                'id': voice_id,
+                'label': label,
+                'locale': None,
+                'gender': None,
+                'tags': [],
+                'notes': voice_path.name,
+                'accent': {'id': 'custom', 'label': 'Custom Voice', 'flag': '🎙️'},
+            }
+        )
+    groups: List[Dict[str, Any]] = []
+    if voices:
+        groups.append(
+            {
+                'id': 'xtts_custom',
+                'label': 'XTTS Voices',
+                'flag': '🎙️',
+                'voices': [voice['id'] for voice in voices],
+                'count': len(voices),
+            }
+        )
+    message = None
+    if not voices:
+        message = 'Place reference clips in XTTS/tts-service/voices/ and reload.'
+    return {
+        'engine': 'xtts',
+        'available': bool(mapping) and XTTS_PYTHON.exists() and XTTS_SERVICE_DIR.exists(),
+        'voices': voices,
+        'accentGroups': groups,
+        'groups': groups,
+        'count': len(voices),
+        'message': message,
+    }
+
+
+def xtts_is_available() -> bool:
+    if not XTTS_PYTHON.exists() or not XTTS_PYTHON.is_file():
+        return False
+    if not XTTS_SERVICE_DIR.exists():
+        return False
+    voice_map = get_xtts_voice_map()
+    return bool(voice_map)
+
+
+def _resolve_xtts_voice_path(identifier: str) -> Tuple[str, Path]:
+    voice_map = get_xtts_voice_map()
+    key = identifier.lower().strip()
+    if key in voice_map:
+        return key, voice_map[key]
+    slug = _slugify_voice_id(identifier)
+    if slug in voice_map:
+        return slug, voice_map[slug]
+    candidate = Path(identifier).expanduser()
+    if candidate.exists():
+        return _slugify_voice_id(candidate.stem), candidate
+    raise PlaygroundError(f"Unknown XTTS voice '{identifier}'.", status=400)
+
+
+def _xtts_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    base = validate_synthesis_payload(payload, require_voice=True)
+    voice_identifier = str(base['voice'])
+    voice_id, voice_path = _resolve_xtts_voice_path(voice_identifier)
+
+    language = base['language'] or 'en'
+    if '-' in language:
+        language = language.split('-', 1)[0]
+
+    try:
+        speed = float(base['speed'])
+    except (TypeError, ValueError):
+        raise PlaygroundError('XTTS speed must be numeric.', status=400)
+
+    format_value = str(payload.get('format', XTTS_OUTPUT_FORMAT) or 'wav').lower()
+    if format_value not in {ext.lstrip('.') for ext in XTTS_SUPPORTED_EXTENSIONS}:
+        raise PlaygroundError(f"Unsupported XTTS format '{format_value}'.", status=400)
+
+    sample_rate_value = payload.get('sample_rate')
+    try:
+        sample_rate = int(sample_rate_value) if sample_rate_value is not None else 24000
+    except (TypeError, ValueError):
+        raise PlaygroundError('XTTS sample rate must be an integer.', status=400)
+
+    temperature_value = payload.get('temperature', 0.6)
+    try:
+        temperature = float(temperature_value)
+    except (TypeError, ValueError):
+        raise PlaygroundError('XTTS temperature must be numeric.', status=400)
+
+    seed_value = payload.get('seed', 42)
+    try:
+        seed = int(seed_value)
+    except (TypeError, ValueError):
+        raise PlaygroundError('XTTS seed must be an integer.', status=400)
+
+    return {
+        'text': base['text'],
+        'voice_id': voice_id,
+        'voice_path': voice_path,
+        'language': language,
+        'speed': speed,
+        'temperature': temperature,
+        'seed': seed,
+        'format': format_value,
+        'sample_rate': sample_rate,
+    }
+
+
+def _xtts_synthesise(data: Dict[str, Any]) -> Dict[str, Any]:
+    if not xtts_is_available():
+        raise PlaygroundError('XTTS engine is not available.', status=503)
+
+    format_ext = data['format'].lstrip('.')
+    filename = f"{int(time.time())}-{uuid.uuid4().hex[:10]}-xtts.{format_ext}"
+    output_path = OUTPUT_DIR / filename
+
+    cmd = [
+        str(XTTS_PYTHON),
+        '-m',
+        'tts_service.cli',
+        '--text',
+        data['text'],
+        '--speaker-ref',
+        str(data['voice_path']),
+        '--out',
+        str(output_path),
+        '--language',
+        data['language'],
+        '--speed',
+        f"{data['speed']}",
+        '--format',
+        format_ext,
+        '--sample-rate',
+        str(data['sample_rate']),
+        '--seed',
+        str(data['seed']),
+        '--temperature',
+        f"{data['temperature']}",
+        '--no-cache',
+    ]
+
+    env = os.environ.copy()
+    env.setdefault('PYTORCH_ENABLE_MPS_FALLBACK', '1')
+    env.setdefault('PYTORCH_MPS_HIGH_WATERMARK_RATIO', '0.0')
+    env.setdefault('CUDA_VISIBLE_DEVICES', '-1')
+
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=XTTS_SERVICE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=XTTS_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError as exc:
+        raise PlaygroundError('XTTS python executable not found. Set XTTS_PYTHON to the CLI interpreter.', status=500) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise PlaygroundError('XTTS synthesis timed out.', status=504) from exc
+
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or 'Unknown error'
+        raise PlaygroundError(f"XTTS synthesis failed: {message}", status=500)
+
+    if not output_path.exists():
+        raise PlaygroundError('XTTS did not produce an output file.', status=500)
+
+    return {
+        'id': filename,
+        'engine': 'xtts',
+        'voice': data['voice_id'],
+        'path': f"/audio/{filename}",
+        'filename': filename,
+        'sample_rate': data['sample_rate'],
+    }
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -674,11 +905,14 @@ ENGINE_REGISTRY: Dict[str, Dict[str, Any]] = {
     "xtts": {
         "id": "xtts",
         "label": "XTTS v2",
-        "description": "Coqui XTTS voice cloning (integration pending).",
-        "availability": lambda: False,
+        "description": "Coqui XTTS voice cloning (local CLI).",
+        "availability": xtts_is_available,
         "requires_voice": True,
+        "defaults": {},
         "supports": {"cloning": True},
-        "status": "planned",
+        "prepare": _xtts_prepare_payload,
+        "synthesise": _xtts_synthesise,
+        "fetch_voices": build_xtts_voice_payload,
     },
     "openvoice": {
         "id": "openvoice",

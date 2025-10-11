@@ -7,7 +7,7 @@ These notes capture the multi-engine refactor currently in progress inside `tts-
 Deliver a single “Kokoro Playground” interface that can drive several local TTS engines:
 
 - **Kokoro (ONNX)** – fast baseline voices, already fully integrated.
-- **XTTS v2** – high-quality cloning. Repository lives at `./XTTS`; CLI/backend service available but not yet wired into the playground.
+- **XTTS v2** – high-quality cloning. Repository lives at `./XTTS`; CLI is now invoked via the playground adapter (subprocess).
 - **OpenVoice v2** – instant multi-lingual cloning. Repo at `./openvoice`; checkpoints downloaded and CLI verified.
 - **ChatTTS** – dialogue-tuned model. Repo at `./chattts`; Python CLI works and returns MP3 out of the box.
 
@@ -17,10 +17,11 @@ Each engine keeps its own repo/venv/asset footprint. The playground backend expo
 
 ### Backend (`kokoro_twvv/backend/app.py`)
 - Added a **global engine registry** with metadata (labels, availability check, capabilities).
-- Default engine remains `kokoro`; other entries (XTTS/OpenVoice/ChatTTS) are stubs that currently report `status: planned`.
+- Default engine remains `kokoro`; XTTS is active via CLI, while OpenVoice and ChatTTS entries still report `status: planned`.
 - `/api/meta` now returns `engines` and `default_engine` fields in addition to Kokoro accent data.
 - `/api/voices`, `/api/voices_grouped`, and `/api/synthesise` accept `engine` query/body parameters and dispatch through the registry.
-- Kokoro remains the only fully implemented adapter (`synthesise_audio_clip`, `load_voice_profiles`).
+- Kokoro adapter remains in-process (`synthesise_audio_clip`, `load_voice_profiles`).
+- XTTS adapter shells out to `tts_service.cli`, discovers speakers under `XTTS/tts-service/voices/`, and marks availability based on that inventory.
 - Audition endpoint rejects non-Kokoro engines with a friendly 400 error (until another engine supports multi-voice stitching).
 
 ### Frontend (`kokoro_twvv/frontend/src`)
@@ -32,18 +33,16 @@ Each engine keeps its own repo/venv/asset footprint. The playground backend expo
 
 ### External repos inside `tts-hub/`
 - `kokoro_twvv/` – clean Git state after current changes (pending commit below).
-- `XTTS/` – existing repo untouched by this change set; CLI smoke tests previously succeeded.
+- `XTTS/` – CLI verified; backend adapter now calls it automatically when XTTS is selected.
 - `openvoice/` – `python scripts/cli_demo.py` works with downloaded checkpoints.
 - `chattts/` – `examples/cmd/run.py` generates MP3 after editable install (`pip install -e .`).
 
 ## Immediate Next Steps
 
-1. **Implement real adapters** for the remaining engines:
-   - Decide invocation strategy (direct Python import vs. subprocess vs. HTTP microservice).
-   - Populate `availability`, `prepare`, `synthesise`, and `fetch_voices` in the registry entries for XTTS/OpenVoice/ChatTTS.
+1. **Implement adapters for OpenVoice and ChatTTS**
+   - Decide invocation strategy (subprocess vs. HTTP) and wire up `availability`, `prepare`, `synthesise`, and `fetch_voices`.
    - Standardise result payloads to include `voice`, `path`, `sample_rate`, etc.
 2. **Voice metadata**
-   - XTTS: enumerate available speaker references (e.g., files under `tts-service/voices/`). Expose via `fetch_voices` response as pseudo IDs so the UI can list them.
    - OpenVoice: surface base speaker list + styles from checkpoints.
    - ChatTTS: expose seed presets or pseudo voices if available; otherwise keep as “default voice”.
 3. **Auditions for other engines**
