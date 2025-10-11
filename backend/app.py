@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -64,6 +65,12 @@ OPENVOICE_REFERENCE_DIR = Path(os.environ.get("OPENVOICE_REFERENCE_DIR", OPENVOI
 OPENVOICE_TIMEOUT_SECONDS = float(os.environ.get("OPENVOICE_TIMEOUT", "120"))
 OPENVOICE_WATERMARK = os.environ.get("OPENVOICE_WATERMARK", "@MyShell")
 OPENVOICE_SUPPORTED_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg"}
+
+CHATTT_ROOT = Path(os.environ.get("CHATTT_ROOT", TTS_HUB_ROOT / "chattts")).expanduser()
+CHATTT_PYTHON = Path(os.environ.get("CHATTT_PYTHON", CHATTT_ROOT / ".venv" / "bin" / "python")).expanduser()
+CHATTT_TIMEOUT_SECONDS = float(os.environ.get("CHATTT_TIMEOUT", "120"))
+CHATTT_SOURCE = os.environ.get("CHATTT_SOURCE", "local")
+CHATTT_SUPPORTED_EXTENSIONS = {".mp3"}
 
 # ---------------------------------------------------------------------------
 # Custom error
@@ -738,6 +745,136 @@ def _openvoice_synthesise(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 
+def build_chattts_voice_payload() -> Dict[str, Any]:
+    available = chattts_is_available()
+    voices: List[Dict[str, Any]] = []
+    if available:
+        voices.append(
+            {
+                'id': 'chattts_random',
+                'label': 'Random Speaker',
+                'locale': None,
+                'gender': None,
+                'tags': ['ChatTTS'],
+                'notes': 'Sampled from ChatTTS model at runtime.',
+                'accent': {'id': 'chattts', 'label': 'ChatTTS', 'flag': '🎤'},
+            }
+        )
+    return {
+        'engine': 'chattts',
+        'available': available,
+        'voices': voices,
+        'accentGroups': [],
+        'groups': [],
+        'count': len(voices),
+        'message': None if available else 'Install ChatTTS weights and ensure .venv exists to enable synthesis.',
+    }
+
+
+def chattts_is_available() -> bool:
+    if not CHATTT_ROOT.exists():
+        return False
+    if not CHATTT_PYTHON.exists():
+        return False
+    cli_script = CHATTT_ROOT / 'examples' / 'cmd' / 'run.py'
+    if not cli_script.exists():
+        return False
+    asset_dir = CHATTT_ROOT / 'asset'
+    if not asset_dir.exists():
+        return False
+    return True
+
+
+def _get_chattts_python() -> Path:
+    if CHATTT_PYTHON.exists() and CHATTT_PYTHON.is_file():
+        return CHATTT_PYTHON
+    return Path(sys.executable).resolve()
+
+
+def _chattts_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    base = validate_synthesis_payload(payload, require_voice=False)
+    voice = base.get('voice') or 'chattts_random'
+    speaker = payload.get('speaker')
+    text = base['text']
+    return {
+        'text': text,
+        'voice_id': voice,
+        'speaker': speaker if isinstance(speaker, str) and speaker.strip() else None,
+        'format': 'mp3',
+    }
+
+
+def _chattts_synthesise(data: Dict[str, Any]) -> Dict[str, Any]:
+    if not chattts_is_available():
+        raise PlaygroundError('ChatTTS engine is not available.', status=503)
+
+    python_path = _get_chattts_python()
+    filename = f"{int(time.time())}-{uuid.uuid4().hex[:10]}-chattts.mp3"
+    output_path = OUTPUT_DIR / filename
+
+    before_files = {path.name for path in CHATTT_ROOT.glob('output_audio_*.mp3')}
+
+    cmd = [
+        str(python_path),
+        'examples/cmd/run.py',
+    ]
+    speaker = data.get('speaker')
+    if speaker:
+        cmd.extend(['--spk', speaker])
+    source = CHATTT_SOURCE or 'local'
+    if source:
+        cmd.extend(['--source', source])
+    cmd.append(data['text'])
+
+    env = os.environ.copy()
+    env.setdefault('PYTORCH_ENABLE_MPS_FALLBACK', '1')
+    env.setdefault('PYTORCH_MPS_HIGH_WATERMARK_RATIO', '0.0')
+    env.setdefault('CUDA_VISIBLE_DEVICES', '-1')
+
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=CHATTT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=CHATTT_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError as exc:
+        raise PlaygroundError('ChatTTS python executable not found. Set CHATTT_PYTHON to the CLI interpreter.', status=500) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise PlaygroundError('ChatTTS synthesis timed out.', status=504) from exc
+
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or 'Unknown error'
+        raise PlaygroundError(f'ChatTTS synthesis failed: {message}', status=500)
+
+    generated_files = [
+        candidate
+        for candidate in CHATTT_ROOT.glob('output_audio_*.mp3')
+        if candidate.name not in before_files
+    ]
+    if not generated_files:
+        generated_files = sorted(CHATTT_ROOT.glob('output_audio_*.mp3'), key=lambda candidate: candidate.stat().st_mtime, reverse=True)
+    if not generated_files:
+        raise PlaygroundError('ChatTTS did not produce an output file.', status=500)
+
+    source_file = generated_files[0]
+    try:
+        shutil.move(str(source_file), str(output_path))
+    except OSError as exc:
+        raise PlaygroundError(f'Failed to move ChatTTS output: {exc}', status=500) from exc
+
+    return {
+        'id': filename,
+        'engine': 'chattts',
+        'voice': data['voice_id'],
+        'path': f"/audio/{filename}",
+        'filename': filename,
+        'sample_rate': 24000,
+    }
+
+
+
 
 # ---------------------------------------------------------------------------
 # Random text helpers
@@ -1191,11 +1328,13 @@ ENGINE_REGISTRY: Dict[str, Dict[str, Any]] = {
     "chattts": {
         "id": "chattts",
         "label": "ChatTTS",
-        "description": "ChatTTS dialogue model (integration pending).",
-        "availability": lambda: False,
+        "description": "ChatTTS dialogue model (random speaker).",
+        "availability": chattts_is_available,
         "requires_voice": False,
         "supports": {"cloning": False},
-        "status": "planned",
+        "prepare": _chattts_prepare_payload,
+        "synthesise": _chattts_synthesise,
+        "fetch_voices": build_chattts_voice_payload,
     },
 }
 

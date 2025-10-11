@@ -144,6 +144,15 @@ function App() {
   }, [engineId, styleOptions, openvoiceStyle, setOpenvoiceStyle]);
 
   useEffect(() => {
+    if (engineId !== 'chattts') {
+      return;
+    }
+    if (voices.length && selectedVoices.length === 0) {
+      setSelectedVoices([voices[0].id]);
+    }
+  }, [engineId, voices, selectedVoices, setSelectedVoices]);
+
+  useEffect(() => {
     if (!accentGroups.length) {
       return;
     }
