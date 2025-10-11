@@ -166,6 +166,13 @@ function App() {
 
   const voiceCatalogue = voicesQuery.data as VoiceCatalogue | undefined;
   const voices = useMemo(() => voiceCatalogue?.voices ?? [], [voiceCatalogue]);
+  const voiceById = useMemo(() => {
+    const map = new Map<string, VoiceProfile>();
+    voices.forEach((voice) => {
+      map.set(voice.id, voice);
+    });
+    return map;
+  }, [voices]);
   const chatttsPresets = useMemo(() => voiceCatalogue?.presets ?? [], [voiceCatalogue?.presets]);
   const chatttsPresetOptions = useMemo(
     () => chatttsPresets.map((preset) => ({ id: preset.id, label: preset.label, notes: preset.notes })),
@@ -859,14 +866,33 @@ function App() {
           }
         }
         if (engineId === 'chattts') {
-          if (chatttsPresetId && chatttsPresetId !== 'random') {
-            const preset = chatttsPresets.find((item) => item.id === chatttsPresetId);
-            if (preset) {
-              payload.speaker = preset.speaker;
+          delete (payload as Record<string, unknown>).speaker;
+          delete (payload as Record<string, unknown>).seed;
+
+          const voiceMeta = voiceById.get(voice);
+          const rawMeta = (voiceMeta?.raw ?? {}) as Record<string, unknown>;
+          const voiceType = typeof rawMeta.type === 'string' ? (rawMeta.type as string) : undefined;
+
+          if (voiceType === 'preset') {
+            if (typeof rawMeta.speaker === 'string' && rawMeta.speaker.trim()) {
+              payload.speaker = rawMeta.speaker.trim();
+            }
+            if (typeof rawMeta.seed === 'number' && Number.isFinite(rawMeta.seed)) {
+              payload.seed = rawMeta.seed as number;
+            }
+          } else {
+            if (chatttsPresetId && chatttsPresetId !== 'random') {
+              const preset = chatttsPresets.find((item) => item.id === chatttsPresetId);
+              if (preset) {
+                payload.speaker = preset.speaker;
+                if (typeof preset.seed === 'number') {
+                  payload.seed = preset.seed;
+                }
+              }
             }
           }
           if (chatttsSeed && chatttsSeed.trim() !== '') {
-            const parsedSeed = Number(chatttsSeed);
+            const parsedSeed = Number(chatttsSeed.trim());
             if (!Number.isNaN(parsedSeed) && Number.isFinite(parsedSeed)) {
               payload.seed = Math.floor(parsedSeed);
             }
@@ -906,15 +932,29 @@ function App() {
     const overridesByVoice: Record<string, Record<string, unknown>> = {};
     selectedVoices.forEach((voiceId) => {
       const override: Record<string, unknown> = {};
+      const voiceMeta = voiceById.get(voiceId);
+      const rawMeta = (voiceMeta?.raw ?? {}) as Record<string, unknown>;
+      const voiceType = typeof rawMeta.type === 'string' ? (rawMeta.type as string) : undefined;
+
       if (engineId === 'openvoice') {
         override.style = openvoiceVoiceStyles[voiceId] ?? openvoiceStyle ?? 'default';
         override.language = normaliseLanguage(language);
       }
       if (engineId === 'chattts') {
-        if (chatttsPresetId && chatttsPresetId !== 'random') {
+        if (voiceType === 'preset') {
+          if (typeof rawMeta.speaker === 'string' && rawMeta.speaker.trim()) {
+            override.speaker = rawMeta.speaker.trim();
+          }
+          if (typeof rawMeta.seed === 'number' && Number.isFinite(rawMeta.seed)) {
+            override.seed = rawMeta.seed;
+          }
+        } else if (chatttsPresetId && chatttsPresetId !== 'random') {
           const preset = chatttsPresets.find((item) => item.id === chatttsPresetId);
           if (preset) {
             override.speaker = preset.speaker;
+            if (typeof preset.seed === 'number') {
+              override.seed = preset.seed;
+            }
           }
         }
         if (chatttsSeed && chatttsSeed.trim()) {

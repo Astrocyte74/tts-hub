@@ -60,6 +60,8 @@ _openvoice_voice_cache: Dict[str, Dict[str, Any]] = {}
 _openvoice_voice_lock = threading.Lock()
 _openvoice_style_cache: Optional[Dict[str, List[str]]] = None
 _openvoice_style_lock = threading.Lock()
+_chattts_voice_cache: Dict[str, Dict[str, Any]] = {}
+_chattts_voice_lock = threading.Lock()
 
 OPENVOICE_ROOT = Path(os.environ.get("OPENVOICE_ROOT", TTS_HUB_ROOT / "openvoice")).expanduser()
 OPENVOICE_PYTHON = Path(os.environ.get("OPENVOICE_PYTHON", OPENVOICE_ROOT / ".venv" / "bin" / "python")).expanduser()
@@ -836,26 +838,92 @@ def _openvoice_synthesise(data: Dict[str, Any]) -> Dict[str, Any]:
 
 def build_chattts_voice_payload() -> Dict[str, Any]:
     available = chattts_is_available()
-    voices: List[Dict[str, Any]] = []
     presets = chattts_list_presets()
+    voices: List[Dict[str, Any]] = []
+    groups: List[Dict[str, Any]] = []
+
+    voice_map: Dict[str, Dict[str, Any]] = {}
+
     if available:
+        random_voice_id = 'chattts_random'
         voices.append(
             {
-                'id': 'chattts_random',
+                'id': random_voice_id,
                 'label': 'Random Speaker',
                 'locale': None,
                 'gender': None,
                 'tags': ['ChatTTS'],
                 'notes': 'Sampled from ChatTTS model at runtime.',
                 'accent': {'id': 'chattts', 'label': 'ChatTTS', 'flag': '🎤'},
+                'raw': {'engine': 'chattts', 'type': 'random'},
             }
         )
+        voice_map[random_voice_id] = {'type': 'random'}
+
+    preset_voice_ids: List[str] = []
+    for preset in presets:
+        preset_id = preset.get('id')
+        speaker = preset.get('speaker')
+        if not isinstance(preset_id, str) or not preset_id.strip() or not isinstance(speaker, str):
+            continue
+        preset_voice_id = f"chattts_preset_{preset_id}"
+        voices.append(
+            {
+                'id': preset_voice_id,
+                'label': preset.get('label') or preset_id,
+                'locale': None,
+                'gender': None,
+                'tags': ['ChatTTS', 'Preset'],
+                'notes': preset.get('notes'),
+                'accent': {'id': 'chattts_preset', 'label': 'ChatTTS Preset', 'flag': '🎙️'},
+                'raw': {
+                    'engine': 'chattts',
+                    'type': 'preset',
+                    'preset_id': preset_id,
+                    'speaker': speaker,
+                    'seed': preset.get('seed'),
+                },
+            }
+        )
+        voice_map[preset_voice_id] = {
+            'type': 'preset',
+            'preset_id': preset_id,
+            'speaker': speaker,
+            'seed': preset.get('seed'),
+        }
+        preset_voice_ids.append(preset_voice_id)
+
+    if voices:
+        groups.append(
+            {
+                'id': 'chattts_all',
+                'label': 'ChatTTS Voices',
+                'flag': '🎤',
+                'voices': [voice['id'] for voice in voices],
+                'count': len(voices),
+            }
+        )
+        if preset_voice_ids:
+            groups.append(
+                {
+                    'id': 'chattts_presets',
+                    'label': 'Saved Presets',
+                    'flag': '⭐️',
+                    'voices': preset_voice_ids,
+                    'count': len(preset_voice_ids),
+                }
+            )
+
+    with _chattts_voice_lock:
+        _chattts_voice_cache.clear()
+        _chattts_voice_cache.update(voice_map)
+
     return {
         'engine': 'chattts',
         'available': available,
         'voices': voices,
-        'accentGroups': [],
-        'groups': [],
+        'accentGroups': groups,
+        'groups': groups,
         'count': len(voices),
         'presets': presets,
         'message': None if available else 'Install ChatTTS weights and ensure .venv exists to enable synthesis.',
@@ -987,8 +1055,26 @@ def _get_chattts_python() -> Path:
 
 def _chattts_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     base = validate_synthesis_payload(payload, require_voice=False)
-    voice = base.get('voice') or 'chattts_random'
-    speaker = payload.get('speaker')
+    voice_identifier = str(base.get('voice') or payload.get('voice') or 'chattts_random').strip() or 'chattts_random'
+
+    with _chattts_voice_lock:
+        meta = _chattts_voice_cache.get(voice_identifier)
+
+    speaker_value: Optional[str] = None
+    preset_seed: Optional[int] = None
+    if meta:
+        if isinstance(meta.get('speaker'), str) and meta['speaker'].strip():
+            speaker_value = meta['speaker'].strip()
+        if meta.get('seed') is not None:
+            try:
+                preset_seed = int(meta['seed'])
+            except (TypeError, ValueError):
+                preset_seed = None
+
+    explicit_speaker = payload.get('speaker')
+    if isinstance(explicit_speaker, str) and explicit_speaker.strip():
+        speaker_value = explicit_speaker.strip()
+
     text = base['text']
     seed: Optional[int] = None
     raw_seed = payload.get('seed')
@@ -998,12 +1084,15 @@ def _chattts_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         except (TypeError, ValueError) as exc:
             raise PlaygroundError('ChatTTS seed must be an integer.', status=400) from exc
         seed = seed_candidate
+    if seed is None and preset_seed is not None:
+        seed = preset_seed
     if seed is None:
         seed = random.randint(0, 2**31 - 1)
+
     return {
         'text': text,
-        'voice_id': voice,
-        'speaker': speaker if isinstance(speaker, str) and speaker.strip() else None,
+        'voice_id': voice_identifier,
+        'speaker': speaker_value,
         'format': 'mp3',
         'seed': seed,
     }
