@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -50,6 +51,19 @@ XTTS_SUPPORTED_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg"}
 
 _xtts_voice_cache: Dict[str, Path] = {}
 _xtts_voice_lock = threading.Lock()
+
+_openvoice_voice_cache: Dict[str, Dict[str, Any]] = {}
+_openvoice_voice_lock = threading.Lock()
+_openvoice_style_cache: Optional[Dict[str, List[str]]] = None
+_openvoice_style_lock = threading.Lock()
+
+OPENVOICE_ROOT = Path(os.environ.get("OPENVOICE_ROOT", TTS_HUB_ROOT / "openvoice")).expanduser()
+OPENVOICE_PYTHON = Path(os.environ.get("OPENVOICE_PYTHON", OPENVOICE_ROOT / ".venv" / "bin" / "python")).expanduser()
+OPENVOICE_CKPT_ROOT = Path(os.environ.get("OPENVOICE_CKPT_ROOT", OPENVOICE_ROOT / "checkpoints")).expanduser()
+OPENVOICE_REFERENCE_DIR = Path(os.environ.get("OPENVOICE_REFERENCE_DIR", OPENVOICE_ROOT / "resources")).expanduser()
+OPENVOICE_TIMEOUT_SECONDS = float(os.environ.get("OPENVOICE_TIMEOUT", "120"))
+OPENVOICE_WATERMARK = os.environ.get("OPENVOICE_WATERMARK", "@MyShell")
+OPENVOICE_SUPPORTED_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg"}
 
 # ---------------------------------------------------------------------------
 # Custom error
@@ -472,6 +486,255 @@ def _xtts_synthesise(data: Dict[str, Any]) -> Dict[str, Any]:
         'path': f"/audio/{filename}",
         'filename': filename,
         'sample_rate': data['sample_rate'],
+    }
+
+
+
+def _normalise_openvoice_language(value: Optional[str]) -> str:
+    if not value:
+        return "English"
+    token = value.strip().lower()
+    if token.startswith("zh") or token.startswith("ch") or "chinese" in token:
+        return "Chinese"
+    return "English"
+
+
+def load_openvoice_styles() -> Dict[str, List[str]]:
+    with _openvoice_style_lock:
+        if _openvoice_style_cache is not None:
+            return dict(_openvoice_style_cache)
+        mapping: Dict[str, List[str]] = {}
+        language_dirs = {
+            "English": OPENVOICE_CKPT_ROOT / "base_speakers" / "EN" / "config.json",
+            "Chinese": OPENVOICE_CKPT_ROOT / "base_speakers" / "ZH" / "config.json",
+        }
+        for language, config_path in language_dirs.items():
+            if not config_path.exists():
+                continue
+            try:
+                with config_path.open("r", encoding="utf-8") as config_file:
+                    config_data = json.load(config_file)
+                speaker_map = config_data.get("speakers", {})
+                styles = sorted(str(name) for name in speaker_map.keys())
+                if styles:
+                    mapping[language] = styles
+            except (OSError, json.JSONDecodeError):
+                continue
+        _openvoice_style_cache = mapping
+        return dict(mapping)
+
+
+def get_openvoice_voice_map() -> Dict[str, Dict[str, Any]]:
+    reference_root = OPENVOICE_REFERENCE_DIR
+    mapping: Dict[str, Dict[str, Any]] = {}
+    if reference_root.exists():
+        for path in sorted(reference_root.rglob("*")):
+            if not path.is_file():
+                continue
+            if path.suffix.lower() not in OPENVOICE_SUPPORTED_EXTENSIONS:
+                continue
+            language = _normalise_openvoice_language(path.parent.name if path.parent != reference_root else path.name)
+            if "chinese" in path.stem.lower():
+                language = "Chinese"
+            base_id = f"openvoice_{_slugify_voice_id(path.stem)}"
+            voice_id = base_id
+            counter = 1
+            while voice_id in mapping:
+                counter += 1
+                voice_id = f"{base_id}_{counter}"
+            mapping[voice_id] = {
+                "path": path.resolve(),
+                "language": language,
+                "style": "default",
+                "label": path.stem.replace('_', ' ').title(),
+            }
+    with _openvoice_voice_lock:
+        _openvoice_voice_cache.clear()
+        _openvoice_voice_cache.update(mapping)
+    return dict(mapping)
+
+
+def build_openvoice_voice_payload() -> Dict[str, Any]:
+    styles_map = load_openvoice_styles()
+    voice_map = get_openvoice_voice_map()
+    accent_map = {
+        "English": ("openvoice_en", "OpenVoice English", "🇺🇸"),
+        "Chinese": ("openvoice_zh", "OpenVoice Chinese", "🇨🇳"),
+    }
+    voices: List[Dict[str, Any]] = []
+    grouped: Dict[str, List[str]] = {}
+    for voice_id, meta in voice_map.items():
+        language = meta.get("language", "English")
+        accent = accent_map.get(language, accent_map["English"])
+        voices.append(
+            {
+                "id": voice_id,
+                "label": meta.get("label", voice_id.title()),
+                "locale": None,
+                "gender": None,
+                "tags": ["OpenVoice", language],
+                "notes": meta["path"].name,
+                "accent": {"id": accent[0], "label": accent[1], "flag": accent[2]},
+                "raw": {
+                    "engine": "openvoice",
+                    "reference": str(meta["path"]),
+                    "language": language,
+                    "style": meta.get("style", "default"),
+                },
+            }
+        )
+        grouped.setdefault(language, []).append(voice_id)
+    accent_groups: List[Dict[str, Any]] = []
+    for language, members in grouped.items():
+        accent = accent_map.get(language, accent_map["English"])
+        accent_groups.append(
+            {
+                "id": f"openvoice_{language.lower()}",
+                "label": f"OpenVoice {language}",
+                "flag": accent[2],
+                "voices": members,
+                "count": len(members),
+            }
+        )
+    message = None
+    if not voices:
+        message = "Add reference clips under openvoice/resources/ and reload."
+    python_path = _get_openvoice_python()
+    base_dir = OPENVOICE_CKPT_ROOT / "base_speakers" / "EN"
+    converter_dir = OPENVOICE_CKPT_ROOT / "converter"
+    available = python_path.exists() and base_dir.exists() and converter_dir.exists() and bool(voices)
+    return {
+        "engine": "openvoice",
+        "available": available,
+        "voices": voices,
+        "accentGroups": accent_groups,
+        "groups": accent_groups,
+        "count": len(voices),
+        "message": message,
+    }
+
+
+def openvoice_is_available() -> bool:
+    python_path = _get_openvoice_python()
+    if not python_path.exists():
+        return False
+    if not OPENVOICE_CKPT_ROOT.exists():
+        return False
+    converter_dir = OPENVOICE_CKPT_ROOT / "converter"
+    base_dir = OPENVOICE_CKPT_ROOT / "base_speakers" / "EN"
+    if not converter_dir.exists() or not base_dir.exists():
+        return False
+    voice_map = get_openvoice_voice_map()
+    return bool(voice_map)
+
+
+def _get_openvoice_python() -> Path:
+    if OPENVOICE_PYTHON.exists() and OPENVOICE_PYTHON.is_file():
+        return OPENVOICE_PYTHON
+    return Path(sys.executable).resolve()
+
+
+def _openvoice_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    base = validate_synthesis_payload(payload, require_voice=True)
+    voice_map = get_openvoice_voice_map()
+    voice_identifier = str(base["voice"])
+    meta = voice_map.get(voice_identifier)
+    if meta is None:
+        raise PlaygroundError(f"Unknown OpenVoice reference '{voice_identifier}'.", status=400)
+
+    language = _normalise_openvoice_language(payload.get("language") or meta.get("language"))
+    styles_map = load_openvoice_styles()
+    available_styles = styles_map.get(language, [])
+    requested_style = str(payload.get("style") or meta.get("style") or (available_styles[0] if available_styles else "default"))
+    if available_styles and requested_style not in available_styles:
+        raise PlaygroundError(
+            f"Style '{requested_style}' is not available for OpenVoice {language}.",
+            status=400,
+        )
+
+    watermark = str(payload.get("watermark") or OPENVOICE_WATERMARK)
+    return {
+        "text": base["text"],
+        "voice_id": voice_identifier,
+        "reference_path": meta["path"],
+        "language": language,
+        "style": requested_style,
+        "watermark": watermark,
+        "sample_rate": 22050,
+    }
+
+
+def _openvoice_synthesise(data: Dict[str, Any]) -> Dict[str, Any]:
+    if not openvoice_is_available():
+        raise PlaygroundError("OpenVoice engine is not available.", status=503)
+
+    filename = f"{int(time.time())}-{uuid.uuid4().hex[:10]}-openvoice.wav"
+    output_path = OUTPUT_DIR / filename
+    python_path = _get_openvoice_python()
+
+    cmd = [
+        str(python_path),
+        "scripts/cli_demo.py",
+        "--text",
+        data["text"],
+        "--language",
+        data["language"],
+        "--style",
+        data["style"],
+        "--reference",
+        str(data["reference_path"]),
+        "--output",
+        str(output_path),
+        "--ckpt-root",
+        str(OPENVOICE_CKPT_ROOT),
+        "--device",
+        "cpu",
+        "--watermark-message",
+        data["watermark"],
+    ]
+
+    env = os.environ.copy()
+    env.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+    env.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
+    env.setdefault("CUDA_VISIBLE_DEVICES", "-1")
+
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=OPENVOICE_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=OPENVOICE_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError as exc:
+        raise PlaygroundError(
+            "OpenVoice python executable not found. Set OPENVOICE_PYTHON to the CLI interpreter.",
+            status=500,
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise PlaygroundError("OpenVoice synthesis timed out.", status=504) from exc
+
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or "Unknown error"
+        raise PlaygroundError(f"OpenVoice synthesis failed: {message}", status=500)
+
+    if not output_path.exists():
+        raise PlaygroundError("OpenVoice did not produce an output file.", status=500)
+
+    base_artifact = output_path.with_name(f"{output_path.stem}_base.wav")
+    if base_artifact.exists():
+        try:
+            base_artifact.unlink()
+        except OSError:
+            pass
+
+    return {
+        "id": filename,
+        "engine": "openvoice",
+        "voice": data["voice_id"],
+        "path": f"/audio/{filename}",
+        "filename": filename,
+        "sample_rate": data["sample_rate"],
     }
 
 
@@ -917,11 +1180,14 @@ ENGINE_REGISTRY: Dict[str, Dict[str, Any]] = {
     "openvoice": {
         "id": "openvoice",
         "label": "OpenVoice v2",
-        "description": "OpenVoice instant voice cloning (integration pending).",
-        "availability": lambda: False,
-        "requires_voice": False,
+        "description": "OpenVoice instant voice cloning (tone-color transfer).",
+        "availability": openvoice_is_available,
+        "requires_voice": True,
+        "defaults": {"language": "English", "style": "default"},
         "supports": {"cloning": True, "styles": True},
-        "status": "planned",
+        "prepare": _openvoice_prepare_payload,
+        "synthesise": _openvoice_synthesise,
+        "fetch_voices": build_openvoice_voice_payload,
     },
     "chattts": {
         "id": "chattts",
