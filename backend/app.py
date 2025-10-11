@@ -51,6 +51,7 @@ XTTS_VOICE_DIR = Path(os.environ.get("XTTS_VOICE_DIR", XTTS_SERVICE_DIR / "voice
 XTTS_OUTPUT_FORMAT = os.environ.get("XTTS_OUTPUT_FORMAT", "wav").lower()
 XTTS_TIMEOUT_SECONDS = float(os.environ.get("XTTS_TIMEOUT", "120"))
 XTTS_SUPPORTED_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg"}
+XTTS_SERVER_URL = os.environ.get("XTTS_SERVER_URL")
 
 _xtts_voice_cache: Dict[str, Path] = {}
 _xtts_voice_lock = threading.Lock()
@@ -435,6 +436,9 @@ def _xtts_synthesise(data: Dict[str, Any]) -> Dict[str, Any]:
     if not xtts_is_available():
         raise PlaygroundError('XTTS engine is not available.', status=503)
 
+    if XTTS_SERVER_URL:
+        return _xtts_synthesise_via_server(data)
+
     format_ext = data['format'].lstrip('.')
     filename = f"{int(time.time())}-{uuid.uuid4().hex[:10]}-xtts.{format_ext}"
     output_path = OUTPUT_DIR / filename
@@ -488,6 +492,76 @@ def _xtts_synthesise(data: Dict[str, Any]) -> Dict[str, Any]:
 
     if not output_path.exists():
         raise PlaygroundError('XTTS did not produce an output file.', status=500)
+
+    return {
+        'id': filename,
+        'engine': 'xtts',
+        'voice': data['voice_id'],
+        'path': f"/audio/{filename}",
+        'filename': filename,
+        'sample_rate': data['sample_rate'],
+    }
+
+
+def _xtts_synthesise_via_server(data: Dict[str, Any]) -> Dict[str, Any]:
+    if not XTTS_SERVER_URL:
+        raise PlaygroundError('XTTS server URL is not configured.', status=500)
+
+    import requests
+    from urllib.parse import urljoin
+
+    base_url = XTTS_SERVER_URL.rstrip('/')
+    payload = {
+        "text": data["text"],
+        "speaker_ref": str(data["voice_path"]),
+        "language": data["language"],
+        "temperature": data["temperature"],
+        "speed": data["speed"],
+        "seed": data["seed"],
+        "format": data["format"].lstrip('.'),
+        "sample_rate": data["sample_rate"],
+    }
+
+    try:
+        response = requests.post(
+            f"{base_url}/tts",
+            json=payload,
+            timeout=XTTS_TIMEOUT_SECONDS,
+        )
+    except requests.RequestException as exc:
+        raise PlaygroundError(f"XTTS server request failed: {exc}", status=503) from exc
+
+    if response.status_code != 200:
+        message = response.text.strip() or f"HTTP {response.status_code}"
+        raise PlaygroundError(f"XTTS server error: {message}", status=response.status_code)
+
+    try:
+        result = response.json()
+    except ValueError as exc:
+        raise PlaygroundError("XTTS server returned invalid JSON.", status=500) from exc
+
+    if not result.get("success"):
+        error_message = result.get("error") or result.get("message") or "Unknown XTTS server failure."
+        raise PlaygroundError(f"XTTS server failed: {error_message}", status=500)
+
+    audio_path = result.get("audio_url")
+    if not audio_path:
+        raise PlaygroundError("XTTS server response missing audio URL.", status=500)
+
+    download_url = urljoin(f"{base_url}/", audio_path.lstrip('/'))
+    try:
+        download_response = requests.get(download_url, timeout=XTTS_TIMEOUT_SECONDS)
+        download_response.raise_for_status()
+    except requests.RequestException as exc:
+        raise PlaygroundError(f"Failed to download XTTS audio: {exc}", status=500) from exc
+
+    format_ext = data['format'].lstrip('.')
+    filename = f"{int(time.time())}-{uuid.uuid4().hex[:10]}-xtts.{format_ext}"
+    output_path = OUTPUT_DIR / filename
+    try:
+        output_path.write_bytes(download_response.content)
+    except OSError as exc:
+        raise PlaygroundError(f"Failed to write XTTS output: {exc}", status=500) from exc
 
     return {
         'id': filename,
@@ -1612,50 +1686,145 @@ def synthesise_endpoint():
     return jsonify(result)
 
 
+def _load_engine_voice_catalog(engine: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    fetcher = engine.get("fetch_voices")
+    if not callable(fetcher):
+        return {}
+    try:
+        data = fetcher()
+    except Exception:
+        return {}
+    voices = data.get("voices") if isinstance(data, dict) else None
+    if not isinstance(voices, list):
+        return {}
+    catalogue: Dict[str, Dict[str, Any]] = {}
+    for entry in voices:
+        if isinstance(entry, dict) and entry.get("id"):
+            catalogue[str(entry["id"])] = entry
+    return catalogue
+
+
+def _build_clip_request(
+    base_payload: Dict[str, Any],
+    voice_id: str,
+    overrides: Optional[Dict[str, Any]] = None,
+    *,
+    text: Optional[str] = None,
+) -> Dict[str, Any]:
+    overrides = overrides or {}
+    clip_payload: Dict[str, Any] = {
+        "text": text if text is not None else base_payload["text"],
+        "voice": voice_id,
+        "language": overrides.get("language", base_payload["language"]),
+        "speed": overrides.get("speed", base_payload["speed"]),
+        "trimSilence": overrides.get("trimSilence", overrides.get("trim_silence", base_payload["trim_silence"])),
+    }
+    clip_payload["trimSilence"] = bool(clip_payload["trimSilence"])
+    clip_payload["trim_silence"] = clip_payload["trimSilence"]
+    for key, value in overrides.items():
+        if key in {"language", "speed", "trimSilence", "trim_silence"}:
+            continue
+        clip_payload[key] = value
+    clip_payload.setdefault("format", overrides.get("format", "wav"))
+    return clip_payload
+
+
+def _synthesise_clip_via_engine(engine: Dict[str, Any], clip_payload: Dict[str, Any]) -> Tuple[np.ndarray, int]:
+    prepare = engine.get("prepare")
+    handler = engine.get("synthesise")
+    if not callable(handler):
+        raise PlaygroundError(f"TTS engine '{engine['id']}' does not support synthesis.", status=503)
+
+    prepared_payload = prepare(clip_payload) if callable(prepare) else clip_payload
+
+    result = handler(prepared_payload)
+    if not isinstance(result, dict):
+        raise PlaygroundError("Unexpected response from TTS engine.", status=500)
+
+    audio_path = None
+    for key in ("path", "audio_path", "audioUrl", "audio_url"):
+        candidate = result.get(key)
+        if candidate:
+            audio_path = str(candidate)
+            break
+    if not audio_path:
+        raise PlaygroundError("TTS engine response missing audio path.", status=500)
+
+    file_path = Path(audio_path)
+    if audio_path.startswith("/audio/"):
+        file_path = OUTPUT_DIR / audio_path.split("/")[-1]
+    elif not file_path.is_absolute():
+        file_path = OUTPUT_DIR / file_path.name
+
+    if not file_path.exists():
+        raise PlaygroundError(f"TTS audio not found at {file_path}", status=500)
+
+    audio, sample_rate = sf.read(str(file_path), dtype="float32")
+    if audio.ndim > 1:
+        audio = np.mean(audio, axis=1)
+    return audio.astype(np.float32), int(sample_rate)
+
+
 def render_announcer_segments(
+    engine: Dict[str, Any],
     announcer_cfg: Dict[str, Any],
     voice_id: str,
-    voice_profile: VoiceProfile,
-    base_language: str,
-    base_speed: float,
-    base_trim: bool,
+    voice_meta: Optional[Dict[str, Any]],
+    base_payload: Dict[str, Any],
+    voice_overrides: Dict[str, Dict[str, Any]],
 ) -> Tuple[List[np.ndarray], Optional[int]]:
     segments: List[np.ndarray] = []
-    sample_rate: Optional[int] = None
     resolved_voice = announcer_cfg.get("voice") or voice_id
     template = (announcer_cfg.get("template") or "Now auditioning {voice_label}").strip()
-    speed = float(announcer_cfg.get("speed", base_speed))
-    trim = bool(announcer_cfg.get("trim", announcer_cfg.get("trim_silence", base_trim)))
     gap_seconds = float(announcer_cfg.get("gapSeconds", announcer_cfg.get("gap_seconds", 0.5)))
 
-    tts = get_tts()
+    voice_label = None
+    if voice_meta and isinstance(voice_meta, dict):
+        voice_label = voice_meta.get("label")
+    if not voice_label:
+        voice_label = voice_id
+
     try:
-        announcer_text = template.format(voice=voice_id, voice_label=voice_profile.label)
+        announcer_text = template.format(voice=voice_id, voice_label=voice_label)
     except Exception:
         announcer_text = template
 
-    ann_audio, ann_sr = tts.create(
-        announcer_text,
-        voice=resolved_voice,
-        speed=speed,
-        lang=base_language,
-        trim=trim,
+    overrides: Dict[str, Any] = {}
+    base_override = voice_overrides.get(resolved_voice)
+    if isinstance(base_override, dict):
+        overrides.update(base_override)
+    ann_override = announcer_cfg.get("overrides")
+    if isinstance(ann_override, dict):
+        overrides.update(ann_override)
+
+    language = overrides.pop("language", announcer_cfg.get("language", base_payload["language"]))
+    speed = float(overrides.pop("speed", announcer_cfg.get("speed", base_payload["speed"])))
+    trim_value = overrides.pop("trimSilence", overrides.pop("trim_silence", announcer_cfg.get("trim", announcer_cfg.get("trim_silence", base_payload["trim_silence"]))))
+
+    clip_payload = _build_clip_request(
+        {
+            **base_payload,
+            "language": language,
+            "speed": speed,
+            "trim_silence": bool(trim_value),
+        },
+        resolved_voice,
+        overrides,
+        text=announcer_text,
     )
-    ann_audio = np.squeeze(ann_audio).astype(np.float32)
+
+    ann_audio, ann_sr = _synthesise_clip_via_engine(engine, clip_payload)
     segments.append(ann_audio)
-    if gap_seconds > 0:
-        gap = np.zeros(int(ann_sr * gap_seconds), dtype=np.float32)
+    if gap_seconds > 0 and ann_sr:
+        gap = np.zeros(int(float(ann_sr) * gap_seconds), dtype=np.float32)
         segments.append(gap)
-    sample_rate = ann_sr
-    return segments, sample_rate
+    return segments, ann_sr
 
 
 @api.route("/audition", methods=["POST"])
 def audition_endpoint():
     payload = parse_json_request()
     engine, _ = resolve_engine(payload.get("engine"))
-    if engine["id"] != "kokoro":
-        raise PlaygroundError("Auditions are currently only supported for Kokoro voices.", status=400)
 
     base_payload = validate_synthesis_payload(payload, require_voice=False)
 
@@ -1669,30 +1838,29 @@ def audition_endpoint():
         raise PlaygroundError("Provide at least two voices to build an audition.", status=400)
 
     gap_seconds = float(payload.get("gapSeconds", payload.get("gap_seconds", 1.0)))
-    announcer_cfg = payload.get("announcer") or {}
+    announcer_cfg = (payload.get("announcer") or {}) if isinstance(payload.get("announcer"), dict) else {}
     announcer_enabled = bool(announcer_cfg.get("enabled"))
+    voice_overrides_raw = payload.get("voice_overrides") or {}
+    voice_overrides = voice_overrides_raw if isinstance(voice_overrides_raw, dict) else {}
 
-    catalogue = {voice.id: voice for voice in load_voice_profiles()}
-    for voice_id in voice_ids:
-        if voice_id not in catalogue:
-            raise PlaygroundError(f"Unknown voice id '{voice_id}'.", status=400)
-
-    tts = get_tts()
+    catalogue = _load_engine_voice_catalog(engine)
     sample_rate: Optional[int] = None
     clips: List[np.ndarray] = []
 
     for voice_id in voice_ids:
-        voice_profile = catalogue[voice_id]
         segments: List[np.ndarray] = []
+        overrides = voice_overrides.get(voice_id)
+        if not isinstance(overrides, dict):
+            overrides = {}
 
         if announcer_enabled:
             announcer_segments, ann_sr = render_announcer_segments(
+                engine,
                 announcer_cfg,
                 voice_id,
-                voice_profile,
-                base_payload["language"],
-                base_payload["speed"],
-                base_payload["trim_silence"],
+                catalogue.get(voice_id),
+                base_payload,
+                voice_overrides,
             )
             segments.extend(announcer_segments)
             if ann_sr is not None:
@@ -1701,14 +1869,8 @@ def audition_endpoint():
                 elif sample_rate != ann_sr:
                     raise PlaygroundError("Sample rate mismatch between announcer segments.", status=500)
 
-        audio, sr = tts.create(
-            base_payload["text"],
-            voice=voice_id,
-            speed=base_payload["speed"],
-            lang=base_payload["language"],
-            trim=base_payload["trim_silence"],
-        )
-        audio = np.squeeze(audio).astype(np.float32)
+        clip_payload = _build_clip_request(base_payload, voice_id, overrides)
+        audio, sr = _synthesise_clip_via_engine(engine, clip_payload)
         if sample_rate is None:
             sample_rate = sr
         elif sample_rate != sr:

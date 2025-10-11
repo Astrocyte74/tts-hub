@@ -142,6 +142,8 @@ export interface AuditionAnnouncerConfig {
   gapSeconds?: number;
   trim?: boolean;
   trim_silence?: boolean;
+  language?: string;
+  overrides?: Record<string, unknown>;
 }
 
 export interface AuditionRequest {
@@ -153,4 +155,5 @@ export interface AuditionRequest {
   announcer?: AuditionAnnouncerConfig | null;
   gapSeconds?: number;
   engine?: string;
+  voiceOverrides?: Record<string, Record<string, unknown>>;
 }

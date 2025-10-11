@@ -895,10 +895,6 @@ function App() {
       setError('Select two or more voices for an audition.');
       return;
     }
-    if (engineId !== 'kokoro') {
-      setError('Auditions are currently only supported for Kokoro voices.');
-      return;
-    }
     if (!backendReady) {
       const message = engineAvailable
         ? 'Models or voices are missing. Download assets before auditioning.'
@@ -907,6 +903,36 @@ function App() {
       return;
     }
 
+    const overridesByVoice: Record<string, Record<string, unknown>> = {};
+    selectedVoices.forEach((voiceId) => {
+      const override: Record<string, unknown> = {};
+      if (engineId === 'openvoice') {
+        override.style = openvoiceVoiceStyles[voiceId] ?? openvoiceStyle ?? 'default';
+        override.language = normaliseLanguage(language);
+      }
+      if (engineId === 'chattts') {
+        if (chatttsPresetId && chatttsPresetId !== 'random') {
+          const preset = chatttsPresets.find((item) => item.id === chatttsPresetId);
+          if (preset) {
+            override.speaker = preset.speaker;
+          }
+        }
+        if (chatttsSeed && chatttsSeed.trim()) {
+          const parsed = Number(chatttsSeed.trim());
+          if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
+            override.seed = Math.floor(parsed);
+          }
+        }
+      }
+      if (Object.keys(override).length > 0) {
+        overridesByVoice[voiceId] = override;
+      }
+    });
+
+    const voiceOverridesPayload: Record<string, Record<string, unknown>> = Object.fromEntries(
+      Object.entries(overridesByVoice).filter(([, value]) => Object.keys(value).length > 0),
+    );
+
     const announcerConfig = announcerEnabled
       ? {
           enabled: true,
@@ -914,8 +940,14 @@ function App() {
           template: (announcerTemplate || DEFAULT_ANNOUNCER_TEMPLATE).trim(),
           gapSeconds: Number.isFinite(announcerGap) ? announcerGap : 0,
           trim: Boolean(trimSilence),
+          speed: Number(speed),
+          language: normaliseLanguage(language),
         }
       : undefined;
+
+    if (announcerConfig && announcerConfig.voice && voiceOverridesPayload[announcerConfig.voice]) {
+      announcerConfig.overrides = { ...voiceOverridesPayload[announcerConfig.voice] };
+    }
 
     try {
       await auditionMutation.mutateAsync({
@@ -927,6 +959,7 @@ function App() {
         announcer: announcerConfig,
         gapSeconds: 1.0,
         engine: engineId,
+        voiceOverrides: voiceOverridesPayload,
       });
     } catch (err) {
       console.error(err);
@@ -941,7 +974,7 @@ function App() {
   };
 
   const canSynthesize = backendReady && Boolean(text.trim()) && selectedVoices.length > 0;
-  const hasMultipleVoices = backendReady && engineId === 'kokoro' && selectedVoices.length > 1;
+  const hasMultipleVoices = backendReady && selectedVoices.length > 1;
 
   return (
     <div className="app">
@@ -1035,7 +1068,7 @@ function App() {
             onManageKokoroFavorites={engineId === 'kokoro' ? handleOpenFavoritesManager : undefined}
             kokoroFavoritesCount={engineId === 'kokoro' ? kokoroFavorites.length : undefined}
           />
-          {engineId === 'kokoro' && engineAvailable ? (
+          {engineAvailable ? (
             <AnnouncerControls
               enabled={announcerEnabled}
               onEnabledChange={setAnnouncerEnabled}

@@ -251,6 +251,33 @@ if [[ -d "$CHATTT_ROOT" ]]; then
   mkdir -p "$CHATTT_PRESET_DIR"
 fi
 
+XTTS_SERVER_LOG="${XTTS_SERVER_LOG:-/tmp/kokoro_xtts_server.log}"
+XTTS_SERVER_HOST="${XTTS_SERVER_HOST:-127.0.0.1}"
+XTTS_SERVER_PORT="${XTTS_SERVER_PORT:-3333}"
+
+if [[ -x "$XTTS_PYTHON" && -f "$XTTS_SERVICE_DIR/run_server.py" ]]; then
+  export XTTS_SERVER_URL="${XTTS_SERVER_URL:-http://$XTTS_SERVER_HOST:$XTTS_SERVER_PORT}"
+  existing_xtts_pids=$(lsof -ti TCP:$XTTS_SERVER_PORT 2>/dev/null || true)
+  if [[ -n "$existing_xtts_pids" ]]; then
+    log "Stopping existing XTTS server on port $XTTS_SERVER_PORT ($existing_xtts_pids)"
+    echo "$existing_xtts_pids" | xargs kill 2>/dev/null || true
+    sleep 1
+  fi
+  if [[ -z "${XTTS_SERVER_PID:-}" ]] || ! kill -0 "$XTTS_SERVER_PID" 2>/dev/null; then
+    log "Starting XTTS server on $XTTS_SERVER_URL"
+    (
+      cd "$XTTS_SERVICE_DIR"
+      "$XTTS_PYTHON" run_server.py
+    ) >>"$XTTS_SERVER_LOG" 2>&1 &
+    XTTS_SERVER_PID=$!
+    log "XTTS server PID $XTTS_SERVER_PID (logs -> $XTTS_SERVER_LOG)"
+  else
+    log "XTTS server already running (PID $XTTS_SERVER_PID); skipping restart."
+  fi
+else
+  log "XTTS server script not found – falling back to CLI mode."
+fi
+
 BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 BACKEND_PORT="${BACKEND_PORT:-7860}"
 
@@ -268,7 +295,7 @@ if [[ "$MODE_LOWER" == "prod" ]]; then
   fi
 fi
 
-trap '[[ -n "${BACKEND_PID:-}" ]] && kill "$BACKEND_PID" 2>/dev/null; [[ -n "${FRONTEND_PID:-}" ]] && kill "$FRONTEND_PID" 2>/dev/null' EXIT
+trap '[[ -n "${BACKEND_PID:-}" ]] && kill "$BACKEND_PID" 2>/dev/null; [[ -n "${FRONTEND_PID:-}" ]] && kill "$FRONTEND_PID" 2>/dev/null; [[ -n "${XTTS_SERVER_PID:-}" ]] && kill "$XTTS_SERVER_PID" 2>/dev/null' EXIT
 
 log "Starting Flask backend on http://$BACKEND_HOST:$BACKEND_PORT"
 BACKEND_HOST="$BACKEND_HOST" BACKEND_PORT="$BACKEND_PORT" "$VENV_PY" "$BACKEND_DIR/app.py" &

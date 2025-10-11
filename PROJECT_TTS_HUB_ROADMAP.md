@@ -79,6 +79,7 @@ Each engine keeps its own repo/venv/asset footprint. The playground backend expo
 - Settings panel exposes a Kokoro favorites dropdown so saved presets can instantly re-select their voice profiles.
 - Favorites manager modal lets users rename or delete Kokoro favorites without leaving the app.
 - OpenVoice clips now show style/language badges, inline reference previews (with download fallback), and preserve the style used per clip via voice-specific overrides.
+- XTTS/OpenVoice/ChatTTS now participate in the audition workflow (announcer options, per-voice overrides) so multi-voice reels behave consistently across engines.
 - Added an OpenVoice help modal with recording tips (15–30s clips, iPhone-class mics recommended) and step-by-step instructions for dropping custom references into `openvoice/resources/`.
 
 ### External repos inside `tts-hub/`
