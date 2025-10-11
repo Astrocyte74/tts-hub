@@ -29,6 +29,14 @@ AUTO_DOWNLOAD="${KOKORO_AUTO_DOWNLOAD:-1}"
 MODE="${KOKORO_MODE:-dev}"
 BACKEND_API_PREFIX="${API_PREFIX:-${VITE_API_PREFIX:-api}}"
 DIST_INDEX="$FRONTEND_DIR/dist/index.html"
+TTS_HUB_ROOT="${TTS_HUB_ROOT:-$(cd "$ROOT_DIR/.." && pwd)}"
+XTTS_ROOT="${XTTS_ROOT:-$TTS_HUB_ROOT/XTTS}"
+XTTS_SERVICE_DIR="${XTTS_SERVICE_DIR:-$XTTS_ROOT/tts-service}"
+XTTS_VENV="${XTTS_VENV:-$XTTS_SERVICE_DIR/.venv}"
+OPENVOICE_ROOT="${OPENVOICE_ROOT:-$TTS_HUB_ROOT/openvoice}"
+OPENVOICE_VENV="${OPENVOICE_VENV:-$OPENVOICE_ROOT/.venv}"
+CHATTT_ROOT="${CHATTT_ROOT:-$TTS_HUB_ROOT/chattts}"
+CHATTT_VENV="${CHATTT_VENV:-$CHATTT_ROOT/.venv}"
 
 if command -v npm >/dev/null 2>&1; then
   HAS_NPM=1
@@ -54,6 +62,74 @@ fi
 
 log() {
   printf '[Kokoro SPA] %s\n' "$*"
+}
+
+ensure_python_venv() {
+  local name="$1"
+  local root_dir="$2"
+  local venv_dir="$3"
+  local requirements_file="$4"
+  local python_bin="${5:-$PYTHON}"
+
+  if [[ ! -d "$root_dir" ]]; then
+    log "$name root not found at $root_dir – skipping automatic setup."
+    return 0
+  fi
+
+  if ! command -v "$python_bin" >/dev/null 2>&1; then
+    python_bin="$PYTHON"
+  fi
+
+  local venv_python="$venv_dir/bin/python"
+  local venv_pip="$venv_dir/bin/pip"
+
+  local recreate=0
+  if [[ ! -x "$venv_python" || ! -x "$venv_pip" ]]; then
+    recreate=1
+  else
+    if ! "$venv_python" -c "import sys" >/dev/null 2>&1; then
+      recreate=1
+    fi
+    if [[ $recreate -eq 0 ]]; then
+      if ! "$venv_pip" --version >/dev/null 2>&1; then
+        recreate=1
+      fi
+    fi
+  fi
+
+  if [[ $recreate -eq 1 ]]; then
+    if [[ -d "$venv_dir" ]]; then
+      log "Recreating $name virtual environment at $venv_dir"
+      rm -rf "$venv_dir"
+    else
+      log "Creating $name virtual environment at $venv_dir"
+    fi
+    mkdir -p "$venv_dir"
+    "$python_bin" -m venv "$venv_dir"
+    venv_python="$venv_dir/bin/python"
+    venv_pip="$venv_dir/bin/pip"
+  fi
+
+  if [[ ! -x "$venv_python" || ! -x "$venv_pip" ]]; then
+    log "$name virtualenv missing executables at $venv_dir – manual intervention may be required."
+    return 1
+  fi
+
+  if [[ -n "$requirements_file" ]]; then
+    if [[ -f "$requirements_file" ]]; then
+      local deps_stamp="$venv_dir/.deps_stamp"
+      if [[ ! -f "$deps_stamp" || "$requirements_file" -nt "$deps_stamp" ]]; then
+        log "Installing $name dependencies from $(basename "$requirements_file")"
+        "$venv_python" -m pip install --upgrade pip
+        "$venv_python" -m pip install -r "$requirements_file"
+        touch "$deps_stamp"
+      else
+        log "$name dependencies already present."
+      fi
+    else
+      log "$name requirements file not found at $requirements_file – skipping dependency install."
+    fi
+  fi
 }
 
 PYTHON="python3"
@@ -152,11 +228,28 @@ else
   log "Skipping frontend dependency install (npm unavailable)."
 fi
 
+ensure_python_venv "XTTS" "$XTTS_SERVICE_DIR" "$XTTS_VENV" "$XTTS_SERVICE_DIR/requirements.txt"
+ensure_python_venv "OpenVoice" "$OPENVOICE_ROOT" "$OPENVOICE_VENV" "$OPENVOICE_ROOT/requirements.txt"
+ensure_python_venv "ChatTTS" "$CHATTT_ROOT" "$CHATTT_VENV" "$CHATTT_ROOT/requirements.txt"
+
 export KOKORO_MODEL="${KOKORO_MODEL:-$MODEL_PATH_DEFAULT}"
 export KOKORO_VOICES="${KOKORO_VOICES:-$VOICES_PATH_DEFAULT}"
 export KOKORO_OUT="${KOKORO_OUT:-$ROOT_DIR/out}"
 export API_PREFIX="$BACKEND_API_PREFIX"
+export XTTS_ROOT
+export XTTS_SERVICE_DIR
+export XTTS_PYTHON="${XTTS_PYTHON:-$XTTS_VENV/bin/python}"
+export XTTS_VOICE_DIR="${XTTS_VOICE_DIR:-$XTTS_SERVICE_DIR/voices}"
+export OPENVOICE_ROOT
+export OPENVOICE_PYTHON="${OPENVOICE_PYTHON:-$OPENVOICE_VENV/bin/python}"
+export OPENVOICE_CKPT_ROOT="${OPENVOICE_CKPT_ROOT:-$OPENVOICE_ROOT/checkpoints}"
+export CHATTT_ROOT
+export CHATTT_PYTHON="${CHATTT_PYTHON:-$CHATTT_VENV/bin/python}"
+export CHATTT_PRESET_DIR="${CHATTT_PRESET_DIR:-$CHATTT_ROOT/presets}"
 mkdir -p "$KOKORO_OUT"
+if [[ -d "$CHATTT_ROOT" ]]; then
+  mkdir -p "$CHATTT_PRESET_DIR"
+fi
 
 BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 BACKEND_PORT="${BACKEND_PORT:-7860}"

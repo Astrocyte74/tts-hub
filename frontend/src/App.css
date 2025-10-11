@@ -108,6 +108,10 @@
   gap: 16px;
 }
 
+.panel__header--dense {
+  margin-bottom: 6px;
+}
+
 .panel__title {
   margin: 0;
   font-size: 20px;
@@ -126,6 +130,10 @@
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.panel--compact {
+  margin-top: 18px;
 }
 
 .panel__button {
@@ -162,6 +170,133 @@
 
 .panel__button--ghost {
   background: transparent;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.modal__dialog {
+  position: relative;
+  width: min(480px, 92vw);
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 18px;
+  padding: 28px;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.65);
+}
+
+.modal__header {
+  margin-bottom: 18px;
+}
+
+.modal__header h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  color: #f8fafc;
+}
+
+.modal__subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: rgba(148, 163, 184, 0.75);
+}
+
+.modal__notice {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #fde68a;
+}
+
+.modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  color: rgba(226, 232, 240, 0.85);
+}
+
+.modal__field input,
+.modal__field textarea {
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(30, 41, 59, 0.8);
+  color: #f8fafc;
+  padding: 10px 14px;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.modal__field input:focus,
+.modal__field textarea:focus {
+  outline: 2px solid rgba(59, 130, 246, 0.5);
+  outline-offset: 2px;
+}
+
+.modal__error {
+  margin: -4px 0 0;
+  color: #fca5a5;
+  font-size: 13px;
+}
+
+.modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.modal__button {
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  padding: 10px 18px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.modal__button--ghost {
+  background: transparent;
+  color: rgba(226, 232, 240, 0.85);
+}
+
+.modal__button--ghost:hover {
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.modal__button--primary {
+  background: linear-gradient(135deg, #38bdf8, #6366f1);
+  color: #0f172a;
+  border: none;
+  font-weight: 600;
+}
+
+.modal__button--primary:hover {
+  background: linear-gradient(135deg, #7dd3fc, #818cf8);
+  box-shadow: 0 10px 30px rgba(99, 102, 241, 0.35);
+}
+
+.modal__button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .panel__hint {
@@ -497,6 +632,23 @@ textarea:focus-visible {
   background: rgba(15, 23, 42, 0.8);
   border: 1px solid rgba(148, 163, 184, 0.3);
   box-shadow: 0 25px 60px rgba(15, 23, 42, 0.45);
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  cursor: default;
+}
+
+.result-card--clickable:focus-visible {
+  outline: 2px solid rgba(148, 163, 184, 0.8);
+  outline-offset: 3px;
+}
+
+.result-card--clickable {
+  cursor: pointer;
+}
+
+.result-card--selected {
+  border-color: rgba(96, 165, 250, 0.9);
+  background: rgba(30, 64, 175, 0.35);
+  box-shadow: 0 30px 60px rgba(30, 64, 175, 0.35);
 }
 
 .result-card__header {
@@ -504,6 +656,27 @@ textarea:focus-visible {
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
+}
+
+.result-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.65);
+}
+
+.result-card__engine {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.85);
+  background: rgba(148, 163, 184, 0.22);
 }
 
 .result-card__title {
@@ -537,6 +710,27 @@ textarea:focus-visible {
 .result-card__button:hover {
   border-color: rgba(148, 163, 184, 0.6);
   background: rgba(148, 163, 184, 0.15);
+}
+
+.result-card__button--primary {
+  border: none;
+  background: linear-gradient(135deg, #38bdf8, #6366f1);
+  color: #0f172a;
+  font-weight: 600;
+  align-self: flex-start;
+  margin-top: 8px;
+  padding: 10px 18px;
+}
+
+.result-card__button--primary:hover {
+  background: linear-gradient(135deg, #7dd3fc, #818cf8);
+  box-shadow: 0 8px 25px rgba(99, 102, 241, 0.35);
+}
+
+.result-card__button--primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .result-card__button--ghost {

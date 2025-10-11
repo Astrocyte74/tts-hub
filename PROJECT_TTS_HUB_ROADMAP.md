@@ -13,6 +13,45 @@ Deliver a single “Kokoro Playground” interface that can drive several local 
 
 Each engine keeps its own repo/venv/asset footprint. The playground backend exposes them via a registry, while the React app lets users switch engines, see availability, and fall back gracefully when a catalog is missing.
 
+## Architecture at a Glance
+
+- **Backend**
+  - Flask blueprint exposes `/api/meta`, `/api/voices`, `/api/voices_grouped`, `/api/synthesise`, `/audio/*`.
+  - `ENGINE_REGISTRY` maps engine ids to `availability`, `prepare`, `synthesise`, and `fetch_voices` callables.
+  - Each adapter sticks to a simple contract: normalise the incoming payload, invoke the engine (in-process or CLI), and return `{ id, engine, voice, path, filename, sample_rate }`.
+  - Engines are “pluggable” by adding constants & helper functions near the top of `backend/app.py` and registering them in `ENGINE_REGISTRY`.
+
+- **Files & outputs**
+  - Generated audio is copied into `kokoro_twvv/out/` and served back via `/audio/<filename>`.
+  - CLI-based engines (XTTS/OpenVoice/ChatTTS) run in their home directories and move the resulting files into `out/`.
+
+- **Frontend**
+  - React Query fetches metadata, voices, and grouped voices per engine.
+  - Engine selector (`SynthesisControls`) reflects availability/messages coming from `/api/voices`.
+  - Voice browser (`VoiceSelector`) disables itself when the engine is offline and shows grouped metadata when available.
+  - Synthesis results store the `engine` id in `meta.engine` so the history panel makes it obvious which engine produced a clip.
+
+## Engine Adapter Cheat Sheet
+
+| Engine | Invocation | Voice discovery | Key env vars |
+| --- | --- | --- | --- |
+| Kokoro | in-process `kokoro_onnx.Kokoro` | `models/voices-v1.0.bin` | `KOKORO_MODEL`, `KOKORO_VOICES` |
+| XTTS | `XTTS/.venv/bin/python -m tts_service.cli` | files under `XTTS/tts-service/voices/` | `XTTS_ROOT`, `XTTS_PYTHON`, `XTTS_TIMEOUT`, `XTTS_OUTPUT_FORMAT` |
+| OpenVoice | `openvoice/.venv/bin/python scripts/cli_demo.py` | files under `openvoice/resources/` (English only) | `OPENVOICE_ROOT`, `OPENVOICE_PYTHON`, `OPENVOICE_CKPT_ROOT`, `OPENVOICE_TIMEOUT`, `OPENVOICE_WATERMARK` |
+| ChatTTS | `chattts/.venv/bin/python examples/cmd/run.py` | default "Random Speaker"; optional presets under `chattts/presets/` | `CHATTT_ROOT`, `CHATTT_PYTHON`, `CHATTT_TIMEOUT`, `CHATTT_SOURCE`, `CHATTT_PRESET_DIR` |
+
+> Tip: All env vars have sensible defaults assuming the repo layout under `tts-hub/`, so engines work out-of-the-box when the sibling repos are present.
+
+## UI Behaviour Highlights
+
+- Engine selector persists in `localStorage` (`kokoro:engine`). Switching engines resets the selected voice(s) and announcer data.
+- OpenVoice engine exposes an English style dropdown persisted under `kokoro:openvoiceStyle`.
+- ChatTTS auto-selects a random speaker by default and shows a preset selector when saved embeddings are available.
+- ChatTTS controls now expose an optional seed input to rerun the same sampled speaker without saving a preset.
+- ChatTTS result cards now expose speaker/seed info plus a “Save as preset” button that opens a friendly modal; existing voices are flagged (keeping duplicates optional).
+- Kokoro auditions remain the only multi-voice path; other engines will return 400s if the audition endpoint is invoked.
+
+
 ## What’s Done
 
 ### Backend (`kokoro_twvv/backend/app.py`)
@@ -23,6 +62,10 @@ Each engine keeps its own repo/venv/asset footprint. The playground backend expo
 - Kokoro adapter remains in-process (`synthesise_audio_clip`, `load_voice_profiles`).
 - XTTS adapter shells out to `tts_service.cli`, discovers speakers under `XTTS/tts-service/voices/`, and marks availability based on that inventory.
 - OpenVoice adapter wraps `scripts/cli_demo.py`, enumerates references in `openvoice/resources/`, and exposes language/style hints.
+- ChatTTS adapter reads optional speaker presets from `chattts/presets` (JSON or TXT) and surfaces them through `/api/voices`.
+- ChatTTS `/api/synthesise` responses now include the resolved speaker embedding and seed, and `/chattts/presets` accepts POSTs to create presets from the UI.
+- OpenVoice payloads are now normalised to English-only variants (Chinese metadata removed).
+- ChatTTS synthesis accepts an optional deterministic seed that is forwarded to the CLI.
 - Audition endpoint rejects non-Kokoro engines with a friendly 400 error (until another engine supports multi-voice stitching).
 
 ### Frontend (`kokoro_twvv/frontend/src`)
@@ -31,18 +74,21 @@ Each engine keeps its own repo/venv/asset footprint. The playground backend expo
 - Voice browser disables itself when an engine is unavailable and shows per-engine group data (or a placeholder).
 - Synthesis requests append `engine`, and recorded results retain which engine produced them.
 - UI resets selected voices when the engine changes; announcer controls only appear for Kokoro.
+- ChatTTS settings expose a speaker preset selector when `chattts/presets` provides saved embeddings.
 
 ### External repos inside `tts-hub/`
 - `kokoro_twvv/` – clean Git state after current changes (pending commit below).
 - `XTTS/` – CLI verified; backend adapter now calls it automatically when XTTS is selected.
 - `openvoice/` – CLI wired into the playground; references under `resources/` appear as selectable voices.
 - `chattts/` – CLI output now feeds the playground; default “Random Speaker” voice is exposed.
+  - Sample preset `chattts/presets/storyteller-01.json` demonstrates the JSON format (speaker string escaped for portability).
 
 ## Immediate Next Steps
 
 1. **ChatTTS enhancements**
-   - Surface optional presets (e.g., saved speaker embeddings) and expose seed controls if desired.
+   - Add capture-from-UI workflows so new presets can be minted without leaving the playground.
    - Investigate keeping a warm ChatTTS session alive to avoid repeated model loads.
+   - Standardise CLI output handling if you want WAV support in addition to MP3.
 2. **OpenVoice polish**
    - Expand style selector (per-clip overrides, localized naming) and surface reference metadata (file names, preview audio) in the UI.
 3. **Auditions for other engines**

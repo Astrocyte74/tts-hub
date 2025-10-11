@@ -29,6 +29,14 @@ export interface VoiceAccentSummary {
   flag: string;
 }
 
+export interface ChatttsPreset {
+  id: string;
+  label: string;
+  speaker: string;
+  notes?: string;
+  seed?: number;
+}
+
 export interface TtsEngineMeta {
   id: string;
   label: string;
@@ -47,6 +55,7 @@ export interface VoiceCatalogue {
   accentGroups: VoiceGroup[];
   count: number;
   styles?: string[];
+  presets?: ChatttsPreset[];
   message?: string;
 }
 
@@ -66,6 +75,8 @@ export interface SynthesisRequest {
   trimSilence: boolean;
   engine?: string;
   style?: string;
+  speaker?: string;
+  seed?: number;
 }
 
 export interface SynthesisResponseShape {

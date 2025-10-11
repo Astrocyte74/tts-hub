@@ -10,7 +10,9 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
+import random
+import re
 
 import numpy as np
 import soundfile as sf
@@ -71,6 +73,7 @@ CHATTT_PYTHON = Path(os.environ.get("CHATTT_PYTHON", CHATTT_ROOT / ".venv" / "bi
 CHATTT_TIMEOUT_SECONDS = float(os.environ.get("CHATTT_TIMEOUT", "120"))
 CHATTT_SOURCE = os.environ.get("CHATTT_SOURCE", "local")
 CHATTT_SUPPORTED_EXTENSIONS = {".mp3"}
+CHATTT_PRESET_DIR = Path(os.environ.get("CHATTT_PRESET_DIR", CHATTT_ROOT / "presets")).expanduser()
 
 # ---------------------------------------------------------------------------
 # Custom error
@@ -498,11 +501,6 @@ def _xtts_synthesise(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _normalise_openvoice_language(value: Optional[str]) -> str:
-    if not value:
-        return "English"
-    token = value.strip().lower()
-    if token.startswith("zh") or token.startswith("ch") or "chinese" in token:
-        return "Chinese"
     return "English"
 
 
@@ -511,22 +509,17 @@ def load_openvoice_styles() -> Dict[str, List[str]]:
         if _openvoice_style_cache is not None:
             return dict(_openvoice_style_cache)
         mapping: Dict[str, List[str]] = {}
-        language_dirs = {
-            "English": OPENVOICE_CKPT_ROOT / "base_speakers" / "EN" / "config.json",
-            "Chinese": OPENVOICE_CKPT_ROOT / "base_speakers" / "ZH" / "config.json",
-        }
-        for language, config_path in language_dirs.items():
-            if not config_path.exists():
-                continue
+        config_path = OPENVOICE_CKPT_ROOT / "base_speakers" / "EN" / "config.json"
+        if config_path.exists():
             try:
                 with config_path.open("r", encoding="utf-8") as config_file:
                     config_data = json.load(config_file)
                 speaker_map = config_data.get("speakers", {})
                 styles = sorted(str(name) for name in speaker_map.keys())
                 if styles:
-                    mapping[language] = styles
+                    mapping["English"] = styles
             except (OSError, json.JSONDecodeError):
-                continue
+                pass
         _openvoice_style_cache = mapping
         return dict(mapping)
 
@@ -564,7 +557,6 @@ def build_openvoice_voice_payload() -> Dict[str, Any]:
     voice_map = get_openvoice_voice_map()
     accent_map = {
         "English": ("openvoice_en", "OpenVoice English", "🇺🇸"),
-        "Chinese": ("openvoice_zh", "OpenVoice Chinese", "🇨🇳"),
     }
     voices: List[Dict[str, Any]] = []
     grouped: Dict[str, List[str]] = {}
@@ -741,6 +733,11 @@ def _openvoice_synthesise(data: Dict[str, Any]) -> Dict[str, Any]:
         "path": f"/audio/{filename}",
         "filename": filename,
         "sample_rate": data["sample_rate"],
+        "language": data["language"],
+        "style": data["style"],
+        "reference": str(data["reference_path"]),
+        "reference_name": Path(data["reference_path"]).name,
+        "watermark": data["watermark"],
     }
 
 
@@ -748,6 +745,7 @@ def _openvoice_synthesise(data: Dict[str, Any]) -> Dict[str, Any]:
 def build_chattts_voice_payload() -> Dict[str, Any]:
     available = chattts_is_available()
     voices: List[Dict[str, Any]] = []
+    presets = chattts_list_presets()
     if available:
         voices.append(
             {
@@ -767,6 +765,7 @@ def build_chattts_voice_payload() -> Dict[str, Any]:
         'accentGroups': [],
         'groups': [],
         'count': len(voices),
+        'presets': presets,
         'message': None if available else 'Install ChatTTS weights and ensure .venv exists to enable synthesis.',
     }
 
@@ -785,6 +784,109 @@ def chattts_is_available() -> bool:
     return True
 
 
+def chattts_list_presets() -> List[Dict[str, Any]]:
+    directory = CHATTT_PRESET_DIR
+    if not directory.exists() or not directory.is_dir():
+        return []
+
+    presets: List[Dict[str, Any]] = []
+    seen_ids: Set[str] = set()
+
+    files = sorted(directory.glob("*"))
+    for index, path in enumerate(files, start=1):
+        if not path.is_file():
+            continue
+
+        preset_id: Optional[str] = None
+        label: Optional[str] = None
+        notes: Optional[str] = None
+        speaker: Optional[str] = None
+        seed_value: Optional[int] = None
+
+        if path.suffix.lower() == ".json":
+            try:
+                with path.open("r", encoding="utf-8") as preset_file:
+                    data = json.load(preset_file)
+            except (OSError, json.JSONDecodeError):
+                continue
+            speaker_value = data.get("speaker")
+            if isinstance(speaker_value, str):
+                speaker = speaker_value.strip()
+            if not speaker:
+                continue
+            raw_id = data.get("id")
+            if isinstance(raw_id, str) and raw_id.strip():
+                preset_id = raw_id.strip()
+            raw_label = data.get("label")
+            if isinstance(raw_label, str) and raw_label.strip():
+                label = raw_label.strip()
+            raw_notes = data.get("notes")
+            if isinstance(raw_notes, str) and raw_notes.strip():
+                notes = raw_notes.strip()
+            raw_seed = data.get("seed")
+            if isinstance(raw_seed, (int, float, str)):
+                try:
+                    seed_candidate = int(str(raw_seed).strip())
+                except (TypeError, ValueError):
+                    seed_candidate = None
+                if seed_candidate is not None:
+                    seed_value = seed_candidate
+        elif path.suffix.lower() == ".txt":
+            try:
+                speaker_value = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            speaker = speaker_value.strip()
+            if not speaker:
+                continue
+            label = path.stem.replace("_", " ").title() or None
+        else:
+            continue
+
+        if speaker is None:
+            continue
+
+        if preset_id is None:
+            preset_id = path.stem.strip() or f"preset-{index}"
+        if label is None:
+            label = preset_id
+
+        if preset_id in seen_ids:
+            continue
+        seen_ids.add(preset_id)
+
+        entry = {
+            "id": preset_id,
+            "label": label,
+            "speaker": speaker,
+        }
+        if notes is not None:
+            entry["notes"] = notes
+        if seed_value is not None:
+            entry["seed"] = seed_value
+        presets.append(entry)
+
+    return presets
+
+
+def _extract_chattts_speaker(stdout: str) -> Optional[str]:
+    capture_next = False
+    for raw_line in stdout.splitlines():
+        if capture_next:
+            candidate = raw_line.strip()
+            if candidate:
+                return candidate
+            continue
+        if "Use speaker" in raw_line:
+            capture_next = True
+    return None
+
+
+def _slugify_chattts_preset_id(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+    return slug
+
+
 def _get_chattts_python() -> Path:
     if CHATTT_PYTHON.exists() and CHATTT_PYTHON.is_file():
         return CHATTT_PYTHON
@@ -796,11 +898,22 @@ def _chattts_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     voice = base.get('voice') or 'chattts_random'
     speaker = payload.get('speaker')
     text = base['text']
+    seed: Optional[int] = None
+    raw_seed = payload.get('seed')
+    if raw_seed is not None and raw_seed != "":
+        try:
+            seed_candidate = int(str(raw_seed).strip())
+        except (TypeError, ValueError) as exc:
+            raise PlaygroundError('ChatTTS seed must be an integer.', status=400) from exc
+        seed = seed_candidate
+    if seed is None:
+        seed = random.randint(0, 2**31 - 1)
     return {
         'text': text,
         'voice_id': voice,
         'speaker': speaker if isinstance(speaker, str) and speaker.strip() else None,
         'format': 'mp3',
+        'seed': seed,
     }
 
 
@@ -821,6 +934,9 @@ def _chattts_synthesise(data: Dict[str, Any]) -> Dict[str, Any]:
     speaker = data.get('speaker')
     if speaker:
         cmd.extend(['--spk', speaker])
+    seed_value = data.get('seed')
+    if seed_value is not None:
+        cmd.extend(['--seed', str(seed_value)])
     source = CHATTT_SOURCE or 'local'
     if source:
         cmd.extend(['--source', source])
@@ -848,6 +964,19 @@ def _chattts_synthesise(data: Dict[str, Any]) -> Dict[str, Any]:
         message = result.stderr.strip() or result.stdout.strip() or 'Unknown error'
         raise PlaygroundError(f'ChatTTS synthesis failed: {message}', status=500)
 
+    captured_speaker: Optional[str] = None
+    if isinstance(speaker, str) and speaker.strip():
+        captured_speaker = speaker.strip()
+    extracted_speaker = _extract_chattts_speaker(result.stdout)
+    if extracted_speaker:
+        captured_speaker = extracted_speaker
+    else:
+        match = re.search(r"SPEAKER(?:-|:)?\s*-?\s*(.+)", result.stderr, re.IGNORECASE)
+        if match:
+            captured_speaker = match.group(1).strip()
+        elif result.stdout.strip():
+            captured_speaker = result.stdout.strip()
+
     generated_files = [
         candidate
         for candidate in CHATTT_ROOT.glob('output_audio_*.mp3')
@@ -871,6 +1000,8 @@ def _chattts_synthesise(data: Dict[str, Any]) -> Dict[str, Any]:
         'path': f"/audio/{filename}",
         'filename': filename,
         'sample_rate': 24000,
+        'seed': seed_value,
+        'speaker': captured_speaker,
     }
 
 
@@ -937,7 +1068,6 @@ ACCENT_LOCALE_MAP: Dict[str, Tuple[str, str, str]] = {
     "es-es": ("es", "Spanish", "🇪🇸"),
     "ja-jp": ("ja", "Japanese", "🇯🇵"),
     "ko-kr": ("ko", "Korean", "🇰🇷"),
-    "zh-cn": ("zh", "Chinese", "🇨🇳"),
 }
 
 DEFAULT_ACCENT: Tuple[str, str, str] = ("other", "Other / Mixed", "🌐")
@@ -1019,12 +1149,28 @@ def synthesise_audio_clip(
     output_path = OUTPUT_DIR / filename
     sf.write(output_path, audio, sample_rate)
 
+    voice_profile = next((profile for profile in load_voice_profiles() if profile.id == voice), None)
+    accent_payload: Optional[Dict[str, Any]] = None
+    if voice_profile is not None:
+        accent_payload = {
+            "id": voice_profile.accent_id,
+            "label": voice_profile.accent_label,
+            "flag": voice_profile.accent_flag,
+        }
+
     return {
         "id": filename,
+        "engine": "kokoro",
         "voice": voice,
         "sample_rate": sample_rate,
         "path": f"/audio/{filename}",
         "filename": filename,
+        "locale": voice_profile.locale if voice_profile else None,
+        "accent": accent_payload,
+        "language": language,
+        "speed": speed,
+        "trim_silence": trim_silence,
+        "text": text,
     }
 
 
@@ -1122,6 +1268,10 @@ def voices_endpoint():
         "groups": groups,
         "count": voice_payload.get("count", len(voices)),
     }
+    if "presets" in voice_payload:
+        response["presets"] = voice_payload["presets"]
+    if "styles" in voice_payload:
+        response["styles"] = voice_payload["styles"]
     if not voices and engine["id"] != "kokoro":
         response["message"] = "Voice catalogue not yet implemented for this engine."
     return jsonify(response)
@@ -1156,6 +1306,87 @@ def voices_grouped_endpoint():
     if not groups and engine["id"] != "kokoro":
         response["message"] = "Grouped voice metadata not yet implemented for this engine."
     return jsonify(response)
+
+
+@api.route("/chattts/presets", methods=["POST"])
+def chattts_create_preset_endpoint():
+    if not chattts_is_available():
+        raise PlaygroundError("ChatTTS engine is not available.", status=503)
+
+    payload = parse_json_request()
+    label = str(payload.get("label", "")).strip()
+    if not label:
+        raise PlaygroundError("Field 'label' is required.", status=400)
+
+    speaker_raw = payload.get("speaker")
+    if not isinstance(speaker_raw, str) or not speaker_raw.strip():
+        raise PlaygroundError("Field 'speaker' is required.", status=400)
+    speaker_value = speaker_raw.strip()
+
+    notes_value: Optional[str] = None
+    notes_raw = payload.get("notes")
+    if isinstance(notes_raw, str):
+        candidate = notes_raw.strip()
+        if candidate:
+            notes_value = candidate
+
+    seed_value: Optional[int] = None
+    if "seed" in payload and payload["seed"] not in (None, ""):
+        try:
+            seed_value = int(str(payload["seed"]).strip())
+        except (TypeError, ValueError) as exc:
+            raise PlaygroundError("Field 'seed' must be an integer.", status=400) from exc
+
+    requested_id = payload.get("id")
+    preset_id = None
+    if isinstance(requested_id, str) and requested_id.strip():
+        preset_id = _slugify_chattts_preset_id(requested_id)
+        if not preset_id:
+            raise PlaygroundError("Field 'id' must contain alphanumeric characters.", status=400)
+    else:
+        preset_id = _slugify_chattts_preset_id(label)
+
+    if not preset_id:
+        preset_id = f"preset_{int(time.time())}"
+
+    directory = CHATTT_PRESET_DIR
+    directory.mkdir(parents=True, exist_ok=True)
+
+    candidate_id = preset_id
+    preset_path = directory / f"{candidate_id}.json"
+    counter = 1
+    if isinstance(requested_id, str) and requested_id.strip():
+        if preset_path.exists():
+            raise PlaygroundError(f"ChatTTS preset '{candidate_id}' already exists.", status=409)
+    else:
+        while preset_path.exists():
+            counter += 1
+            candidate_id = f"{preset_id}_{counter}"
+            preset_path = directory / f"{candidate_id}.json"
+
+    preset_id = candidate_id
+
+    preset_data: Dict[str, Any] = {
+        "id": preset_id,
+        "label": label,
+        "speaker": speaker_value,
+    }
+    if notes_value is not None:
+        preset_data["notes"] = notes_value
+    if seed_value is not None:
+        preset_data["seed"] = seed_value
+
+    try:
+        with preset_path.open("w", encoding="utf-8") as preset_file:
+            json.dump(preset_data, preset_file, ensure_ascii=True, indent=2)
+            preset_file.write("\n")
+    except OSError as exc:
+        raise PlaygroundError(f"Failed to write ChatTTS preset: {exc}", status=500) from exc
+
+    presets = chattts_list_presets()
+    created = next((item for item in presets if item.get("id") == preset_id), preset_data)
+
+    return make_response(jsonify({"preset": created, "presets": presets}), 201)
 
 
 @api.route("/random_text", methods=["GET"])

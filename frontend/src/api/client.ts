@@ -1,5 +1,6 @@
 import type {
   AuditionRequest,
+  ChatttsPreset,
   MetaResponse,
   RandomTextResult,
   RawVoiceRecord,
@@ -128,6 +129,51 @@ function coerceVoiceGroup(entry: unknown): VoiceGroup | null {
   return { id: raw.id, label, flag, count, voices };
 }
 
+function coerceChatttsPreset(entry: unknown, index: number): ChatttsPreset | null {
+  if (!entry || typeof entry !== 'object') {
+    return null;
+  }
+  const raw = entry as Record<string, unknown>;
+  const speakerValue = raw.speaker;
+  if (typeof speakerValue !== 'string') {
+    return null;
+  }
+  const speaker = speakerValue.trim();
+  if (!speaker) {
+    return null;
+  }
+  const idCandidate = raw.id;
+  const id =
+    typeof idCandidate === 'string' && idCandidate.trim()
+      ? idCandidate.trim()
+      : `preset-${index + 1}`;
+  const labelCandidate = raw.label;
+  const label =
+    typeof labelCandidate === 'string' && labelCandidate.trim()
+      ? labelCandidate.trim()
+      : id;
+  const notesCandidate = raw.notes;
+  const notes =
+    typeof notesCandidate === 'string' && notesCandidate.trim()
+      ? notesCandidate.trim()
+      : undefined;
+  const seedCandidate = raw.seed;
+  const seed =
+    typeof seedCandidate === 'number'
+      ? Math.floor(seedCandidate)
+      : typeof seedCandidate === 'string' && seedCandidate.trim() !== ''
+      ? Number.parseInt(seedCandidate, 10)
+      : undefined;
+  const preset: ChatttsPreset = { id, label, speaker };
+  if (notes) {
+    preset.notes = notes;
+  }
+  if (Number.isFinite(seed)) {
+    preset.seed = Number(seed);
+  }
+  return preset;
+}
+
 function resolveAudioUrl(candidate: string | undefined): string {
   if (!candidate) {
     throw new Error('No audio URL provided by the server response');
@@ -200,6 +246,10 @@ export async function fetchVoices(engineId?: string): Promise<VoiceCatalogue> {
   const count = typeof payload['count'] === 'number' ? (payload['count'] as number) : voices.length;
   const message = typeof payload['message'] === 'string' ? (payload['message'] as string) : undefined;
   const styles = Array.isArray(payload['styles']) ? (payload['styles'] as string[]) : [];
+  const presetsRaw = Array.isArray(payload['presets']) ? (payload['presets'] as unknown[]) : [];
+  const presets = presetsRaw
+    .map((entry, index) => coerceChatttsPreset(entry, index))
+    .filter((item): item is ChatttsPreset => item !== null);
 
   return {
     engine,
@@ -208,6 +258,7 @@ export async function fetchVoices(engineId?: string): Promise<VoiceCatalogue> {
     accentGroups,
     count,
     styles,
+    presets,
     message,
   };
 }
@@ -258,6 +309,23 @@ export async function fetchRandomText(category?: string): Promise<RandomTextResu
     }
   }
   throw new Error('Unexpected random text response format');
+}
+
+export interface CreateChatttsPresetPayload {
+  label: string;
+  speaker: string;
+  id?: string;
+  notes?: string;
+  seed?: number;
+}
+
+export interface CreateChatttsPresetResponse {
+  preset: ChatttsPreset;
+  presets: ChatttsPreset[];
+}
+
+export async function createChatttsPreset(payload: CreateChatttsPresetPayload): Promise<CreateChatttsPresetResponse> {
+  return postJson<CreateChatttsPresetResponse>('chattts/presets', payload);
 }
 
 function synthesiseResultFromResponse(

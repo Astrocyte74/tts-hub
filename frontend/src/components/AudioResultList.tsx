@@ -5,9 +5,11 @@ interface AudioResultListProps {
   items: SynthesisResult[];
   autoPlay: boolean;
   onRemove: (id: string) => void;
+  onSaveChattts?: (item: SynthesisResult) => void;
+  savingChatttsId?: string | null;
 }
 
-export function AudioResultList({ items, autoPlay, onRemove }: AudioResultListProps) {
+export function AudioResultList({ items, autoPlay, onRemove, onSaveChattts, savingChatttsId = null }: AudioResultListProps) {
   if (!items.length) {
     return (
       <section className="panel">
@@ -22,11 +24,18 @@ export function AudioResultList({ items, autoPlay, onRemove }: AudioResultListPr
   return (
     <section className="panel">
       <header className="panel__header">
-        <h2 className="panel__title">Results</h2>
-      </header>
+      <h2 className="panel__title">Results</h2>
+    </header>
       <div className="result-grid">
         {items.map((item, index) => (
-          <AudioResultCard key={item.id} item={item} autoPlay={autoPlay && index === 0} onRemove={onRemove} />
+          <AudioResultCard
+            key={item.id}
+            item={item}
+            autoPlay={autoPlay && index === 0}
+            onRemove={onRemove}
+            onSaveChattts={onSaveChattts}
+            isSavingChattts={onSaveChattts && savingChatttsId === item.id && item.engine === 'chattts'}
+          />
         ))}
       </div>
     </section>

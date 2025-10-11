@@ -7,9 +7,13 @@ import { SynthesisControls } from './components/SynthesisControls';
 import { AnnouncerControls } from './components/AnnouncerControls';
 import { SynthesisActions } from './components/SynthesisActions';
 import { AudioResultList } from './components/AudioResultList';
+import { ChatttsPresetDialog } from './components/ChatttsPresetDialog';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import {
   createAudition,
+  createChatttsPreset,
+  type CreateChatttsPresetPayload,
+  type CreateChatttsPresetResponse,
   fetchMeta,
   fetchRandomText,
   fetchVoices,
@@ -59,8 +63,21 @@ function App() {
   const [results, setResults] = useState<SynthesisResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [extraCategories, setExtraCategories] = useState<string[]>([]);
+  const [savingChatttsId, setSavingChatttsId] = useState<string | null>(null);
+  const [presetDraft, setPresetDraft] = useState<{
+    resultId: string;
+    speaker: string;
+    speakerSnippet: string;
+    seed?: number;
+    defaultLabel: string;
+    defaultNotes?: string;
+    existingPresetLabel?: string | null;
+    voiceLabel: string;
+  } | null>(null);
 
   const [openvoiceStyle, setOpenvoiceStyle] = useLocalStorage('kokoro:openvoiceStyle', 'default');
+  const [chatttsPresetId, setChatttsPresetId] = useLocalStorage('kokoro:chatttsPreset', 'random');
+  const [chatttsSeed, setChatttsSeed] = useLocalStorage('kokoro:chatttsSeed', '');
   const [engineId, setEngineId] = useLocalStorage('kokoro:engine', DEFAULT_ENGINE);
   const metaQuery = useQuery({ queryKey: ['meta'], queryFn: fetchMeta, staleTime: 5 * 60 * 1000 });
   const voicesQuery = useQuery({
@@ -105,10 +122,18 @@ function App() {
     if (engineId !== 'openvoice') {
       setOpenvoiceStyle('default');
     }
-  }, [engineId, setSelectedVoices, setVoiceGroupFilter, setAnnouncerVoice, setAnnouncerEnabled, setOpenvoiceStyle]);
+    if (engineId !== 'chattts' && chatttsSeed !== '') {
+      setChatttsSeed('');
+    }
+  }, [engineId, chatttsSeed, setSelectedVoices, setVoiceGroupFilter, setAnnouncerVoice, setAnnouncerEnabled, setOpenvoiceStyle, setChatttsSeed]);
 
   const voiceCatalogue = voicesQuery.data as VoiceCatalogue | undefined;
   const voices = useMemo(() => voiceCatalogue?.voices ?? [], [voiceCatalogue]);
+  const chatttsPresets = useMemo(() => voiceCatalogue?.presets ?? [], [voiceCatalogue?.presets]);
+  const chatttsPresetOptions = useMemo(
+    () => chatttsPresets.map((preset) => ({ id: preset.id, label: preset.label, notes: preset.notes })),
+    [chatttsPresets],
+  );
   const voiceGroupData = useMemo(() => {
     if (voiceGroupsQuery.data && voiceGroupsQuery.data.length) {
       return voiceGroupsQuery.data;
@@ -129,6 +154,7 @@ function App() {
   const ollamaAvailable = metaQuery.data?.ollama_available ?? false;
   const kokoroReady = metaQuery.data ? metaQuery.data.has_model && metaQuery.data.has_voices : true;
   const backendReady = engineId === 'kokoro' ? engineAvailable && kokoroReady : engineAvailable;
+
 
   useEffect(() => {
     if (engineId !== 'openvoice') {
@@ -151,6 +177,46 @@ function App() {
       setSelectedVoices([voices[0].id]);
     }
   }, [engineId, voices, selectedVoices, setSelectedVoices]);
+
+  useEffect(() => {
+    if (engineId !== 'chattts') {
+      return;
+    }
+    if (!chatttsPresets.length) {
+      if (chatttsPresetId !== 'random') {
+        setChatttsPresetId('random');
+      }
+      return;
+    }
+    if (chatttsPresetId && chatttsPresetId !== 'random') {
+      const hasPreset = chatttsPresets.some((preset) => preset.id === chatttsPresetId);
+      if (!hasPreset) {
+        setChatttsPresetId('random');
+      }
+    }
+  }, [engineId, chatttsPresets, chatttsPresetId, setChatttsPresetId]);
+
+  useEffect(() => {
+    if (engineId !== 'chattts') {
+      return;
+    }
+    if (!chatttsSeed) {
+      return;
+    }
+    const parsed = Number(chatttsSeed);
+    if (Number.isNaN(parsed) || !Number.isFinite(parsed)) {
+      setChatttsSeed('');
+    }
+  }, [engineId, chatttsSeed, setChatttsSeed]);
+
+  useEffect(() => {
+    if (engineId !== 'chattts' && savingChatttsId !== null) {
+      setSavingChatttsId(null);
+    }
+    if (engineId !== 'chattts' && presetDraft !== null) {
+      setPresetDraft(null);
+    }
+  }, [engineId, savingChatttsId, presetDraft]);
 
   useEffect(() => {
     if (!accentGroups.length) {
@@ -234,6 +300,42 @@ function App() {
     },
   });
 
+  const chatttsPresetMutation = useMutation<CreateChatttsPresetResponse, unknown, CreateChatttsPresetPayload>({
+    mutationFn: (payload) => createChatttsPreset(payload),
+    onSuccess: (response) => {
+      const presetId = response?.preset?.id;
+      if (presetId) {
+        setChatttsPresetId(presetId);
+      }
+      voicesQuery.refetch();
+      voiceGroupsQuery.refetch();
+    },
+    onError: (err: unknown) => {
+      setError(err instanceof Error ? err.message : 'Failed to save ChatTTS preset.');
+    },
+  });
+
+  const formatSpeakerSnippet = (value: string): string => {
+    const trimmed = value.trim();
+    if (trimmed.length <= 16) {
+      return trimmed;
+    }
+    return `${trimmed.slice(0, 8)}…${trimmed.slice(-8)}`;
+  };
+
+  const resolveSeed = (candidate: unknown): number | undefined => {
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+      return candidate;
+    }
+    if (typeof candidate === 'string' && candidate.trim()) {
+      const parsed = Number(candidate.trim());
+      if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
+        return Math.floor(parsed);
+      }
+    }
+    return undefined;
+  };
+
   const handleRandomResult = (generated: RandomTextResult) => {
     setExtraCategories((prev) => {
       const merged = new Set(prev);
@@ -273,6 +375,61 @@ function App() {
     }
   };
 
+  const handleSaveChatttsPresetFromResult = (result: SynthesisResult) => {
+    if (chatttsPresetMutation.isPending || savingChatttsId) {
+      return;
+    }
+    setError(null);
+    const meta = (result.meta ?? {}) as Record<string, unknown>;
+    const speakerRaw = typeof meta.speaker === 'string' ? meta.speaker.trim() : '';
+    if (!speakerRaw) {
+      setError('Selected ChatTTS clip is missing speaker metadata. Regenerate and try again.');
+      return;
+    }
+    const fallbackSeed = resolveSeed(meta.seed) ?? resolveSeed(chatttsSeed);
+    const existingPreset = chatttsPresets.find((preset) => preset.speaker === speakerRaw);
+    setPresetDraft({
+      resultId: result.id,
+      speaker: speakerRaw,
+      speakerSnippet: formatSpeakerSnippet(speakerRaw),
+      seed: fallbackSeed,
+      defaultLabel: fallbackSeed !== undefined ? `Seed ${fallbackSeed}` : 'ChatTTS Preset',
+      defaultNotes: existingPreset?.notes,
+      existingPresetLabel: existingPreset?.label ?? null,
+      voiceLabel: result.voice,
+    });
+  };
+
+  const handleDiscardPresetDraft = () => {
+    if (savingChatttsId) {
+      return;
+    }
+    setPresetDraft(null);
+  };
+
+  const handleConfirmPresetDraft = async (label: string, notes?: string) => {
+    if (!presetDraft) {
+      return;
+    }
+    const payload: CreateChatttsPresetPayload = {
+      label,
+      speaker: presetDraft.speaker,
+    };
+    if (presetDraft.seed !== undefined) {
+      payload.seed = presetDraft.seed;
+    }
+    if (notes && notes.trim()) {
+      payload.notes = notes.trim();
+    }
+    setSavingChatttsId(presetDraft.resultId);
+    try {
+      await chatttsPresetMutation.mutateAsync(payload);
+      setPresetDraft(null);
+    } finally {
+      setSavingChatttsId(null);
+    }
+  };
+
   const handleSynthesize = async () => {
     setError(null);
     const script = text.trim();
@@ -294,7 +451,7 @@ function App() {
 
     for (const voice of selectedVoices) {
       try {
-        const payload: SynthesisRequest & { style?: string } = {
+        const payload: SynthesisRequest & { style?: string; speaker?: string; seed?: number } = {
           text: script,
           voice,
           language: normaliseLanguage(language),
@@ -304,6 +461,20 @@ function App() {
         };
         if (engineId === 'openvoice') {
           payload.style = openvoiceStyle || 'default';
+        }
+        if (engineId === 'chattts') {
+          if (chatttsPresetId && chatttsPresetId !== 'random') {
+            const preset = chatttsPresets.find((item) => item.id === chatttsPresetId);
+            if (preset) {
+              payload.speaker = preset.speaker;
+            }
+          }
+          if (chatttsSeed && chatttsSeed.trim() !== '') {
+            const parsedSeed = Number(chatttsSeed);
+            if (!Number.isNaN(parsedSeed) && Number.isFinite(parsedSeed)) {
+              payload.seed = Math.floor(parsedSeed);
+            }
+          }
         }
         await synthMutation.mutateAsync(payload);
       } catch (err) {
@@ -364,6 +535,9 @@ function App() {
 
   const handleRemoveResult = (id: string) => {
     setResults((prev) => prev.filter((item) => item.id !== id));
+    if (presetDraft && presetDraft.resultId === id) {
+      setPresetDraft(null);
+    }
   };
 
   const canSynthesize = backendReady && Boolean(text.trim()) && selectedVoices.length > 0;
@@ -450,6 +624,11 @@ function App() {
             styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
             selectedStyle={engineId === 'openvoice' ? openvoiceStyle : undefined}
             onStyleChange={engineId === 'openvoice' ? setOpenvoiceStyle : undefined}
+            chatttsPresetOptions={engineId === 'chattts' ? chatttsPresetOptions : undefined}
+            chatttsPresetId={engineId === 'chattts' ? chatttsPresetId : undefined}
+            onChatttsPresetChange={engineId === 'chattts' ? setChatttsPresetId : undefined}
+            chatttsSeed={engineId === 'chattts' ? chatttsSeed : undefined}
+            onChatttsSeedChange={engineId === 'chattts' ? setChatttsSeed : undefined}
           />
           {engineId === 'kokoro' && engineAvailable ? (
             <AnnouncerControls
@@ -496,9 +675,27 @@ function App() {
             activeGroup={voiceGroupFilter}
             onGroupChange={setVoiceGroupFilter}
           />
-          <AudioResultList items={results} autoPlay={Boolean(autoPlay)} onRemove={handleRemoveResult} />
+          <AudioResultList
+            items={results}
+            autoPlay={Boolean(autoPlay)}
+            onRemove={handleRemoveResult}
+            onSaveChattts={engineId === 'chattts' ? handleSaveChatttsPresetFromResult : undefined}
+            savingChatttsId={engineId === 'chattts' ? savingChatttsId : null}
+          />
         </div>
       </main>
+      <ChatttsPresetDialog
+        isOpen={presetDraft !== null}
+        clipLabel={presetDraft?.voiceLabel ?? ''}
+        speakerSnippet={presetDraft?.speakerSnippet ?? ''}
+        seed={presetDraft?.seed}
+        existingPresetLabel={presetDraft?.existingPresetLabel ?? null}
+        defaultLabel={presetDraft?.defaultLabel ?? 'ChatTTS Preset'}
+        defaultNotes={presetDraft?.defaultNotes}
+        onCancel={handleDiscardPresetDraft}
+        onConfirm={handleConfirmPresetDraft}
+        isSaving={Boolean(presetDraft && savingChatttsId === presetDraft.resultId)}
+      />
     </div>
   );
 }

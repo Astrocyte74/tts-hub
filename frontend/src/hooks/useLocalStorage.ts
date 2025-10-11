@@ -1,23 +1,25 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export function useLocalStorage<T>(key: string, initialValue: T): [T, (next: T) => void] {
+  const initialRef = useRef(initialValue);
+
+  useEffect(() => {
+    initialRef.current = initialValue;
+  }, [initialValue]);
+
   const readValue = useCallback((): T => {
     if (typeof window === 'undefined') {
-      return initialValue;
+      return initialRef.current;
     }
     try {
       const stored = window.localStorage.getItem(key);
-      return stored ? (JSON.parse(stored) as T) : initialValue;
+      return stored ? (JSON.parse(stored) as T) : initialRef.current;
     } catch {
-      return initialValue;
+      return initialRef.current;
     }
-  }, [initialValue, key]);
+  }, [key]);
 
-  const [value, setValue] = useState<T>(readValue);
-
-  useEffect(() => {
-    setValue(readValue());
-  }, [readValue]);
+  const [value, setValue] = useState<T>(() => readValue());
 
   const persist = useCallback(
     (next: T) => {
@@ -35,4 +37,3 @@ export function useLocalStorage<T>(key: string, initialValue: T): [T, (next: T) 
 
   return [value, persist];
 }
-
