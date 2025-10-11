@@ -113,7 +113,6 @@ function App() {
 
   const [openvoiceStyle, setOpenvoiceStyle] = useLocalStorage('kokoro:openvoiceStyle', 'default');
   const [openvoiceVoiceStyles, setOpenvoiceVoiceStyles] = useLocalStorage<Record<string, string>>('kokoro:openvoiceVoiceStyles', {});
-  const [chatttsPresetId, setChatttsPresetId] = useLocalStorage('kokoro:chatttsPreset', 'random');
   const [chatttsSeed, setChatttsSeed] = useLocalStorage('kokoro:chatttsSeed', '');
   const [engineId, setEngineId] = useLocalStorage('kokoro:engine', DEFAULT_ENGINE);
   const metaQuery = useQuery({ queryKey: ['meta'], queryFn: fetchMeta, staleTime: 5 * 60 * 1000 });
@@ -174,10 +173,6 @@ function App() {
     return map;
   }, [voices]);
   const chatttsPresets = useMemo(() => voiceCatalogue?.presets ?? [], [voiceCatalogue?.presets]);
-  const chatttsPresetOptions = useMemo(
-    () => chatttsPresets.map((preset) => ({ id: preset.id, label: preset.label, notes: preset.notes })),
-    [chatttsPresets],
-  );
   const kokoroFavoritesByVoice = useMemo(() => {
     return kokoroFavorites.reduce<Record<string, { label: string; count: number }>>((acc, favorite) => {
       const existing = acc[favorite.voiceId];
@@ -356,24 +351,6 @@ function App() {
     if (engineId !== 'chattts') {
       return;
     }
-    if (!chatttsPresets.length) {
-      if (chatttsPresetId !== 'random') {
-        setChatttsPresetId('random');
-      }
-      return;
-    }
-    if (chatttsPresetId && chatttsPresetId !== 'random') {
-      const hasPreset = chatttsPresets.some((preset) => preset.id === chatttsPresetId);
-      if (!hasPreset) {
-        setChatttsPresetId('random');
-      }
-    }
-  }, [engineId, chatttsPresets, chatttsPresetId, setChatttsPresetId]);
-
-  useEffect(() => {
-    if (engineId !== 'chattts') {
-      return;
-    }
     if (!chatttsSeed) {
       return;
     }
@@ -507,8 +484,9 @@ function App() {
     mutationFn: (payload) => createChatttsPreset(payload),
     onSuccess: (response) => {
       const presetId = response?.preset?.id;
-      if (presetId) {
-        setChatttsPresetId(presetId);
+      if (presetId && engineId === 'chattts') {
+        const presetVoiceId = `chattts_preset_${presetId}`;
+        setSelectedVoices([presetVoiceId]);
       }
       voicesQuery.refetch();
       voiceGroupsQuery.refetch();
@@ -854,6 +832,10 @@ function App() {
           trimSilence: Boolean(trimSilence),
           engine: engineId,
         };
+        const voiceMeta = voiceById.get(voice);
+        const rawMeta = (voiceMeta?.raw ?? {}) as Record<string, unknown>;
+        const voiceType = typeof rawMeta.type === 'string' ? (rawMeta.type as string) : undefined;
+
         if (engineId === 'openvoice') {
           if (!pendingOpenvoiceStyles) {
             pendingOpenvoiceStyles = { ...openvoiceVoiceStyles };
@@ -869,10 +851,6 @@ function App() {
           delete (payload as Record<string, unknown>).speaker;
           delete (payload as Record<string, unknown>).seed;
 
-          const voiceMeta = voiceById.get(voice);
-          const rawMeta = (voiceMeta?.raw ?? {}) as Record<string, unknown>;
-          const voiceType = typeof rawMeta.type === 'string' ? (rawMeta.type as string) : undefined;
-
           if (voiceType === 'preset') {
             if (typeof rawMeta.speaker === 'string' && rawMeta.speaker.trim()) {
               payload.speaker = rawMeta.speaker.trim();
@@ -881,20 +859,14 @@ function App() {
               payload.seed = rawMeta.seed as number;
             }
           } else {
-            if (chatttsPresetId && chatttsPresetId !== 'random') {
-              const preset = chatttsPresets.find((item) => item.id === chatttsPresetId);
-              if (preset) {
-                payload.speaker = preset.speaker;
-                if (typeof preset.seed === 'number') {
-                  payload.seed = preset.seed;
-                }
-              }
+            if (typeof rawMeta.speaker === 'string' && rawMeta.speaker.trim()) {
+              payload.speaker = rawMeta.speaker.trim();
             }
-          }
-          if (chatttsSeed && chatttsSeed.trim() !== '') {
-            const parsedSeed = Number(chatttsSeed.trim());
-            if (!Number.isNaN(parsedSeed) && Number.isFinite(parsedSeed)) {
-              payload.seed = Math.floor(parsedSeed);
+            if (chatttsSeed && chatttsSeed.trim() !== '') {
+              const parsedSeed = Number(chatttsSeed.trim());
+              if (!Number.isNaN(parsedSeed) && Number.isFinite(parsedSeed)) {
+                payload.seed = Math.floor(parsedSeed);
+              }
             }
           }
         }
@@ -948,19 +920,15 @@ function App() {
           if (typeof rawMeta.seed === 'number' && Number.isFinite(rawMeta.seed)) {
             override.seed = rawMeta.seed;
           }
-        } else if (chatttsPresetId && chatttsPresetId !== 'random') {
-          const preset = chatttsPresets.find((item) => item.id === chatttsPresetId);
-          if (preset) {
-            override.speaker = preset.speaker;
-            if (typeof preset.seed === 'number') {
-              override.seed = preset.seed;
-            }
+        } else {
+          if (typeof rawMeta.speaker === 'string' && rawMeta.speaker.trim()) {
+            override.speaker = rawMeta.speaker.trim();
           }
-        }
-        if (chatttsSeed && chatttsSeed.trim()) {
-          const parsed = Number(chatttsSeed.trim());
-          if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
-            override.seed = Math.floor(parsed);
+          if (chatttsSeed && chatttsSeed.trim()) {
+            const parsed = Number(chatttsSeed.trim());
+            if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
+              override.seed = Math.floor(parsed);
+            }
           }
         }
       }
@@ -1097,9 +1065,6 @@ function App() {
             styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
             selectedStyle={engineId === 'openvoice' ? openvoiceStyle : undefined}
             onStyleChange={engineId === 'openvoice' ? handleOpenvoiceStyleChange : undefined}
-            chatttsPresetOptions={engineId === 'chattts' ? chatttsPresetOptions : undefined}
-            chatttsPresetId={engineId === 'chattts' ? chatttsPresetId : undefined}
-            onChatttsPresetChange={engineId === 'chattts' ? setChatttsPresetId : undefined}
             chatttsSeed={engineId === 'chattts' ? chatttsSeed : undefined}
             onChatttsSeedChange={engineId === 'chattts' ? setChatttsSeed : undefined}
             kokoroFavoriteOptions={engineId === 'kokoro' ? kokoroFavoriteOptions : undefined}

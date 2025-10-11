@@ -6,12 +6,6 @@ interface EngineOption {
   description?: string;
 }
 
-interface ChatttsPresetOption {
-  id: string;
-  label: string;
-  notes?: string;
-}
-
 interface KokoroFavoriteOption {
   id: string;
   label: string;
@@ -40,9 +34,6 @@ interface SynthesisControlsProps {
   styleOptions?: string[];
   selectedStyle?: string;
   onStyleChange?: (value: string) => void;
-  chatttsPresetId?: string;
-  chatttsPresetOptions?: ChatttsPresetOption[];
-  onChatttsPresetChange?: (value: string) => void;
   chatttsSeed?: string;
   onChatttsSeedChange?: (value: string) => void;
   kokoroFavoriteId?: string;
@@ -70,9 +61,6 @@ export function SynthesisControls({
   styleOptions = [],
   selectedStyle,
   onStyleChange,
-  chatttsPresetId,
-  chatttsPresetOptions = [],
-  onChatttsPresetChange,
   chatttsSeed,
   onChatttsSeedChange,
   kokoroFavoriteId,
@@ -129,37 +117,6 @@ export function SynthesisControls({
               <option value={selectedStyle}>{selectedStyle}</option>
             ) : null}
           </select>
-        </label>
-      ) : null}
-      {chatttsPresetOptions.length && onChatttsPresetChange ? (
-        <label className="field">
-          <span className="field__label">ChatTTS Speaker</span>
-          <select
-            value={chatttsPresetId ?? 'random'}
-            onChange={(event) => onChatttsPresetChange(event.target.value)}
-            disabled={!engineAvailable}
-          >
-            <option value="random">Random speaker</option>
-            {chatttsPresetOptions.map((preset) => (
-              <option key={preset.id} value={preset.id}>
-                {preset.label}
-              </option>
-            ))}
-            {chatttsPresetId &&
-            chatttsPresetId !== 'random' &&
-            !chatttsPresetOptions.some((preset) => preset.id === chatttsPresetId) ? (
-              <option value={chatttsPresetId}>{chatttsPresetId}</option>
-            ) : null}
-          </select>
-          {chatttsPresetId &&
-          chatttsPresetId !== 'random' &&
-          chatttsPresetOptions.some((preset) => preset.id === chatttsPresetId) ? (
-            <p className="panel__hint panel__hint--muted">
-              {chatttsPresetOptions.find((preset) => preset.id === chatttsPresetId)?.notes ?? 'Preset speaker embedding applied to ChatTTS runs.'}
-            </p>
-          ) : (
-            <p className="panel__hint panel__hint--muted">Random mode samples a new speaker for each synthesis.</p>
-          )}
         </label>
       ) : null}
       {kokoroFavoriteOptions.length && onKokoroFavoriteChange ? (
