@@ -29,6 +29,26 @@ export interface VoiceAccentSummary {
   flag: string;
 }
 
+export interface TtsEngineMeta {
+  id: string;
+  label: string;
+  description?: string;
+  available: boolean;
+  requiresVoice: boolean;
+  supports?: Record<string, unknown>;
+  defaults?: Record<string, unknown>;
+  status?: string;
+}
+
+export interface VoiceCatalogue {
+  engine: string;
+  available: boolean;
+  voices: VoiceProfile[];
+  accentGroups: VoiceGroup[];
+  count: number;
+  message?: string;
+}
+
 export interface VoiceGroup {
   id: string;
   label: string;
@@ -39,10 +59,11 @@ export interface VoiceGroup {
 
 export interface SynthesisRequest {
   text: string;
-  voice: string;
+  voice?: string;
   speed: number;
   language: string;
   trimSilence: boolean;
+  engine?: string;
 }
 
 export interface SynthesisResponseShape {
@@ -61,6 +82,7 @@ export interface SynthesisResult {
   audioUrl: string;
   text: string;
   createdAt: string;
+  engine?: string;
   meta: Record<string, unknown>;
 }
 
@@ -79,6 +101,8 @@ export interface MetaResponse {
   random_categories: string[];
   accent_groups?: VoiceGroup[];
   voice_count?: number;
+  engines?: TtsEngineMeta[];
+  default_engine?: string;
   frontend_bundle: {
     path: string;
     available: boolean;
@@ -104,4 +128,5 @@ export interface AuditionRequest {
   trimSilence: boolean;
   announcer?: AuditionAnnouncerConfig | null;
   gapSeconds?: number;
+  engine?: string;
 }

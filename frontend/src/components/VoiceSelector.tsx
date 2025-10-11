@@ -3,6 +3,10 @@ import clsx from 'clsx';
 import type { VoiceGroup, VoiceProfile } from '../types';
 
 interface VoiceSelectorProps {
+  engineLabel: string;
+  engineAvailable: boolean;
+  engineMessage?: string;
+  isLoading?: boolean;
   voices: VoiceProfile[];
   groups?: VoiceGroup[];
   selected: string[];
@@ -80,8 +84,21 @@ function buildDisplayGroups(
   return groupVoicesByLocale(filteredVoices);
 }
 
-export function VoiceSelector({ voices, groups, selected, onToggle, onClear, activeGroup = 'all', onGroupChange }: VoiceSelectorProps) {
+export function VoiceSelector({
+  engineLabel,
+  engineAvailable,
+  engineMessage,
+  isLoading = false,
+  voices,
+  groups,
+  selected,
+  onToggle,
+  onClear,
+  activeGroup = 'all',
+  onGroupChange,
+}: VoiceSelectorProps) {
   const [query, setQuery] = useState('');
+  const disabled = !engineAvailable || isLoading;
 
   const voicesAfterGroup = useMemo(() => {
     if (!groups?.length || activeGroup === 'all') {
@@ -134,12 +151,18 @@ export function VoiceSelector({ voices, groups, selected, onToggle, onClear, act
       <header className="panel__header">
         <div>
           <h2 className="panel__title">Voices</h2>
-          <p className="panel__subtitle">{voices.length} available</p>
+          <p className="panel__subtitle">
+            {engineLabel} · {voices.length} available
+          </p>
         </div>
         <button className="panel__button" type="button" onClick={onClear}>
           Clear
         </button>
       </header>
+      {engineMessage ? <p className="panel__hint panel__hint--muted">{engineMessage}</p> : null}
+      {!engineAvailable ? (
+        <p className="panel__hint panel__hint--warning">This engine is not ready yet. Configure it or choose another engine.</p>
+      ) : null}
       <div className="panel__search">
         <input
           value={query}
@@ -147,61 +170,69 @@ export function VoiceSelector({ voices, groups, selected, onToggle, onClear, act
           placeholder="Search voices, locales, tags..."
           className="panel__search-input"
           aria-label="Search voices"
+          disabled={disabled}
         />
       </div>
       <div className="voice-grid">
-        {displayGroups.map((group) => (
-          <div key={group.id} className="voice-grid__group">
-            <p className="voice-grid__group-title">
-              {group.flag ? (
-                <span className="voice-grid__group-flag" role="img" aria-hidden="true">
-                  {group.flag}
-                </span>
-              ) : null}
-              <span>{group.label}</span>
-              <span className="voice-grid__group-count">
-                {group.totalCount && group.totalCount !== group.voices.length
-                  ? `(${group.voices.length}/${group.totalCount})`
-                  : `(${group.voices.length})`}
-              </span>
-            </p>
-            <div className="voice-grid__items">
-              {group.voices.map((voice) => {
-                const isSelected = selected.includes(voice.id);
-                return (
-                  <button
-                    type="button"
-                    key={voice.id}
-                    className={clsx('voice-card', { 'voice-card--selected': isSelected })}
-                    onClick={() => onToggle(voice.id)}
-                  >
-                    <span className="voice-card__label">{voice.label}</span>
-                    <span className="voice-card__meta">
-                      {voice.accent ? (
-                        <span className="voice-card__meta-pill" title={voice.accent.label}>
-                          <span aria-hidden="true">{voice.accent.flag}</span>
-                          <span className="voice-card__meta-pill-text">{voice.accent.label}</span>
-                        </span>
-                      ) : null}
-                      {voice.locale ? <span>{voice.locale}</span> : null}
-                      {voice.gender ? <span>{voice.gender}</span> : null}
+        {isLoading ? <p className="panel__empty">Loading voices…</p> : null}
+        {!isLoading && !engineAvailable ? (
+          <p className="panel__empty">Voice data is unavailable for this engine.</p>
+        ) : null}
+        {!isLoading && engineAvailable
+          ? displayGroups.map((group) => (
+              <div key={group.id} className="voice-grid__group">
+                <p className="voice-grid__group-title">
+                  {group.flag ? (
+                    <span className="voice-grid__group-flag" role="img" aria-hidden="true">
+                      {group.flag}
                     </span>
-                    {voice.tags.length ? (
-                      <span className="voice-card__tags">
-                        {voice.tags.map((tag) => (
-                          <span key={tag}>{tag}</span>
-                        ))}
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-        {displayGroups.length === 0 ? <p className="panel__empty">No voices match the current search.</p> : null}
+                  ) : null}
+                  <span>{group.label}</span>
+                  <span className="voice-grid__group-count">
+                    {group.totalCount && group.totalCount !== group.voices.length
+                      ? `(${group.voices.length}/${group.totalCount})`
+                      : `(${group.voices.length})`}
+                  </span>
+                </p>
+                <div className="voice-grid__items">
+                  {group.voices.map((voice) => {
+                    const isSelected = selected.includes(voice.id);
+                    return (
+                      <button
+                        type="button"
+                        key={voice.id}
+                        className={clsx('voice-card', { 'voice-card--selected': isSelected })}
+                        onClick={() => onToggle(voice.id)}
+                        disabled={disabled}
+                      >
+                        <span className="voice-card__label">{voice.label}</span>
+                        <span className="voice-card__meta">
+                          {voice.accent ? (
+                            <span className="voice-card__meta-pill" title={voice.accent.label}>
+                              <span aria-hidden="true">{voice.accent.flag}</span>
+                              <span className="voice-card__meta-pill-text">{voice.accent.label}</span>
+                            </span>
+                          ) : null}
+                          {voice.locale ? <span>{voice.locale}</span> : null}
+                          {voice.gender ? <span>{voice.gender}</span> : null}
+                        </span>
+                        {voice.tags.length ? (
+                          <span className="voice-card__tags">
+                            {voice.tags.map((tag) => (
+                              <span key={tag}>{tag}</span>
+                            ))}
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          : null}
+        {!isLoading && engineAvailable && displayGroups.length === 0 ? <p className="panel__empty">No voices match the current search.</p> : null}
       </div>
-      {groups?.length ? (
+      {engineAvailable && groups?.length ? (
         <div className="voice-filter-chips" role="group" aria-label="Filter voices by group">
           <button
             type="button"

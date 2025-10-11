@@ -16,10 +16,11 @@ import {
   fetchVoiceGroups,
   synthesiseClip,
 } from './api/client';
-import type { RandomTextResult, SynthesisResult, VoiceProfile } from './types';
+import type { RandomTextResult, SynthesisResult, VoiceCatalogue, VoiceProfile } from './types';
 
 const FALLBACK_CATEGORIES = ['any', 'narration', 'promo', 'dialogue', 'news', 'story', 'whimsy'];
 const DEFAULT_LANGUAGE = 'en-us';
+const DEFAULT_ENGINE = 'kokoro';
 const DEFAULT_TEXT = 'Welcome to the Kokoro Playground SPA. Try synthesising this line!';
 const DEFAULT_ANNOUNCER_TEMPLATE = 'Now auditioning {voice_label}';
 
@@ -59,21 +60,70 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [extraCategories, setExtraCategories] = useState<string[]>([]);
 
+  const [engineId, setEngineId] = useLocalStorage('kokoro:engine', DEFAULT_ENGINE);
   const metaQuery = useQuery({ queryKey: ['meta'], queryFn: fetchMeta, staleTime: 5 * 60 * 1000 });
-  const voicesQuery = useQuery({ queryKey: ['voices'], queryFn: fetchVoices, staleTime: 5 * 60 * 1000 });
-  const voiceGroupsQuery = useQuery({ queryKey: ['voices-grouped'], queryFn: fetchVoiceGroups, staleTime: 5 * 60 * 1000 });
+  const voicesQuery = useQuery({
+    queryKey: ['voices', engineId],
+    queryFn: () => fetchVoices(engineId),
+    enabled: Boolean(engineId),
+    staleTime: 5 * 60 * 1000,
+  });
+  const voiceGroupsQuery = useQuery({
+    queryKey: ['voices-grouped', engineId],
+    queryFn: () => fetchVoiceGroups(engineId),
+    enabled: Boolean(engineId),
+    staleTime: 5 * 60 * 1000,
+  });
 
-  const voices = useMemo(() => voicesQuery.data ?? [], [voicesQuery.data]);
-  const voiceGroupData = useMemo(() => voiceGroupsQuery.data ?? [], [voiceGroupsQuery.data]);
-  const accentGroups = useMemo(() => {
-    if (voiceGroupData.length) {
-      return voiceGroupData;
+  const engineList = useMemo(() => metaQuery.data?.engines ?? [], [metaQuery.data?.engines]);
+  const defaultEngine = metaQuery.data?.default_engine ?? DEFAULT_ENGINE;
+
+  useEffect(() => {
+    if (!engineList.length) {
+      if (!engineId && defaultEngine) {
+        setEngineId(defaultEngine);
+      }
+      return;
     }
-    return metaQuery.data?.accent_groups ?? [];
-  }, [voiceGroupData, metaQuery.data?.accent_groups]);
-  const voiceCount = voices.length;
+    const knownIds = new Set(engineList.map((engine) => engine.id));
+    if (!engineId || !knownIds.has(engineId)) {
+      const fallback = engineList.find((engine) => engine.id === defaultEngine) ?? engineList[0];
+      if (fallback && fallback.id !== engineId) {
+        setEngineId(fallback.id);
+      }
+    }
+  }, [engineList, engineId, defaultEngine, setEngineId]);
+
+  const selectedEngine = useMemo(() => engineList.find((engine) => engine.id === engineId) ?? null, [engineList, engineId]);
+
+  useEffect(() => {
+    setSelectedVoices([]);
+    setVoiceGroupFilter('all');
+    setAnnouncerVoice(null);
+    setAnnouncerEnabled(false);
+  }, [engineId, setSelectedVoices, setVoiceGroupFilter, setAnnouncerVoice, setAnnouncerEnabled]);
+
+  const voiceCatalogue = voicesQuery.data as VoiceCatalogue | undefined;
+  const voices = useMemo(() => voiceCatalogue?.voices ?? [], [voiceCatalogue]);
+  const voiceGroupData = useMemo(() => {
+    if (voiceGroupsQuery.data && voiceGroupsQuery.data.length) {
+      return voiceGroupsQuery.data;
+    }
+    if (voiceCatalogue?.accentGroups?.length) {
+      return voiceCatalogue.accentGroups;
+    }
+    if (engineId === 'kokoro') {
+      return metaQuery.data?.accent_groups ?? [];
+    }
+    return [];
+  }, [voiceGroupsQuery.data, voiceCatalogue?.accentGroups, metaQuery.data?.accent_groups, engineId]);
+  const accentGroups = voiceGroupData;
+  const voiceCount = voiceCatalogue?.count ?? voices.length;
+  const engineAvailable = voiceCatalogue ? voiceCatalogue.available : selectedEngine?.available ?? true;
+  const engineMessage = voiceCatalogue?.message ?? selectedEngine?.description;
   const ollamaAvailable = metaQuery.data?.ollama_available ?? false;
-  const backendReady = metaQuery.data ? metaQuery.data.has_model && metaQuery.data.has_voices : true;
+  const kokoroReady = metaQuery.data ? metaQuery.data.has_model && metaQuery.data.has_voices : true;
+  const backendReady = engineId === 'kokoro' ? engineAvailable && kokoroReady : engineAvailable;
 
   useEffect(() => {
     if (!accentGroups.length) {
@@ -208,7 +258,10 @@ function App() {
       return;
     }
     if (!backendReady) {
-      setError('Models or voices are missing. Download assets before synthesising.');
+      const message = engineAvailable
+        ? 'Models or voices are missing. Download assets before synthesising.'
+        : 'This engine is not ready yet.';
+      setError(message);
       return;
     }
 
@@ -220,6 +273,7 @@ function App() {
           language: normaliseLanguage(language),
           speed: Number(speed),
           trimSilence: Boolean(trimSilence),
+          engine: engineId,
         });
       } catch (err) {
         console.error(err);
@@ -239,8 +293,15 @@ function App() {
       setError('Select two or more voices for an audition.');
       return;
     }
+    if (engineId !== 'kokoro') {
+      setError('Auditions are currently only supported for Kokoro voices.');
+      return;
+    }
     if (!backendReady) {
-      setError('Models or voices are missing. Download assets before auditioning.');
+      const message = engineAvailable
+        ? 'Models or voices are missing. Download assets before auditioning.'
+        : 'This engine is not ready yet.';
+      setError(message);
       return;
     }
 
@@ -263,6 +324,7 @@ function App() {
         trimSilence: Boolean(trimSilence),
         announcer: announcerConfig,
         gapSeconds: 1.0,
+        engine: engineId,
       });
     } catch (err) {
       console.error(err);
@@ -274,7 +336,7 @@ function App() {
   };
 
   const canSynthesize = backendReady && Boolean(text.trim()) && selectedVoices.length > 0;
-  const hasMultipleVoices = backendReady && selectedVoices.length > 1;
+  const hasMultipleVoices = backendReady && engineId === 'kokoro' && selectedVoices.length > 1;
 
   return (
     <div className="app">
@@ -284,13 +346,21 @@ function App() {
           <p>Modernised single page interface for the local Kokoro TTS stack.</p>
         </div>
         <div className="app__stats">
-          <p>{voicesQuery.isFetching ? 'Refreshing voices…' : `${voiceCount} voices`}</p>
+          <p>{voicesQuery.isFetching ? 'Refreshing voices…' : `${voiceCount} voices · ${(selectedEngine?.label ?? engineId ?? 'Engine')}`}</p>
           <p>{results.length} clips</p>
           <p>{ollamaAvailable ? 'Ollama connected' : 'Ollama offline'}</p>
         </div>
       </header>
 
       {error ? <div className="app__banner app__banner--error">{error}</div> : null}
+      {!engineAvailable ? (
+        <div className="app__banner app__banner--warning">
+          <p>
+            {(selectedEngine?.label ?? engineId ?? 'Engine')} engine is not ready yet.{' '}
+            {engineMessage ?? 'Complete the setup to enable synthesis.'}
+          </p>
+        </div>
+      ) : null}
       {voicesQuery.isError ? (
         <div className="app__banner app__banner--error">
           <p>Unable to load voices.</p>
@@ -326,6 +396,17 @@ function App() {
             onCategoryChange={setRandomCategory}
           />
           <SynthesisControls
+            engineId={engineId}
+            engines={engineList.map((engine) => ({
+              id: engine.id,
+              label: engine.label,
+              available: engine.available,
+              status: engine.status,
+              description: engine.description,
+            }))}
+            onEngineChange={(value) => setEngineId(value)}
+            engineAvailable={engineAvailable}
+            engineMessage={engineMessage}
             language={language}
             languages={availableLanguages}
             onLanguageChange={(value) => setLanguage(normaliseLanguage(value))}
@@ -336,17 +417,19 @@ function App() {
             autoPlay={Boolean(autoPlay)}
             onAutoPlayChange={(value) => setAutoPlay(value)}
           />
-          <AnnouncerControls
-            enabled={announcerEnabled}
-            onEnabledChange={setAnnouncerEnabled}
-            voices={voices}
-            selectedVoice={announcerVoice}
-            onVoiceChange={setAnnouncerVoice}
-            template={announcerTemplate}
-            onTemplateChange={setAnnouncerTemplate}
-            gapSeconds={Number(announcerGap)}
-            onGapChange={(value) => setAnnouncerGap(Number(value))}
-          />
+          {engineId === 'kokoro' && engineAvailable ? (
+            <AnnouncerControls
+              enabled={announcerEnabled}
+              onEnabledChange={setAnnouncerEnabled}
+              voices={voices}
+              selectedVoice={announcerVoice}
+              onVoiceChange={setAnnouncerVoice}
+              template={announcerTemplate}
+              onTemplateChange={setAnnouncerTemplate}
+              gapSeconds={Number(announcerGap)}
+              onGapChange={(value) => setAnnouncerGap(Number(value))}
+            />
+          ) : null}
           <SynthesisActions
             canSynthesize={canSynthesize}
             hasMultipleVoices={hasMultipleVoices}
@@ -357,33 +440,28 @@ function App() {
           />
         </div>
         <div className="app__column">
-          {voicesQuery.isLoading ? (
-            <section className="panel">
-              <header className="panel__header">
-                <h2 className="panel__title">Voices</h2>
-              </header>
-              <p className="panel__empty">Loading voices…</p>
-            </section>
-          ) : (
-            <VoiceSelector
-              voices={voices}
-              groups={accentGroups.length ? accentGroups : undefined}
-              selected={selectedVoices}
-              onToggle={(voiceId) => {
-                setError(null);
-                const next = selectedVoices.includes(voiceId)
-                  ? selectedVoices.filter((id) => id !== voiceId)
-                  : [...selectedVoices, voiceId];
-                setSelectedVoices(next);
-              }}
-              onClear={() => {
-                setError(null);
-                setSelectedVoices([]);
-              }}
-              activeGroup={voiceGroupFilter}
-              onGroupChange={setVoiceGroupFilter}
-            />
-          )}
+          <VoiceSelector
+            engineLabel={selectedEngine?.label ?? engineId ?? 'Engine'}
+            engineAvailable={engineAvailable}
+            engineMessage={engineMessage}
+            isLoading={voicesQuery.isLoading}
+            voices={voices}
+            groups={accentGroups.length ? accentGroups : undefined}
+            selected={selectedVoices}
+            onToggle={(voiceId) => {
+              setError(null);
+              const next = selectedVoices.includes(voiceId)
+                ? selectedVoices.filter((id) => id !== voiceId)
+                : [...selectedVoices, voiceId];
+              setSelectedVoices(next);
+            }}
+            onClear={() => {
+              setError(null);
+              setSelectedVoices([]);
+            }}
+            activeGroup={voiceGroupFilter}
+            onGroupChange={setVoiceGroupFilter}
+          />
           <AudioResultList items={results} autoPlay={Boolean(autoPlay)} onRemove={handleRemoveResult} />
         </div>
       </main>

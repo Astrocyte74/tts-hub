@@ -8,6 +8,7 @@ import type {
   SynthesisResult,
   VoiceGroup,
   VoiceProfile,
+  VoiceCatalogue,
 } from '../types';
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
@@ -179,19 +180,47 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function fetchVoices(): Promise<VoiceProfile[]> {
-  const payload = await getJson<unknown>('voices');
+export async function fetchVoices(engineId?: string): Promise<VoiceCatalogue> {
+  const url = engineId ? `voices?engine=${encodeURIComponent(engineId)}` : 'voices';
+  const payload = await getJson<Record<string, unknown>>(url);
   const records = extractVoiceList(payload);
-  return records.map(coerceVoiceRecord);
-}
-
-export async function fetchVoiceGroups(): Promise<VoiceGroup[]> {
-  const payload = await getJson<Record<string, unknown>>('voices_grouped');
-  const rawGroups = Array.isArray(payload?.groups) ? (payload.groups as unknown[]) : [];
-  const groups = rawGroups
+  const voices = records.map(coerceVoiceRecord);
+  const accentCandidate = payload['accentGroups'];
+  const groupSource = Array.isArray(accentCandidate)
+    ? (accentCandidate as unknown[])
+    : Array.isArray(payload['groups'])
+    ? (payload['groups'] as unknown[])
+    : [];
+  const accentGroups = groupSource
     .map(coerceVoiceGroup)
     .filter((entry): entry is VoiceGroup => entry !== null);
-  return groups;
+
+  const engine = typeof payload['engine'] === 'string' ? (payload['engine'] as string) : engineId ?? 'kokoro';
+  const available = payload['available'] !== false;
+  const count = typeof payload['count'] === 'number' ? (payload['count'] as number) : voices.length;
+  const message = typeof payload['message'] === 'string' ? (payload['message'] as string) : undefined;
+
+  return {
+    engine,
+    available,
+    voices,
+    accentGroups,
+    count,
+    message,
+  };
+}
+
+export async function fetchVoiceGroups(engineId?: string): Promise<VoiceGroup[]> {
+  const url = engineId ? `voices_grouped?engine=${encodeURIComponent(engineId)}` : 'voices_grouped';
+  const payload = await getJson<Record<string, unknown>>(url);
+  const groupSource = Array.isArray(payload['groups'])
+    ? (payload['groups'] as unknown[])
+    : Array.isArray(payload['accentGroups'])
+    ? (payload['accentGroups'] as unknown[])
+    : [];
+  return groupSource
+    .map(coerceVoiceGroup)
+    .filter((entry): entry is VoiceGroup => entry !== null);
 }
 
 export async function fetchMeta(): Promise<MetaResponse> {
@@ -233,6 +262,7 @@ function synthesiseResultFromResponse(
   response: SynthesisResponseShape,
   fallbackVoice: string,
   text: string,
+  engineId?: string,
 ): SynthesisResult {
   const audioUrl = resolveAudioUrl(
     (response.url as string | undefined) ??
@@ -242,6 +272,10 @@ function synthesiseResultFromResponse(
       (response.filename as string | undefined) ??
       (response.file as string | undefined),
   );
+
+  const engine = typeof (response as Record<string, unknown>).engine === 'string'
+    ? ((response as Record<string, unknown>).engine as string)
+    : engineId;
 
   return {
     id:
@@ -253,6 +287,7 @@ function synthesiseResultFromResponse(
     audioUrl,
     text,
     createdAt: new Date().toISOString(),
+    engine,
     meta: response as Record<string, unknown>,
   };
 }
@@ -264,10 +299,10 @@ export async function synthesiseClip(request: SynthesisRequest): Promise<Synthes
     return fallback;
   });
 
-  return synthesiseResultFromResponse(payload, request.voice, request.text);
+  return synthesiseResultFromResponse(payload, request.voice ?? 'unknown', request.text, request.engine);
 }
 
 export async function createAudition(request: AuditionRequest): Promise<SynthesisResult> {
   const payload = await postJson<SynthesisResponseShape>('audition', request);
-  return synthesiseResultFromResponse(payload, 'audition', request.text);
+  return synthesiseResultFromResponse(payload, 'audition', request.text, request.engine);
 }

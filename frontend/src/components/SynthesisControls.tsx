@@ -1,4 +1,17 @@
+interface EngineOption {
+  id: string;
+  label: string;
+  available: boolean;
+  status?: string;
+  description?: string;
+}
+
 interface SynthesisControlsProps {
+  engineId: string;
+  engines: EngineOption[];
+  onEngineChange: (value: string) => void;
+  engineAvailable: boolean;
+  engineMessage?: string;
   language: string;
   languages: string[];
   onLanguageChange: (value: string) => void;
@@ -11,6 +24,11 @@ interface SynthesisControlsProps {
 }
 
 export function SynthesisControls({
+  engineId,
+  engines,
+  onEngineChange,
+  engineAvailable,
+  engineMessage,
   language,
   languages,
   onLanguageChange,
@@ -21,11 +39,34 @@ export function SynthesisControls({
   autoPlay,
   onAutoPlayChange,
 }: SynthesisControlsProps) {
+  const selectedEngine = engines.find((engine) => engine.id === engineId);
+  const description = engineMessage ?? selectedEngine?.description;
+  const status = selectedEngine?.status;
+
   return (
     <section className="panel">
       <header className="panel__header">
         <h2 className="panel__title">Settings</h2>
       </header>
+      <div className="field">
+        <span className="field__label">TTS Engine</span>
+        <select value={engineId} onChange={(event) => onEngineChange(event.target.value)}>
+          {engines.map((engine) => (
+            <option key={engine.id} value={engine.id} disabled={!engine.available}>
+              {engine.label}
+              {!engine.available ? ' (unavailable)' : ''}
+            </option>
+          ))}
+          {!engines.some((engine) => engine.id === engineId) ? <option value={engineId}>{engineId}</option> : null}
+        </select>
+        {description ? <p className="panel__hint panel__hint--muted">{description}</p> : null}
+        {!engineAvailable ? (
+          <p className="panel__hint panel__hint--warning">This engine is not ready yet. Choose another engine or complete its setup.</p>
+        ) : null}
+        {engineAvailable && status && status !== 'ready' ? (
+          <p className="panel__hint panel__hint--notice">Status: {status}</p>
+        ) : null}
+      </div>
       <div className="grid grid--two">
         <label className="field">
           <span className="field__label">Language</span>
@@ -65,4 +106,3 @@ export function SynthesisControls({
     </section>
   );
 }
-

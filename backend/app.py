@@ -7,7 +7,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 import soundfile as sf
@@ -234,6 +234,18 @@ def group_voices_by_accent(voices: List[VoiceProfile]) -> List[Dict[str, Any]]:
     return sorted(groups.values(), key=lambda item: item["label"].lower())
 
 
+
+def build_kokoro_voice_payload() -> Dict[str, Any]:
+    voices = load_voice_profiles()
+    accent_groups = group_voices_by_accent(voices)
+    return {
+        "voices": [serialise_voice_profile(voice) for voice in voices],
+        "accentGroups": accent_groups,
+        "groups": accent_groups,
+        "count": len(voices),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Random text helpers
 # ---------------------------------------------------------------------------
@@ -428,8 +440,9 @@ def meta_endpoint():
     has_voices = VOICES_PATH.exists()
     bundle_index = FRONTEND_DIST / "index.html"
     ollama_info = list_ollama_models()
-    voices = load_voice_profiles()
-    accent_groups = group_voices_by_accent(voices)
+    kokoro_voice_payload = build_kokoro_voice_payload()
+    accent_groups = kokoro_voice_payload["accentGroups"]
+    engines_meta = [serialise_engine_meta(engine) for engine in ENGINE_REGISTRY.values()]
 
     return jsonify(
         {
@@ -439,32 +452,80 @@ def meta_endpoint():
             "has_voices": has_voices,
             "random_categories": RANDOM_CATEGORIES,
             "accent_groups": accent_groups,
-            "voice_count": len(voices),
+            "voice_count": kokoro_voice_payload["count"],
             "frontend_bundle": {"path": str(FRONTEND_DIST), "available": bundle_index.is_file()},
             "ollama_available": bool(ollama_info.get("models")),
+            "engines": engines_meta,
+            "default_engine": DEFAULT_TTS_ENGINE,
         }
     )
 
 
 @api.route("/voices", methods=["GET"])
 def voices_endpoint():
-    voices = load_voice_profiles()
-    accent_groups = group_voices_by_accent(voices)
-    return jsonify(
-        {
-            "voices": [serialise_voice_profile(voice) for voice in voices],
-            "accentGroups": accent_groups,
-            "groups": accent_groups,
-            "count": len(voices),
-        }
-    )
+    engine_id = request.args.get("engine")
+    engine, available = resolve_engine(engine_id, allow_unavailable=True)
+
+    if not available:
+        return jsonify(
+            {
+                "engine": engine["id"],
+                "available": False,
+                "voices": [],
+                "accentGroups": [],
+                "groups": [],
+                "count": 0,
+            }
+        )
+
+    payload_factory = engine.get("fetch_voices")
+    voice_payload = payload_factory() if callable(payload_factory) else {}
+
+    voices = voice_payload.get("voices", [])
+    groups = voice_payload.get("accentGroups") or voice_payload.get("groups") or []
+
+    response = {
+        "engine": engine["id"],
+        "available": True,
+        "voices": voices,
+        "accentGroups": groups,
+        "groups": groups,
+        "count": voice_payload.get("count", len(voices)),
+    }
+    if not voices and engine["id"] != "kokoro":
+        response["message"] = "Voice catalogue not yet implemented for this engine."
+    return jsonify(response)
 
 
 @api.route("/voices_grouped", methods=["GET"])
 def voices_grouped_endpoint():
-    voices = load_voice_profiles()
-    accent_groups = group_voices_by_accent(voices)
-    return jsonify({"accentGroups": accent_groups, "groups": accent_groups, "count": len(voices)})
+    engine_id = request.args.get("engine")
+    engine, available = resolve_engine(engine_id, allow_unavailable=True)
+
+    if not available:
+        return jsonify(
+            {
+                "engine": engine["id"],
+                "available": False,
+                "accentGroups": [],
+                "groups": [],
+                "count": 0,
+            }
+        )
+
+    payload_factory = engine.get("fetch_voices")
+    voice_payload = payload_factory() if callable(payload_factory) else {}
+    groups = voice_payload.get("accentGroups") or voice_payload.get("groups") or []
+    response = {
+        "engine": engine["id"],
+        "available": True,
+        "accentGroups": groups,
+        "groups": groups,
+        "count": voice_payload.get("count", 0),
+    }
+    if not groups and engine["id"] != "kokoro":
+        response["message"] = "Grouped voice metadata not yet implemented for this engine."
+    return jsonify(response)
 
 
 @api.route("/random_text", methods=["GET"])
@@ -548,11 +609,114 @@ def validate_synthesis_payload(payload: Dict[str, Any], *, require_voice: bool =
     }
 
 
+
+DEFAULT_TTS_ENGINE = "kokoro"
+
+
+def _engine_not_ready(engine_id: str) -> None:
+    raise PlaygroundError(f"TTS engine '{engine_id}' is not yet connected to the playground.", status=501)
+
+
+def engine_is_available(engine: Dict[str, Any]) -> bool:
+    checker = engine.get("availability")
+    try:
+        return bool(checker()) if callable(checker) else bool(checker)
+    except Exception:
+        return False
+
+
+def resolve_engine(engine_id: Optional[str], *, allow_unavailable: bool = False) -> Tuple[Dict[str, Any], bool]:
+    key = (engine_id or DEFAULT_TTS_ENGINE).lower()
+    engine = ENGINE_REGISTRY.get(key)
+    if not engine:
+        raise PlaygroundError(f"Unknown TTS engine '{key}'.", status=400)
+    available = engine_is_available(engine)
+    if not available and not allow_unavailable:
+        raise PlaygroundError(f"TTS engine '{key}' is not available.", status=503)
+    return engine, available
+
+
+def serialise_engine_meta(engine: Dict[str, Any]) -> Dict[str, Any]:
+    available = engine_is_available(engine)
+    return {
+        "id": engine["id"],
+        "label": engine.get("label", engine["id"].title()),
+        "description": engine.get("description"),
+        "available": available,
+        "requiresVoice": engine.get("requires_voice", True),
+        "supports": engine.get("supports", {}),
+        "defaults": dict(engine.get("defaults", {})),
+        "status": engine.get("status", "ready" if available else "pending"),
+    }
+
+
+def _kokoro_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return validate_synthesis_payload(payload, require_voice=True)
+
+
+def _kokoro_synthesise(data: Dict[str, Any]) -> Dict[str, Any]:
+    return synthesise_audio_clip(**data)
+
+
+ENGINE_REGISTRY: Dict[str, Dict[str, Any]] = {
+    "kokoro": {
+        "id": "kokoro",
+        "label": "Kokoro (ONNX)",
+        "description": "Bundled Kokoro voices running locally via ONNX.",
+        "availability": lambda: MODEL_PATH.exists() and VOICES_PATH.exists(),
+        "requires_voice": True,
+        "defaults": {"voice": "af_heart", "language": "en-us"},
+        "supports": {"audition": True, "cloning": False},
+        "prepare": _kokoro_prepare_payload,
+        "synthesise": _kokoro_synthesise,
+        "fetch_voices": build_kokoro_voice_payload,
+    },
+    "xtts": {
+        "id": "xtts",
+        "label": "XTTS v2",
+        "description": "Coqui XTTS voice cloning (integration pending).",
+        "availability": lambda: False,
+        "requires_voice": True,
+        "supports": {"cloning": True},
+        "status": "planned",
+    },
+    "openvoice": {
+        "id": "openvoice",
+        "label": "OpenVoice v2",
+        "description": "OpenVoice instant voice cloning (integration pending).",
+        "availability": lambda: False,
+        "requires_voice": False,
+        "supports": {"cloning": True, "styles": True},
+        "status": "planned",
+    },
+    "chattts": {
+        "id": "chattts",
+        "label": "ChatTTS",
+        "description": "ChatTTS dialogue model (integration pending).",
+        "availability": lambda: False,
+        "requires_voice": False,
+        "supports": {"cloning": False},
+        "status": "planned",
+    },
+}
+
+
 @api.route("/synthesise", methods=["POST"])
 @api.route("/synthesize", methods=["POST"])
 def synthesise_endpoint():
-    payload = validate_synthesis_payload(parse_json_request())
-    result = synthesise_audio_clip(**payload)
+    raw_payload = parse_json_request()
+    engine, _ = resolve_engine(raw_payload.get("engine"))
+
+    prepare = engine.get("prepare")
+    prepared_payload = prepare(raw_payload) if callable(prepare) else raw_payload
+
+    handler = engine.get("synthesise")
+    if not callable(handler):
+        _engine_not_ready(engine["id"])
+
+    result = handler(prepared_payload)
+    if isinstance(result, dict):
+        result.setdefault("engine", engine["id"])
     return jsonify(result)
 
 
@@ -597,6 +761,10 @@ def render_announcer_segments(
 @api.route("/audition", methods=["POST"])
 def audition_endpoint():
     payload = parse_json_request()
+    engine, _ = resolve_engine(payload.get("engine"))
+    if engine["id"] != "kokoro":
+        raise PlaygroundError("Auditions are currently only supported for Kokoro voices.", status=400)
+
     base_payload = validate_synthesis_payload(payload, require_voice=False)
 
     voices = payload.get("voices") or payload.get("voice") or []
@@ -666,6 +834,7 @@ def audition_endpoint():
     return jsonify(
         {
             "id": filename,
+            "engine": engine["id"],
             "voice": "audition",
             "voices": voice_ids,
             "announcer": {

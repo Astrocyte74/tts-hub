@@ -170,6 +170,19 @@
   color: rgba(148, 163, 184, 0.75);
 }
 
+.panel__hint--muted {
+  color: rgba(148, 163, 184, 0.6);
+}
+
+.panel__hint--warning {
+  color: #fca5a5;
+}
+
+.panel__hint--notice {
+  color: #fde68a;
+}
+
+
 .panel__empty {
   margin: 0;
   color: rgba(148, 163, 184, 0.75);
@@ -408,6 +421,18 @@ textarea:focus-visible {
   border-color: rgba(148, 163, 184, 0.6);
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.35);
 }
+
+.voice-card:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.voice-card:disabled:hover {
+  transform: none;
+  border-color: rgba(148, 163, 184, 0.35);
+  box-shadow: none;
+}
+
 
 .voice-card--selected {
   border: 1px solid rgba(56, 189, 248, 0.75);
