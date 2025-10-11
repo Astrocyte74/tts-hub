@@ -7,7 +7,9 @@ import { SynthesisControls } from './components/SynthesisControls';
 import { AnnouncerControls } from './components/AnnouncerControls';
 import { SynthesisActions } from './components/SynthesisActions';
 import { AudioResultList } from './components/AudioResultList';
-import { ChatttsPresetDialog } from './components/ChatttsPresetDialog';
+import { PresetDialog } from './components/PresetDialog';
+import { InfoDialog } from './components/InfoDialog';
+import { FavoritesManagerDialog } from './components/FavoritesManagerDialog';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import {
   createAudition,
@@ -20,7 +22,14 @@ import {
   fetchVoiceGroups,
   synthesiseClip,
 } from './api/client';
-import type { RandomTextResult, SynthesisRequest, SynthesisResult, VoiceCatalogue, VoiceProfile } from './types';
+import type {
+  KokoroFavorite,
+  RandomTextResult,
+  SynthesisRequest,
+  SynthesisResult,
+  VoiceCatalogue,
+  VoiceProfile,
+} from './types';
 
 const FALLBACK_CATEGORIES = ['any', 'narration', 'promo', 'dialogue', 'news', 'story', 'whimsy'];
 const DEFAULT_LANGUAGE = 'en-us';
@@ -48,6 +57,37 @@ function buildLanguageOptions(voices: VoiceProfile[]): string[] {
   return Array.from(locales).sort((a, b) => a.localeCompare(b));
 }
 
+type SaveDraft =
+  | {
+      type: 'chattts';
+      action: 'create';
+      resultId: string;
+      voiceLabel: string;
+      speaker: string;
+      speakerSnippet: string;
+      seed?: number;
+      defaultLabel: string;
+      defaultNotes?: string;
+      existingLabel?: string | null;
+    }
+  | {
+      type: 'kokoro';
+      action: 'create' | 'update';
+      resultId: string;
+      voiceId: string;
+      voiceLabel: string;
+      locale?: string | null;
+      accent?: {
+        id?: string;
+        label?: string;
+        flag?: string;
+      } | null;
+      defaultLabel: string;
+      defaultNotes?: string;
+      existingLabel?: string | null;
+      favoriteId?: string;
+    };
+
 function App() {
   const [text, setText] = useLocalStorage('kokoro:text', DEFAULT_TEXT);
   const [selectedVoices, setSelectedVoices] = useLocalStorage<string[]>('kokoro:selectedVoices', []);
@@ -64,18 +104,15 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [extraCategories, setExtraCategories] = useState<string[]>([]);
   const [savingChatttsId, setSavingChatttsId] = useState<string | null>(null);
-  const [presetDraft, setPresetDraft] = useState<{
-    resultId: string;
-    speaker: string;
-    speakerSnippet: string;
-    seed?: number;
-    defaultLabel: string;
-    defaultNotes?: string;
-    existingPresetLabel?: string | null;
-    voiceLabel: string;
-  } | null>(null);
+  const [saveDraft, setSaveDraft] = useState<SaveDraft | null>(null);
+  const [kokoroFavorites, setKokoroFavorites] = useLocalStorage<KokoroFavorite[]>('kokoro:favorites', []);
+  const [selectedKokoroFavoriteId, setSelectedKokoroFavoriteId] = useLocalStorage('kokoro:selectedFavorite', '');
+  const [isFavoritesManagerOpen, setFavoritesManagerOpen] = useState(false);
+  const [shouldReopenFavoritesManager, setShouldReopenFavoritesManager] = useState(false);
+  const [openvoiceHelpOpen, setOpenvoiceHelpOpen] = useState(false);
 
   const [openvoiceStyle, setOpenvoiceStyle] = useLocalStorage('kokoro:openvoiceStyle', 'default');
+  const [openvoiceVoiceStyles, setOpenvoiceVoiceStyles] = useLocalStorage<Record<string, string>>('kokoro:openvoiceVoiceStyles', {});
   const [chatttsPresetId, setChatttsPresetId] = useLocalStorage('kokoro:chatttsPreset', 'random');
   const [chatttsSeed, setChatttsSeed] = useLocalStorage('kokoro:chatttsSeed', '');
   const [engineId, setEngineId] = useLocalStorage('kokoro:engine', DEFAULT_ENGINE);
@@ -134,6 +171,65 @@ function App() {
     () => chatttsPresets.map((preset) => ({ id: preset.id, label: preset.label, notes: preset.notes })),
     [chatttsPresets],
   );
+  const kokoroFavoritesByVoice = useMemo(() => {
+    return kokoroFavorites.reduce<Record<string, { label: string; count: number }>>((acc, favorite) => {
+      const existing = acc[favorite.voiceId];
+      acc[favorite.voiceId] = {
+        label: favorite.label || favorite.voiceLabel || favorite.voiceId,
+        count: existing ? existing.count + 1 : 1,
+      };
+      return acc;
+    }, {});
+  }, [kokoroFavorites]);
+  const kokoroFavoriteOptions = useMemo(() => {
+    if (!kokoroFavorites.length) {
+      return [];
+    }
+    const voiceMap = new Map(voices.map((voice) => [voice.id, voice]));
+    return kokoroFavorites
+      .map((favorite) => {
+        const voice = voiceMap.get(favorite.voiceId);
+        const displayVoiceLabel = voice?.label ?? favorite.voiceLabel ?? favorite.voiceId;
+        const accentSource = favorite.accent ?? voice?.accent ?? null;
+        const accentLabel = accentSource
+          ? `${accentSource.flag ?? ''} ${accentSource.label ?? ''}`.trim()
+          : undefined;
+        return {
+          id: favorite.id,
+          label: favorite.label || displayVoiceLabel,
+          voiceLabel: displayVoiceLabel,
+          voiceId: favorite.voiceId,
+          accentLabel: accentLabel && accentLabel !== '' ? accentLabel : undefined,
+          notes: favorite.notes,
+          unavailable: !voice,
+        };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [kokoroFavorites, voices]);
+
+  useEffect(() => {
+    if (engineId !== 'kokoro') {
+      if (selectedKokoroFavoriteId !== '') {
+        setSelectedKokoroFavoriteId('');
+      }
+      return;
+    }
+    if (!selectedKokoroFavoriteId) {
+      return;
+    }
+    const favorite = kokoroFavorites.find((entry) => entry.id === selectedKokoroFavoriteId);
+    if (!favorite) {
+      setSelectedKokoroFavoriteId('');
+      return;
+    }
+    const voiceExists = voices.some((voice) => voice.id === favorite.voiceId);
+    if (!voiceExists) {
+      return;
+    }
+    if (selectedVoices.length !== 1 || !selectedVoices.includes(favorite.voiceId)) {
+      setSelectedKokoroFavoriteId('');
+    }
+  }, [engineId, kokoroFavorites, selectedVoices, selectedKokoroFavoriteId, setSelectedKokoroFavoriteId, voices]);
   const voiceGroupData = useMemo(() => {
     if (voiceGroupsQuery.data && voiceGroupsQuery.data.length) {
       return voiceGroupsQuery.data;
@@ -155,6 +251,64 @@ function App() {
   const kokoroReady = metaQuery.data ? metaQuery.data.has_model && metaQuery.data.has_voices : true;
   const backendReady = engineId === 'kokoro' ? engineAvailable && kokoroReady : engineAvailable;
 
+  const applyOpenvoiceStyle = (style: string, options: { updateOverrides?: boolean } = {}) => {
+    setOpenvoiceStyle(style);
+    if (options.updateOverrides === false) {
+      return;
+    }
+    if (engineId !== 'openvoice' || !selectedVoices.length) {
+      return;
+    }
+    const next = { ...openvoiceVoiceStyles };
+    let changed = false;
+    selectedVoices.forEach((voiceId) => {
+      if (style === 'default') {
+        if (voiceId in next) {
+          delete next[voiceId];
+          changed = true;
+        }
+        return;
+      }
+      if (next[voiceId] !== style) {
+        next[voiceId] = style;
+        changed = true;
+      }
+    });
+    if (changed) {
+      setOpenvoiceVoiceStyles(next);
+    }
+  };
+
+  const handleOpenvoiceStyleChange = (style: string) => {
+    applyOpenvoiceStyle(style);
+  };
+
+  const handleOpenvoiceVoiceStyleChange = (voiceId: string, style: string) => {
+    const nextStyle = style || 'default';
+    setOpenvoiceVoiceStyles((prev) => {
+      const current = prev[voiceId];
+      if (current === nextStyle) {
+        return prev;
+      }
+      if (nextStyle === 'default') {
+        if (!(voiceId in prev)) {
+          return prev;
+        }
+        const { [voiceId]: removedStyle, ...rest } = prev;
+        void removedStyle;
+        return rest;
+      }
+      return {
+        ...prev,
+        [voiceId]: nextStyle,
+      };
+    });
+    if (engineId === 'openvoice' && selectedVoices.length === 1 && selectedVoices[0] === voiceId) {
+      applyOpenvoiceStyle(nextStyle, { updateOverrides: false });
+      setOpenvoiceStyle(nextStyle);
+    }
+  };
+
 
   useEffect(() => {
     if (engineId !== 'openvoice') {
@@ -168,6 +322,19 @@ function App() {
       setOpenvoiceStyle('default');
     }
   }, [engineId, styleOptions, openvoiceStyle, setOpenvoiceStyle]);
+
+  useEffect(() => {
+    if (engineId !== 'openvoice') {
+      return;
+    }
+    if (selectedVoices.length === 1) {
+      const voiceId = selectedVoices[0];
+      const storedStyle = openvoiceVoiceStyles[voiceId];
+      if (storedStyle && storedStyle !== openvoiceStyle) {
+        setOpenvoiceStyle(storedStyle);
+      }
+    }
+  }, [engineId, selectedVoices, openvoiceVoiceStyles, openvoiceStyle, setOpenvoiceStyle]);
 
   useEffect(() => {
     if (engineId !== 'chattts') {
@@ -213,10 +380,15 @@ function App() {
     if (engineId !== 'chattts' && savingChatttsId !== null) {
       setSavingChatttsId(null);
     }
-    if (engineId !== 'chattts' && presetDraft !== null) {
-      setPresetDraft(null);
+    if (!saveDraft) {
+      return;
     }
-  }, [engineId, savingChatttsId, presetDraft]);
+    if (saveDraft.type === 'chattts' && engineId !== 'chattts') {
+      setSaveDraft(null);
+    } else if (saveDraft.type === 'kokoro' && engineId !== 'kokoro') {
+      setSaveDraft(null);
+    }
+  }, [engineId, savingChatttsId, saveDraft]);
 
   useEffect(() => {
     if (!accentGroups.length) {
@@ -290,10 +462,34 @@ function App() {
     },
   });
 
-  const synthMutation = useMutation({
+  const synthMutation = useMutation<SynthesisResult, unknown, SynthesisRequest & { style?: string; speaker?: string; seed?: number }>({
     mutationFn: synthesiseClip,
-    onSuccess: (result) => {
-      setResults((prev) => [result, ...prev]);
+    onSuccess: (result, variables) => {
+      const enriched: SynthesisResult = {
+        ...result,
+        meta: { ...(result.meta ?? {}) },
+      };
+      if (variables?.engine === 'openvoice') {
+        const voiceId = variables.voice ?? '';
+        const styleUsed = variables.style ?? openvoiceVoiceStyles[voiceId] ?? openvoiceStyle ?? 'default';
+        const meta = enriched.meta as Record<string, unknown>;
+        if (styleUsed && (!meta.style || typeof meta.style !== 'string')) {
+          meta.style = styleUsed;
+        }
+        if (variables.language && (!meta.language || typeof meta.language !== 'string')) {
+          meta.language = variables.language;
+        }
+        if (voiceId && (!meta.voice_id || typeof meta.voice_id !== 'string')) {
+          meta.voice_id = voiceId;
+        }
+        if (voiceId && styleUsed && openvoiceVoiceStyles[voiceId] !== styleUsed) {
+          setOpenvoiceVoiceStyles({
+            ...openvoiceVoiceStyles,
+            [voiceId]: styleUsed,
+          });
+        }
+      }
+      setResults((prev) => [enriched, ...prev]);
     },
     onError: (err: unknown) => {
       setError(err instanceof Error ? err.message : 'Synthesis request failed.');
@@ -388,47 +584,236 @@ function App() {
     }
     const fallbackSeed = resolveSeed(meta.seed) ?? resolveSeed(chatttsSeed);
     const existingPreset = chatttsPresets.find((preset) => preset.speaker === speakerRaw);
-    setPresetDraft({
+    setSaveDraft({
+      type: 'chattts',
+      action: 'create',
       resultId: result.id,
       speaker: speakerRaw,
       speakerSnippet: formatSpeakerSnippet(speakerRaw),
       seed: fallbackSeed,
       defaultLabel: fallbackSeed !== undefined ? `Seed ${fallbackSeed}` : 'ChatTTS Preset',
       defaultNotes: existingPreset?.notes,
-      existingPresetLabel: existingPreset?.label ?? null,
+      existingLabel: existingPreset?.label ?? null,
       voiceLabel: result.voice,
     });
   };
 
-  const handleDiscardPresetDraft = () => {
-    if (savingChatttsId) {
+  const handleSaveKokoroFavoriteFromResult = (result: SynthesisResult) => {
+    if (saveDraft?.type === 'kokoro') {
       return;
     }
-    setPresetDraft(null);
+    setError(null);
+    const voiceId = typeof result.voice === 'string' ? result.voice : '';
+    if (!voiceId) {
+      setError('Selected clip is missing voice metadata.');
+      return;
+    }
+    const meta = (result.meta ?? {}) as Record<string, unknown>;
+    const accentFromMeta = ((meta.accent ?? null) as { id?: string; label?: string; flag?: string }) ?? null;
+    const locale = typeof meta.locale === 'string' ? meta.locale : null;
+    const voiceProfile = voices.find((voice) => voice.id === voiceId);
+    const accent = voiceProfile?.accent ?? accentFromMeta;
+    const existingFavorite = kokoroFavorites.find((favorite) => favorite.voiceId === voiceId) ?? null;
+    const defaultLabel = voiceProfile?.label ?? result.voice;
+    setSaveDraft({
+      type: 'kokoro',
+      action: 'create',
+      resultId: result.id,
+      voiceId,
+      voiceLabel: voiceProfile?.label ?? result.voice,
+      locale,
+      accent,
+      defaultLabel: defaultLabel || voiceId,
+      defaultNotes: existingFavorite?.notes,
+      existingLabel: existingFavorite?.label ?? null,
+    });
   };
 
-  const handleConfirmPresetDraft = async (label: string, notes?: string) => {
-    if (!presetDraft) {
+  const handleOpenFavoritesManager = () => {
+    setShouldReopenFavoritesManager(false);
+    setFavoritesManagerOpen(true);
+  };
+
+  const handleCloseFavoritesManager = () => {
+    setShouldReopenFavoritesManager(false);
+    setFavoritesManagerOpen(false);
+  };
+
+  const handleRenameFavorite = (favorite: KokoroFavorite) => {
+    const voiceProfile = voices.find((voice) => voice.id === favorite.voiceId);
+    const accent = favorite.accent ?? voiceProfile?.accent ?? null;
+    setFavoritesManagerOpen(false);
+    setShouldReopenFavoritesManager(true);
+    setSaveDraft({
+      type: 'kokoro',
+      action: 'update',
+      resultId: favorite.id,
+      favoriteId: favorite.id,
+      voiceId: favorite.voiceId,
+      voiceLabel: voiceProfile?.label ?? favorite.voiceLabel,
+      locale: favorite.locale ?? voiceProfile?.locale ?? null,
+      accent,
+      defaultLabel: favorite.label || voiceProfile?.label || favorite.voiceLabel || favorite.voiceId,
+      defaultNotes: favorite.notes,
+      existingLabel: favorite.label ?? null,
+    });
+  };
+
+  const handleDeleteFavorite = (favorite: KokoroFavorite) => {
+    const nextFavorites = kokoroFavorites.filter((entry) => entry.id !== favorite.id);
+    setKokoroFavorites(nextFavorites);
+    if (selectedKokoroFavoriteId === favorite.id) {
+      setSelectedKokoroFavoriteId('');
+    }
+    if (!nextFavorites.length) {
+      setFavoritesManagerOpen(false);
+    }
+    setShouldReopenFavoritesManager(false);
+  };
+
+  const handleKokoroFavoriteChange = (favoriteId: string) => {
+    if (!favoriteId) {
+      setSelectedKokoroFavoriteId('');
       return;
     }
-    const payload: CreateChatttsPresetPayload = {
-      label,
-      speaker: presetDraft.speaker,
-    };
-    if (presetDraft.seed !== undefined) {
-      payload.seed = presetDraft.seed;
+    const favorite = kokoroFavorites.find((entry) => entry.id === favoriteId);
+    if (!favorite) {
+      setSelectedKokoroFavoriteId('');
+      return;
     }
-    if (notes && notes.trim()) {
-      payload.notes = notes.trim();
+    const voiceExists = voices.some((voice) => voice.id === favorite.voiceId);
+    if (!voiceExists) {
+      setSelectedKokoroFavoriteId(favoriteId);
+      setError('Favorite voice is not available in the current catalogue. Reinstall Kokoro voices to use it.');
+      return;
     }
-    setSavingChatttsId(presetDraft.resultId);
-    try {
-      await chatttsPresetMutation.mutateAsync(payload);
-      setPresetDraft(null);
-    } finally {
-      setSavingChatttsId(null);
+    setError(null);
+    setSelectedVoices([favorite.voiceId]);
+    setSelectedKokoroFavoriteId(favoriteId);
+  };
+
+  const handleDiscardSaveDraft = () => {
+    if (saveDraft?.type === 'chattts' && savingChatttsId) {
+      return;
+    }
+    setShouldReopenFavoritesManager(false);
+    setSaveDraft(null);
+  };
+
+  const generateFavoriteId = () => {
+    const globalCrypto = typeof globalThis !== 'undefined' ? (globalThis as typeof globalThis & { crypto?: Crypto }).crypto : undefined;
+    if (globalCrypto && typeof globalCrypto.randomUUID === 'function') {
+      return globalCrypto.randomUUID();
+    }
+    return `fav-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+  };
+
+  const handleConfirmSaveDraft = async (label: string, notes?: string) => {
+    if (!saveDraft) {
+      return;
+    }
+    setError(null);
+    if (saveDraft.type === 'chattts') {
+      const payload: CreateChatttsPresetPayload = {
+        label,
+        speaker: saveDraft.speaker,
+      };
+      if (saveDraft.seed !== undefined) {
+        payload.seed = saveDraft.seed;
+      }
+      if (notes && notes.trim()) {
+        payload.notes = notes.trim();
+      }
+      setSavingChatttsId(saveDraft.resultId);
+      try {
+        await chatttsPresetMutation.mutateAsync(payload);
+        setSaveDraft(null);
+      } finally {
+        setSavingChatttsId(null);
+      }
+      return;
+    }
+
+    if (saveDraft.type === 'kokoro') {
+      const trimmedLabel = label.trim();
+      const trimmedNotes = notes && notes.trim() ? notes.trim() : undefined;
+
+      if (saveDraft.action === 'update' && saveDraft.favoriteId) {
+        const updatedFavorites = kokoroFavorites.map((favorite) => {
+          if (favorite.id !== saveDraft.favoriteId) {
+            return favorite;
+          }
+          return {
+            ...favorite,
+            label: trimmedLabel || favorite.voiceLabel || saveDraft.voiceLabel,
+            notes: trimmedNotes,
+          };
+        });
+        setKokoroFavorites(updatedFavorites);
+        if (shouldReopenFavoritesManager) {
+          setFavoritesManagerOpen(true);
+        }
+        setShouldReopenFavoritesManager(false);
+        setError(null);
+        setSaveDraft(null);
+        return;
+      }
+
+      const nextFavorite: KokoroFavorite = {
+        id: generateFavoriteId(),
+        voiceId: saveDraft.voiceId,
+        voiceLabel: saveDraft.voiceLabel,
+        label: trimmedLabel || saveDraft.voiceLabel,
+        notes: trimmedNotes,
+        locale: saveDraft.locale ?? null,
+        accent: saveDraft.accent ?? null,
+        createdAt: new Date().toISOString(),
+      };
+      setKokoroFavorites([...kokoroFavorites, nextFavorite]);
+      if (engineId === 'kokoro') {
+        setSelectedVoices([saveDraft.voiceId]);
+        setSelectedKokoroFavoriteId(nextFavorite.id);
+      }
+      setError(null);
+      if (shouldReopenFavoritesManager) {
+        setFavoritesManagerOpen(true);
+      }
+      setShouldReopenFavoritesManager(false);
+      setSaveDraft(null);
+      return;
     }
   };
+
+  const isChatttsDraft = saveDraft?.type === 'chattts';
+  const isKokoroDraft = saveDraft?.type === 'kokoro';
+  const presetDialogTitle = isKokoroDraft ? 'Save Kokoro Favorite' : 'Save ChatTTS Preset';
+  const presetDialogSubtitle = isKokoroDraft
+    ? `Voice: ${saveDraft?.voiceLabel ?? ''}`
+    : isChatttsDraft
+    ? `Clip: ${saveDraft?.voiceLabel ?? ''} · Seed: ${
+        saveDraft?.seed !== undefined ? saveDraft.seed : 'random'
+      } · Speaker: ${saveDraft?.speakerSnippet ?? ''}`
+    : undefined;
+  const presetDialogContextItems = isKokoroDraft
+    ? [
+        saveDraft?.accent?.label || saveDraft?.accent?.flag
+          ? `Accent: ${[saveDraft?.accent?.flag ?? '', saveDraft?.accent?.label ?? ''].join(' ').trim()}`
+          : null,
+        saveDraft?.locale ? `Locale: ${saveDraft.locale}` : null,
+      ].filter((item): item is string => Boolean(item && item.trim()))
+    : [];
+  const presetDialogConfirmLabel = isKokoroDraft ? 'Save favorite' : 'Save preset';
+  const presetDialogExistingSuffix = isKokoroDraft ? 'favorite' : 'preset';
+  const presetDialogExistingHint = isKokoroDraft ? 'Already saved as favorite' : 'Already saved as preset';
+  const presetDialogLabelField = isKokoroDraft ? 'Favorite name' : 'Preset name';
+  const presetDialogLabelPlaceholder = isKokoroDraft ? 'My go-to Kokoro voice' : 'My favourite voice';
+  const presetDialogNotesPlaceholder = isKokoroDraft
+    ? 'Add notes about this favorite...'
+    : 'Add context about this speaker...';
+  const presetDialogEmptyError = isKokoroDraft ? 'Please enter a favorite name.' : 'Please enter a preset name.';
+  const presetDialogIsSaving = Boolean(
+    isChatttsDraft && saveDraft && savingChatttsId === saveDraft.resultId && chatttsPresetMutation.isPending,
+  );
 
   const handleSynthesize = async () => {
     setError(null);
@@ -449,6 +834,9 @@ function App() {
       return;
     }
 
+    let pendingOpenvoiceStyles: Record<string, string> | null = null;
+    let openvoiceStylesChanged = false;
+
     for (const voice of selectedVoices) {
       try {
         const payload: SynthesisRequest & { style?: string; speaker?: string; seed?: number } = {
@@ -460,7 +848,15 @@ function App() {
           engine: engineId,
         };
         if (engineId === 'openvoice') {
-          payload.style = openvoiceStyle || 'default';
+          if (!pendingOpenvoiceStyles) {
+            pendingOpenvoiceStyles = { ...openvoiceVoiceStyles };
+          }
+          const styleForVoice = pendingOpenvoiceStyles[voice] ?? openvoiceStyle ?? 'default';
+          payload.style = styleForVoice;
+          if (pendingOpenvoiceStyles[voice] !== styleForVoice) {
+            pendingOpenvoiceStyles[voice] = styleForVoice;
+            openvoiceStylesChanged = true;
+          }
         }
         if (engineId === 'chattts') {
           if (chatttsPresetId && chatttsPresetId !== 'random') {
@@ -481,6 +877,10 @@ function App() {
         console.error(err);
         break;
       }
+    }
+
+    if (engineId === 'openvoice' && pendingOpenvoiceStyles && openvoiceStylesChanged) {
+      setOpenvoiceVoiceStyles(pendingOpenvoiceStyles);
     }
   };
 
@@ -535,8 +935,8 @@ function App() {
 
   const handleRemoveResult = (id: string) => {
     setResults((prev) => prev.filter((item) => item.id !== id));
-    if (presetDraft && presetDraft.resultId === id) {
-      setPresetDraft(null);
+    if (saveDraft && saveDraft.resultId === id) {
+      setSaveDraft(null);
     }
   };
 
@@ -623,12 +1023,17 @@ function App() {
             onAutoPlayChange={(value) => setAutoPlay(value)}
             styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
             selectedStyle={engineId === 'openvoice' ? openvoiceStyle : undefined}
-            onStyleChange={engineId === 'openvoice' ? setOpenvoiceStyle : undefined}
+            onStyleChange={engineId === 'openvoice' ? handleOpenvoiceStyleChange : undefined}
             chatttsPresetOptions={engineId === 'chattts' ? chatttsPresetOptions : undefined}
             chatttsPresetId={engineId === 'chattts' ? chatttsPresetId : undefined}
             onChatttsPresetChange={engineId === 'chattts' ? setChatttsPresetId : undefined}
             chatttsSeed={engineId === 'chattts' ? chatttsSeed : undefined}
             onChatttsSeedChange={engineId === 'chattts' ? setChatttsSeed : undefined}
+            kokoroFavoriteOptions={engineId === 'kokoro' ? kokoroFavoriteOptions : undefined}
+            kokoroFavoriteId={engineId === 'kokoro' ? selectedKokoroFavoriteId : undefined}
+            onKokoroFavoriteChange={engineId === 'kokoro' ? handleKokoroFavoriteChange : undefined}
+            onManageKokoroFavorites={engineId === 'kokoro' ? handleOpenFavoritesManager : undefined}
+            kokoroFavoritesCount={engineId === 'kokoro' ? kokoroFavorites.length : undefined}
           />
           {engineId === 'kokoro' && engineAvailable ? (
             <AnnouncerControls
@@ -674,6 +1079,10 @@ function App() {
             }}
             activeGroup={voiceGroupFilter}
             onGroupChange={setVoiceGroupFilter}
+            voiceStyles={engineId === 'openvoice' ? openvoiceVoiceStyles : undefined}
+            styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
+            onVoiceStyleChange={engineId === 'openvoice' ? handleOpenvoiceVoiceStyleChange : undefined}
+            onOpenvoiceInstructions={engineId === 'openvoice' ? () => setOpenvoiceHelpOpen(true) : undefined}
           />
           <AudioResultList
             items={results}
@@ -681,21 +1090,62 @@ function App() {
             onRemove={handleRemoveResult}
             onSaveChattts={engineId === 'chattts' ? handleSaveChatttsPresetFromResult : undefined}
             savingChatttsId={engineId === 'chattts' ? savingChatttsId : null}
+            onSaveKokoroFavorite={handleSaveKokoroFavoriteFromResult}
+            kokoroFavoritesByVoice={kokoroFavoritesByVoice}
           />
         </div>
       </main>
-      <ChatttsPresetDialog
-        isOpen={presetDraft !== null}
-        clipLabel={presetDraft?.voiceLabel ?? ''}
-        speakerSnippet={presetDraft?.speakerSnippet ?? ''}
-        seed={presetDraft?.seed}
-        existingPresetLabel={presetDraft?.existingPresetLabel ?? null}
-        defaultLabel={presetDraft?.defaultLabel ?? 'ChatTTS Preset'}
-        defaultNotes={presetDraft?.defaultNotes}
-        onCancel={handleDiscardPresetDraft}
-        onConfirm={handleConfirmPresetDraft}
-        isSaving={Boolean(presetDraft && savingChatttsId === presetDraft.resultId)}
+      <FavoritesManagerDialog
+        isOpen={isFavoritesManagerOpen}
+        favorites={kokoroFavorites}
+        voices={voices}
+        onClose={handleCloseFavoritesManager}
+        onRename={handleRenameFavorite}
+        onDelete={handleDeleteFavorite}
       />
+      <PresetDialog
+        isOpen={Boolean(saveDraft)}
+        title={presetDialogTitle}
+        subtitle={presetDialogSubtitle}
+        contextItems={presetDialogContextItems}
+        existingLabel={saveDraft?.existingLabel ?? null}
+        existingLabelHint={saveDraft ? presetDialogExistingHint : undefined}
+        existingLabelSuffix={presetDialogExistingSuffix}
+        defaultLabel={saveDraft?.defaultLabel ?? (isKokoroDraft ? 'Kokoro Favorite' : 'ChatTTS Preset')}
+        defaultNotes={saveDraft?.defaultNotes}
+        onCancel={handleDiscardSaveDraft}
+        onConfirm={handleConfirmSaveDraft}
+        isSaving={presetDialogIsSaving}
+        labelFieldLabel={presetDialogLabelField}
+        labelPlaceholder={presetDialogLabelPlaceholder}
+        notesPlaceholder={presetDialogNotesPlaceholder}
+        confirmLabel={presetDialogConfirmLabel}
+        emptyLabelError={presetDialogEmptyError}
+      />
+      <InfoDialog
+        isOpen={openvoiceHelpOpen}
+        title="Using Custom OpenVoice References"
+        onClose={() => setOpenvoiceHelpOpen(false)}
+      >
+        <p>
+          You can clone any speaker with OpenVoice by dropping reference audio files into
+          <code> openvoice/resources/</code>. Each file becomes a selectable voice the next time you reload voices.
+        </p>
+        <ol className="instruction-list">
+          <li>Record 15–30 seconds of clean speech (no music, minimal background noise).</li>
+          <li>
+            Use the best mic you have—an iPhone 16 Pro Max (Voice Memos, lossless export) generally beats a laptop mic,
+            thanks to better noise handling.
+          </li>
+          <li>Export the clip as WAV/MP3/FLAC/OGG (44.1 kHz or 48 kHz, mono or stereo).</li>
+          <li>Copy the file into <code>openvoice/resources/</code> (feel free to organise by folders).</li>
+          <li>Refresh the OpenVoice voices in the UI (or restart the backend) to pick up the new reference.</li>
+        </ol>
+        <p className="instruction-note">
+          Tip: give each file a descriptive name like <code>demo_speaker_name.wav</code> so the playground labels are
+          easy to scan.
+        </p>
+      </InfoDialog>
     </div>
   );
 }

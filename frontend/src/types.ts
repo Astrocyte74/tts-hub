@@ -37,6 +37,17 @@ export interface ChatttsPreset {
   seed?: number;
 }
 
+export interface KokoroFavorite {
+  id: string;
+  voiceId: string;
+  voiceLabel: string;
+  label: string;
+  notes?: string;
+  locale?: string | null;
+  accent?: VoiceAccentSummary | null;
+  createdAt: string;
+}
+
 export interface TtsEngineMeta {
   id: string;
   label: string;

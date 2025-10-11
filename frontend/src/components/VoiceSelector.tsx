@@ -14,6 +14,10 @@ interface VoiceSelectorProps {
   onClear: () => void;
   activeGroup?: string;
   onGroupChange?: (groupId: string) => void;
+  voiceStyles?: Record<string, string>;
+  styleOptions?: string[];
+  onVoiceStyleChange?: (voiceId: string, style: string) => void;
+  onOpenvoiceInstructions?: () => void;
 }
 
 interface GroupedVoices {
@@ -96,9 +100,20 @@ export function VoiceSelector({
   onClear,
   activeGroup = 'all',
   onGroupChange,
+  voiceStyles,
+  styleOptions,
+  onVoiceStyleChange,
+  onOpenvoiceInstructions,
 }: VoiceSelectorProps) {
   const [query, setQuery] = useState('');
   const disabled = !engineAvailable || isLoading;
+  const availableStyleChoices = useMemo(() => {
+    if (!styleOptions || !styleOptions.length) {
+      return null;
+    }
+    const unique = Array.from(new Set(['default', ...styleOptions]));
+    return unique;
+  }, [styleOptions]);
 
   const voicesAfterGroup = useMemo(() => {
     if (!groups?.length || activeGroup === 'all') {
@@ -160,6 +175,14 @@ export function VoiceSelector({
         </button>
       </header>
       {engineMessage ? <p className="panel__hint panel__hint--muted">{engineMessage}</p> : null}
+      {engineLabel.toLowerCase().includes('openvoice') && onOpenvoiceInstructions ? (
+        <p className="panel__hint panel__hint--muted">
+          Need a new voice?{' '}
+          <button type="button" className="link-button" onClick={onOpenvoiceInstructions}>
+            Learn how to add custom references.
+          </button>
+        </p>
+      ) : null}
       {!engineAvailable ? (
         <p className="panel__hint panel__hint--warning">This engine is not ready yet. Configure it or choose another engine.</p>
       ) : null}
@@ -197,33 +220,60 @@ export function VoiceSelector({
                 <div className="voice-grid__items">
                   {group.voices.map((voice) => {
                     const isSelected = selected.includes(voice.id);
+                    const voiceStyle = voiceStyles?.[voice.id];
+                    const canEditStyle = !!availableStyleChoices?.length && typeof onVoiceStyleChange === 'function';
                     return (
-                      <button
-                        type="button"
+                      <div
                         key={voice.id}
-                        className={clsx('voice-card', { 'voice-card--selected': isSelected })}
-                        onClick={() => onToggle(voice.id)}
-                        disabled={disabled}
+                        className={clsx('voice-card', {
+                          'voice-card--selected': isSelected,
+                          'voice-card--disabled': disabled,
+                        })}
                       >
-                        <span className="voice-card__label">{voice.label}</span>
-                        <span className="voice-card__meta">
-                          {voice.accent ? (
-                            <span className="voice-card__meta-pill" title={voice.accent.label}>
-                              <span aria-hidden="true">{voice.accent.flag}</span>
-                              <span className="voice-card__meta-pill-text">{voice.accent.label}</span>
+                        <button
+                          type="button"
+                          className="voice-card__toggle"
+                          onClick={() => onToggle(voice.id)}
+                          disabled={disabled}
+                        >
+                          <span className="voice-card__label">{voice.label}</span>
+                          <span className="voice-card__meta">
+                            {voice.accent ? (
+                              <span className="voice-card__meta-pill" title={voice.accent.label}>
+                                <span aria-hidden="true">{voice.accent.flag}</span>
+                                <span className="voice-card__meta-pill-text">{voice.accent.label}</span>
+                              </span>
+                            ) : null}
+                            {voice.locale ? <span>{voice.locale}</span> : null}
+                            {voice.gender ? <span>{voice.gender}</span> : null}
+                          </span>
+                          {voice.tags.length ? (
+                            <span className="voice-card__tags">
+                              {voice.tags.map((tag) => (
+                                <span key={tag}>{tag}</span>
+                              ))}
                             </span>
                           ) : null}
-                          {voice.locale ? <span>{voice.locale}</span> : null}
-                          {voice.gender ? <span>{voice.gender}</span> : null}
-                        </span>
-                        {voice.tags.length ? (
-                          <span className="voice-card__tags">
-                            {voice.tags.map((tag) => (
-                              <span key={tag}>{tag}</span>
-                            ))}
-                          </span>
+                        </button>
+                        {canEditStyle ? (
+                          <label className="voice-card__style-control">
+                            <span>Style</span>
+                            <select
+                              value={voiceStyle ?? availableStyleChoices![0] ?? 'default'}
+                              onChange={(event) => onVoiceStyleChange(voice.id, event.target.value)}
+                              disabled={disabled}
+                            >
+                              {availableStyleChoices!.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : voiceStyle ? (
+                          <span className="voice-card__style">Style: {voiceStyle}</span>
                         ) : null}
-                      </button>
+                      </div>
                     );
                   })}
                 </div>

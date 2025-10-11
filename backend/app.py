@@ -16,7 +16,7 @@ import re
 
 import numpy as np
 import soundfile as sf
-from flask import Blueprint, Flask, jsonify, make_response, request, send_from_directory
+from flask import Blueprint, Flask, abort, jsonify, make_response, request, send_from_directory
 from flask_cors import CORS
 
 try:
@@ -505,6 +505,7 @@ def _normalise_openvoice_language(value: Optional[str]) -> str:
 
 
 def load_openvoice_styles() -> Dict[str, List[str]]:
+    global _openvoice_style_cache
     with _openvoice_style_lock:
         if _openvoice_style_cache is not None:
             return dict(_openvoice_style_cache)
@@ -540,8 +541,13 @@ def get_openvoice_voice_map() -> Dict[str, Dict[str, Any]]:
             while voice_id in mapping:
                 counter += 1
                 voice_id = f"{base_id}_{counter}"
+            try:
+                relative_path = path.resolve().relative_to(reference_root.resolve())
+            except ValueError:
+                continue
             mapping[voice_id] = {
                 "path": path.resolve(),
+                "relative_path": relative_path,
                 "language": language,
                 "style": "default",
                 "label": path.stem.replace('_', ' ').title(),
@@ -575,6 +581,7 @@ def build_openvoice_voice_payload() -> Dict[str, Any]:
                 "raw": {
                     "engine": "openvoice",
                     "reference": str(meta["path"]),
+                    "reference_relative": str(meta["relative_path"]),
                     "language": language,
                     "style": meta.get("style", "default"),
                 },
@@ -600,6 +607,8 @@ def build_openvoice_voice_payload() -> Dict[str, Any]:
     base_dir = OPENVOICE_CKPT_ROOT / "base_speakers" / "EN"
     converter_dir = OPENVOICE_CKPT_ROOT / "converter"
     available = python_path.exists() and base_dir.exists() and converter_dir.exists() and bool(voices)
+    styles = styles_map.get("English", [])
+    styles_with_default = sorted({"default", *styles})
     return {
         "engine": "openvoice",
         "available": available,
@@ -607,7 +616,7 @@ def build_openvoice_voice_payload() -> Dict[str, Any]:
         "accentGroups": accent_groups,
         "groups": accent_groups,
         "count": len(voices),
-        "styles": styles_map.get("English", []),
+        "styles": styles_with_default,
         "message": message,
     }
 
@@ -642,9 +651,10 @@ def _openvoice_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     language = _normalise_openvoice_language(payload.get("language") or meta.get("language"))
     styles_map = load_openvoice_styles()
-    available_styles = styles_map.get(language, [])
+    available_styles_raw = styles_map.get(language, [])
+    available_styles = sorted({"default", *available_styles_raw})
     requested_style = str(payload.get("style") or meta.get("style") or (available_styles[0] if available_styles else "default"))
-    if available_styles and requested_style not in available_styles:
+    if requested_style not in available_styles:
         raise PlaygroundError(
             f"Style '{requested_style}' is not available for OpenVoice {language}.",
             status=400,
@@ -655,6 +665,7 @@ def _openvoice_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "text": base["text"],
         "voice_id": voice_identifier,
         "reference_path": meta["path"],
+        "reference_relative": meta.get("relative_path"),
         "language": language,
         "style": requested_style,
         "watermark": watermark,
@@ -726,6 +737,12 @@ def _openvoice_synthesise(data: Dict[str, Any]) -> Dict[str, Any]:
         except OSError:
             pass
 
+    reference_relative: Optional[str] = None
+    try:
+        reference_relative = str(Path(data["reference_path"]).resolve().relative_to(OPENVOICE_REFERENCE_DIR.resolve()))
+    except ValueError:
+        reference_relative = None
+
     return {
         "id": filename,
         "engine": "openvoice",
@@ -737,6 +754,7 @@ def _openvoice_synthesise(data: Dict[str, Any]) -> Dict[str, Any]:
         "style": data["style"],
         "reference": str(data["reference_path"]),
         "reference_name": Path(data["reference_path"]).name,
+        "reference_relative": reference_relative,
         "watermark": data["watermark"],
     }
 
@@ -1089,7 +1107,12 @@ def call_ollama(category: Optional[str], temperature: float = 0.7) -> Optional[s
     try:
         response = requests.post(
             f"{ollama_url.rstrip('/')}/api/generate",
-            json={"model": model, "prompt": prompt, "options": {"temperature": temperature, "top_p": 0.9}},
+            json={
+                "model": model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {"temperature": temperature, "top_p": 0.9},
+            },
             timeout=20,
         )
         response.raise_for_status()
@@ -1736,6 +1759,19 @@ for rule, view_func, methods in _legacy_routes:
     endpoint_name = f"legacy_{view_func.__name__}_{rule.strip('/').replace('/', '_') or 'root'}"
     if endpoint_name not in app.view_functions:
         app.add_url_rule(rule, endpoint=endpoint_name, view_func=view_func, methods=methods)
+
+
+@app.route("/audio/openvoice/<path:filename>", methods=["GET"])
+def openvoice_reference_endpoint(filename: str):
+    root = OPENVOICE_REFERENCE_DIR.resolve()
+    candidate = (root / filename).resolve()
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError:
+        abort(404)
+    if not candidate.is_file():
+        abort(404)
+    return send_from_directory(root, str(relative), as_attachment=False)
 
 
 @app.route("/audio/<path:filename>", methods=["GET"])

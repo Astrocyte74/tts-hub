@@ -7,9 +7,25 @@ interface AudioResultListProps {
   onRemove: (id: string) => void;
   onSaveChattts?: (item: SynthesisResult) => void;
   savingChatttsId?: string | null;
+  onSaveKokoroFavorite?: (item: SynthesisResult) => void;
+  kokoroFavoritesByVoice?: Record<
+    string,
+    {
+      label: string;
+      count: number;
+    }
+  >;
 }
 
-export function AudioResultList({ items, autoPlay, onRemove, onSaveChattts, savingChatttsId = null }: AudioResultListProps) {
+export function AudioResultList({
+  items,
+  autoPlay,
+  onRemove,
+  onSaveChattts,
+  savingChatttsId = null,
+  onSaveKokoroFavorite,
+  kokoroFavoritesByVoice = {},
+}: AudioResultListProps) {
   if (!items.length) {
     return (
       <section className="panel">
@@ -24,8 +40,8 @@ export function AudioResultList({ items, autoPlay, onRemove, onSaveChattts, savi
   return (
     <section className="panel">
       <header className="panel__header">
-      <h2 className="panel__title">Results</h2>
-    </header>
+        <h2 className="panel__title">Results</h2>
+      </header>
       <div className="result-grid">
         {items.map((item, index) => (
           <AudioResultCard
@@ -35,6 +51,8 @@ export function AudioResultList({ items, autoPlay, onRemove, onSaveChattts, savi
             onRemove={onRemove}
             onSaveChattts={onSaveChattts}
             isSavingChattts={onSaveChattts && savingChatttsId === item.id && item.engine === 'chattts'}
+            onSaveKokoroFavorite={onSaveKokoroFavorite}
+            kokoroFavoriteSummary={item.voice ? kokoroFavoritesByVoice[item.voice] : undefined}
           />
         ))}
       </div>

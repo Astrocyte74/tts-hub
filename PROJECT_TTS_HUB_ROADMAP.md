@@ -75,6 +75,11 @@ Each engine keeps its own repo/venv/asset footprint. The playground backend expo
 - Synthesis requests append `engine`, and recorded results retain which engine produced them.
 - UI resets selected voices when the engine changes; announcer controls only appear for Kokoro.
 - ChatTTS settings expose a speaker preset selector when `chattts/presets` provides saved embeddings.
+- Kokoro result cards now surface a **Save as favorite** action that reuses the shared preset dialog; saved favorites persist in `localStorage` (`kokoro:favorites`) and display badges on already-favorited clips.
+- Settings panel exposes a Kokoro favorites dropdown so saved presets can instantly re-select their voice profiles.
+- Favorites manager modal lets users rename or delete Kokoro favorites without leaving the app.
+- OpenVoice clips now show style/language badges, inline reference previews (with download fallback), and preserve the style used per clip via voice-specific overrides.
+- Added an OpenVoice help modal with recording tips (15–30s clips, iPhone-class mics recommended) and step-by-step instructions for dropping custom references into `openvoice/resources/`.
 
 ### External repos inside `tts-hub/`
 - `kokoro_twvv/` – clean Git state after current changes (pending commit below).
@@ -90,11 +95,14 @@ Each engine keeps its own repo/venv/asset footprint. The playground backend expo
    - Investigate keeping a warm ChatTTS session alive to avoid repeated model loads.
    - Standardise CLI output handling if you want WAV support in addition to MP3.
 2. **OpenVoice polish**
-   - Expand style selector (per-clip overrides, localized naming) and surface reference metadata (file names, preview audio) in the UI.
+   - Add per-voice editing controls so styles can be overridden inline without relying on the global dropdown.
+   - Cache/serve reference previews through the backend to avoid `file://` fallbacks when packages move.
 3. **Auditions for other engines**
    - Once another engine can synthesise multiple voices deterministically, extend the audition endpoint/adapter to support it.
 4. **Docs & onboarding**
    - Expand top-level README for `tts-hub` describing how to install each engine, start background services (if any), and configure env vars the backend expects (XTTS/ChatTTS/OpenVoice paths).
+5. **Favorites sync**
+   - Persist Kokoro favorites server-side (or support import/export) so teams can share curated voice collections.
 
 ## Longer-Term Ideas
 

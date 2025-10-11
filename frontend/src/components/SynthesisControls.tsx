@@ -12,6 +12,16 @@ interface ChatttsPresetOption {
   notes?: string;
 }
 
+interface KokoroFavoriteOption {
+  id: string;
+  label: string;
+  voiceLabel: string;
+  voiceId: string;
+  accentLabel?: string;
+  notes?: string;
+  unavailable?: boolean;
+}
+
 interface SynthesisControlsProps {
   engineId: string;
   engines: EngineOption[];
@@ -35,6 +45,11 @@ interface SynthesisControlsProps {
   onChatttsPresetChange?: (value: string) => void;
   chatttsSeed?: string;
   onChatttsSeedChange?: (value: string) => void;
+  kokoroFavoriteId?: string;
+  kokoroFavoriteOptions?: KokoroFavoriteOption[];
+  onKokoroFavoriteChange?: (value: string) => void;
+  onManageKokoroFavorites?: () => void;
+  kokoroFavoritesCount?: number;
 }
 
 export function SynthesisControls({
@@ -60,10 +75,18 @@ export function SynthesisControls({
   onChatttsPresetChange,
   chatttsSeed,
   onChatttsSeedChange,
+  kokoroFavoriteId,
+  kokoroFavoriteOptions = [],
+  onKokoroFavoriteChange,
+  onManageKokoroFavorites,
+  kokoroFavoritesCount,
 }: SynthesisControlsProps) {
   const selectedEngine = engines.find((engine) => engine.id === engineId);
   const description = engineMessage ?? selectedEngine?.description;
   const status = selectedEngine?.status;
+  const selectedKokoroFavorite = kokoroFavoriteId
+    ? kokoroFavoriteOptions.find((favorite) => favorite.id === kokoroFavoriteId)
+    : undefined;
 
   return (
     <section className="panel">
@@ -138,6 +161,48 @@ export function SynthesisControls({
             <p className="panel__hint panel__hint--muted">Random mode samples a new speaker for each synthesis.</p>
           )}
         </label>
+      ) : null}
+      {kokoroFavoriteOptions.length && onKokoroFavoriteChange ? (
+        <label className="field">
+          <span className="field__label">Kokoro Favorite</span>
+          <select
+            value={kokoroFavoriteId ?? ''}
+            onChange={(event) => onKokoroFavoriteChange(event.target.value)}
+            disabled={!engineAvailable}
+          >
+            <option value="">None selected</option>
+            {kokoroFavoriteOptions.map((favorite) => (
+              <option key={favorite.id} value={favorite.id}>
+                {favorite.label} · {favorite.voiceLabel}
+                {favorite.accentLabel ? ` (${favorite.accentLabel})` : ''}
+                {favorite.unavailable ? ' (missing)' : ''}
+              </option>
+            ))}
+            {kokoroFavoriteId &&
+            kokoroFavoriteId !== '' &&
+            !kokoroFavoriteOptions.some((favorite) => favorite.id === kokoroFavoriteId) ? (
+              <option value={kokoroFavoriteId}>{kokoroFavoriteId}</option>
+            ) : null}
+          </select>
+          {selectedKokoroFavorite && selectedKokoroFavorite.notes ? (
+            <p className="panel__hint panel__hint--muted">{selectedKokoroFavorite.notes}</p>
+          ) : (
+            <p className="panel__hint panel__hint--muted">Load a saved favorite to jump straight to its Kokoro voice.</p>
+          )}
+          {selectedKokoroFavorite && selectedKokoroFavorite.unavailable ? (
+            <p className="panel__hint panel__hint--warning">
+              Voice missing from the current catalogue. Reinstall assets or update favorites.
+            </p>
+          ) : null}
+        </label>
+      ) : null}
+      {onManageKokoroFavorites ? (
+        <div className="field__actions">
+          <button type="button" className="panel__button panel__button--ghost" onClick={onManageKokoroFavorites}>
+            Manage favorites
+            {typeof kokoroFavoritesCount === 'number' && kokoroFavoritesCount > 0 ? ` (${kokoroFavoritesCount})` : ''}
+          </button>
+        </div>
       ) : null}
       {onChatttsSeedChange ? (
         <label className="field">
