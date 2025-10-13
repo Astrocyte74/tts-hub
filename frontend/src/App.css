@@ -599,6 +599,17 @@
   color: rgba(148, 163, 184, 0.8);
 }
 
+.dialog-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dialog-hint {
+  font-size: 13px;
+  color: rgba(148, 163, 184, 0.75);
+}
+
 .panel__hint--warning {
   color: #fca5a5;
 }
@@ -1321,8 +1332,36 @@ textarea:focus-visible {
 }
 
 @media (max-width: 1024px) {
+  .app {
+    padding: 36px 20px 70px;
+  }
+
+  .topbar {
+    grid-template-columns: 1fr;
+    row-gap: 14px;
+    padding: 12px;
+  }
+
+  .topbar__left,
+  .topbar__center,
+  .topbar__right {
+    justify-content: flex-start;
+  }
+
+  .topbar__divider {
+    display: none;
+  }
+
+  .topbar__button-label {
+    display: none;
+  }
+
   .app__layout {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .panel__actions--wrap {
+    justify-content: flex-start;
   }
 }
 

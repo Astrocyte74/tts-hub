@@ -32,6 +32,7 @@ import type {
   SynthesisResult,
   VoiceCatalogue,
   VoiceProfile,
+  AuditionAnnouncerConfig,
 } from './types';
 
 const FALLBACK_CATEGORIES = ['any', 'narration', 'promo', 'dialogue', 'news', 'story', 'whimsy'];
@@ -301,24 +302,25 @@ function App() {
 
   const handleOpenvoiceVoiceStyleChange = (voiceId: string, style: string) => {
     const nextStyle = style || 'default';
-    setOpenvoiceVoiceStyles((prev) => {
-      const current = prev[voiceId];
-      if (current === nextStyle) {
-        return prev;
+    const currentStyles = openvoiceVoiceStyles;
+    const current = currentStyles[voiceId];
+    if (current === nextStyle) {
+      return;
+    }
+
+    if (nextStyle === 'default') {
+      if (!(voiceId in currentStyles)) {
+        return;
       }
-      if (nextStyle === 'default') {
-        if (!(voiceId in prev)) {
-          return prev;
-        }
-        const { [voiceId]: removedStyle, ...rest } = prev;
-        void removedStyle;
-        return rest;
-      }
-      return {
-        ...prev,
+      const { [voiceId]: _removed, ...rest } = currentStyles;
+      setOpenvoiceVoiceStyles(rest);
+    } else {
+      setOpenvoiceVoiceStyles({
+        ...currentStyles,
         [voiceId]: nextStyle,
-      };
-    });
+      });
+    }
+
     if (engineId === 'openvoice' && selectedVoices.length === 1 && selectedVoices[0] === voiceId) {
       applyOpenvoiceStyle(nextStyle, { updateOverrides: false });
       setOpenvoiceStyle(nextStyle);
@@ -757,6 +759,14 @@ function App() {
         setSaveDraft(null);
         return;
       }
+      const accent =
+        saveDraft.accent && saveDraft.accent.id && saveDraft.accent.label && saveDraft.accent.flag
+          ? {
+              id: saveDraft.accent.id,
+              label: saveDraft.accent.label,
+              flag: saveDraft.accent.flag,
+            }
+          : null;
 
       const nextFavorite: KokoroFavorite = {
         id: generateFavoriteId(),
@@ -765,7 +775,7 @@ function App() {
         label: trimmedLabel || saveDraft.voiceLabel,
         notes: trimmedNotes,
         locale: saveDraft.locale ?? null,
-        accent: saveDraft.accent ?? null,
+        accent,
         createdAt: new Date().toISOString(),
       };
       setKokoroFavorites([...kokoroFavorites, nextFavorite]);
@@ -870,9 +880,6 @@ function App() {
           }
         }
         if (engineId === 'chattts') {
-          delete (payload as Record<string, unknown>).speaker;
-          delete (payload as Record<string, unknown>).seed;
-
           if (voiceType === 'preset') {
             if (typeof rawMeta.speaker === 'string' && rawMeta.speaker.trim()) {
               payload.speaker = rawMeta.speaker.trim();
@@ -976,7 +983,7 @@ function App() {
       Object.entries(overridesByVoice).filter(([, value]) => Object.keys(value).length > 0),
     );
 
-    const announcerConfig = announcerEnabled
+    const announcerConfig: AuditionAnnouncerConfig | undefined = announcerEnabled
       ? {
           enabled: true,
           voice: announcerVoice ?? undefined,
