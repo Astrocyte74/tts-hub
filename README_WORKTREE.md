@@ -12,6 +12,10 @@ Good to know
 - To remove this worktree safely: `cd ../kokoro_twvv && git worktree remove ../kokoroA`
 - The real Git data lives in `../kokoro_twvv/.git` (this folder contains a pointer file).
 
+Models reuse
+- The launcher automatically reuses models from `../kokoro_twvv/models` if present, so no large re-downloads.
+- You can override via `.env`: set `KOKORO_MODELS_DIR`, or explicit `KOKORO_MODEL`/`KOKORO_VOICES` paths.
+
 Compare branches side‑by‑side
 - Run this UI on `5174` and the other worktree (`kokoroB`) on `5175`.
 - Point both at the same backend or run separate backends as needed.
