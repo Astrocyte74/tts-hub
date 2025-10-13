@@ -20,6 +20,11 @@ VENV_DIR="${VENV_DIR:-$ROOT_DIR/.venv}"
 VENV_PY="$VENV_DIR/bin/python"
 VENV_PIP="$VENV_DIR/bin/pip"
 MODELS_DIR="${KOKORO_MODELS_DIR:-$ROOT_DIR/models}"
+# Prefer shared models from the original repo if available (avoids re-downloads in worktrees)
+SHARED_MODELS_CANDIDATE="$(cd "$ROOT_DIR/.." && pwd)/kokoro_twvv/models"
+if [[ -z "${KOKORO_MODELS_DIR:-}" && -d "$SHARED_MODELS_CANDIDATE" ]]; then
+  MODELS_DIR="$SHARED_MODELS_CANDIDATE"
+fi
 MODEL_URL="${KOKORO_MODEL_URL:-https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx}"
 VOICES_URL="${KOKORO_VOICES_URL:-https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin}"
 MODEL_PATH_DEFAULT="$MODELS_DIR/kokoro-v1.0.onnx"
