@@ -7,6 +7,8 @@ import { SynthesisControls } from './components/SynthesisControls';
 import { AnnouncerControls } from './components/AnnouncerControls';
 import { SynthesisActions } from './components/SynthesisActions';
 import { AudioResultList } from './components/AudioResultList';
+import { TopContextBar } from './components/TopContextBar';
+import { ResultsDrawer } from './components/ResultsDrawer';
 import { PresetDialog } from './components/PresetDialog';
 import { InfoDialog } from './components/InfoDialog';
 import { FavoritesManagerDialog } from './components/FavoritesManagerDialog';
@@ -101,6 +103,7 @@ function App() {
   const [announcerGap, setAnnouncerGap] = useLocalStorage('kokoro:announcerGap', 0.5);
   const [voiceGroupFilter, setVoiceGroupFilter] = useLocalStorage('kokoro:voiceGroupFilter', 'all');
   const [results, setResults] = useState<SynthesisResult[]>([]);
+  const [isResultsDrawerOpen, setResultsDrawerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [extraCategories, setExtraCategories] = useState<string[]>([]);
   const [savingChatttsId, setSavingChatttsId] = useState<string | null>(null);
@@ -252,6 +255,7 @@ function App() {
   const ollamaAvailable = metaQuery.data?.ollama_available ?? false;
   const kokoroReady = metaQuery.data ? metaQuery.data.has_model && metaQuery.data.has_voices : true;
   const backendReady = engineId === 'kokoro' ? engineAvailable && kokoroReady : engineAvailable;
+  const engineStatus = selectedEngine?.status ?? null;
 
   const applyOpenvoiceStyle = (style: string, options: { updateOverrides?: boolean } = {}) => {
     setOpenvoiceStyle(style);
@@ -998,6 +1002,23 @@ function App() {
         </div>
       </header>
 
+      <TopContextBar
+        engineLabel={selectedEngine?.label ?? engineId}
+        engineStatus={engineStatus}
+        engineReady={backendReady}
+        voices={voices}
+        selectedVoiceIds={selectedVoices}
+        results={results}
+        onQuickGenerate={handleSynthesize}
+        onOpenSettings={() => {
+          const el = document.getElementById('settings-anchor');
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }}
+        onToggleResults={() => setResultsDrawerOpen((v) => !v)}
+      />
+
       {error ? <div className="app__banner app__banner--error">{error}</div> : null}
       {!engineAvailable ? (
         <div className="app__banner app__banner--warning">
@@ -1041,6 +1062,7 @@ function App() {
             selectedCategory={randomCategory}
             onCategoryChange={setRandomCategory}
           />
+          <div id="settings-anchor"></div>
           <SynthesisControls
             engineId={engineId}
             engines={engineList.map((engine) => ({
@@ -1133,6 +1155,17 @@ function App() {
           />
         </div>
       </main>
+      <ResultsDrawer
+        open={isResultsDrawerOpen}
+        onToggle={() => setResultsDrawerOpen((v) => !v)}
+        items={results}
+        autoPlay={Boolean(autoPlay)}
+        onRemove={handleRemoveResult}
+        onSaveChattts={engineId === 'chattts' ? handleSaveChatttsPresetFromResult : undefined}
+        savingChatttsId={engineId === 'chattts' ? savingChatttsId : null}
+        onSaveKokoroFavorite={handleSaveKokoroFavoriteFromResult}
+        kokoroFavoritesByVoice={kokoroFavoritesByVoice}
+      />
       <FavoritesManagerDialog
         isOpen={isFavoritesManagerOpen}
         favorites={kokoroFavorites}
