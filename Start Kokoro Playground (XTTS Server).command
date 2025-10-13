@@ -330,7 +330,7 @@ if [[ "$MODE_LOWER" == "prod" ]]; then
   exit $?
 fi
 
-DEV_PORT="${VITE_PORT:-5173}"
+DEV_PORT="${VITE_PORT:-5174}"
 DEV_HOST="${VITE_HOST:-127.0.0.1}"
 DEV_URL="http://$DEV_HOST:$DEV_PORT"
 
