@@ -27,6 +27,7 @@ VOICES_PATH_DEFAULT="$MODELS_DIR/voices-v1.0.bin"
 DEPS_STAMP="${DEPS_STAMP:-$ROOT_DIR/.deps_installed}"
 AUTO_DOWNLOAD="${KOKORO_AUTO_DOWNLOAD:-1}"
 MODE="${KOKORO_MODE:-dev}"
+SKIP_BACKEND_FLAG="${SKIP_BACKEND:-0}"
 BACKEND_API_PREFIX="${API_PREFIX:-${VITE_API_PREFIX:-api}}"
 DIST_INDEX="$FRONTEND_DIR/dist/index.html"
 TTS_HUB_ROOT="${TTS_HUB_ROOT:-$(cd "$ROOT_DIR/.." && pwd)}"
@@ -270,7 +271,16 @@ XTTS_SERVER_LOG="${XTTS_SERVER_LOG:-/tmp/kokoro_xtts_server.log}"
 XTTS_SERVER_HOST="${XTTS_SERVER_HOST:-127.0.0.1}"
 XTTS_SERVER_PORT="${XTTS_SERVER_PORT:-3333}"
 
-if [[ -x "$XTTS_PYTHON" && -f "$XTTS_SERVICE_DIR/run_server.py" ]]; then
+should_skip_backend() {
+  local v
+  v=$(printf '%s' "$SKIP_BACKEND_FLAG" | tr '[:upper:]' '[:lower:]')
+  case "$v" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if ! should_skip_backend && [[ -x "$XTTS_PYTHON" && -f "$XTTS_SERVICE_DIR/run_server.py" ]]; then
   export XTTS_SERVER_URL="${XTTS_SERVER_URL:-http://$XTTS_SERVER_HOST:$XTTS_SERVER_PORT}"
   existing_xtts_pids=$(lsof -ti TCP:$XTTS_SERVER_PORT 2>/dev/null || true)
   if [[ -n "$existing_xtts_pids" ]]; then
@@ -312,20 +322,26 @@ fi
 
 trap '[[ -n "${BACKEND_PID:-}" ]] && kill "$BACKEND_PID" 2>/dev/null; [[ -n "${FRONTEND_PID:-}" ]] && kill "$FRONTEND_PID" 2>/dev/null; [[ -n "${XTTS_SERVER_PID:-}" ]] && kill "$XTTS_SERVER_PID" 2>/dev/null' EXIT
 
-log "Starting Flask backend on http://$BACKEND_HOST:$BACKEND_PORT"
-BACKEND_HOST="$BACKEND_HOST" BACKEND_PORT="$BACKEND_PORT" "$VENV_PY" "$BACKEND_DIR/app.py" &
-BACKEND_PID=$!
+if ! should_skip_backend; then
+  log "Starting Flask backend on http://$BACKEND_HOST:$BACKEND_PORT"
+  BACKEND_HOST="$BACKEND_HOST" BACKEND_PORT="$BACKEND_PORT" "$VENV_PY" "$BACKEND_DIR/app.py" &
+  BACKEND_PID=$!
 
-sleep 2 || true
-if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
-  log "Backend failed to start. Check the output above for details."
-  wait "$BACKEND_PID"
-  exit 1
+  sleep 2 || true
+  if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+    log "Backend failed to start. Check the output above for details."
+    wait "$BACKEND_PID"
+    exit 1
+  fi
+else
+  log "SKIP_BACKEND=1 set – using existing backend at http://$BACKEND_HOST:$BACKEND_PORT"
 fi
 
 if [[ "$MODE_LOWER" == "prod" ]]; then
   log "Production mode active. Serving built assets via Flask."
-  open_in_browser "http://$BACKEND_HOST:$BACKEND_PORT"
+  if ! should_skip_backend; then
+    open_in_browser "http://$BACKEND_HOST:$BACKEND_PORT"
+  fi
   wait "$BACKEND_PID"
   exit $?
 fi
