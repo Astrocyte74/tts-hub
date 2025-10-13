@@ -33,6 +33,7 @@ DEPS_STAMP="${DEPS_STAMP:-$ROOT_DIR/.deps_installed}"
 AUTO_DOWNLOAD="${KOKORO_AUTO_DOWNLOAD:-1}"
 MODE="${KOKORO_MODE:-dev}"
 SKIP_BACKEND_FLAG="${SKIP_BACKEND:-0}"
+TAKE_OVER_FLAG="${TAKE_OVER:-0}"
 BACKEND_API_PREFIX="${API_PREFIX:-${VITE_API_PREFIX:-api}}"
 DIST_INDEX="$FRONTEND_DIR/dist/index.html"
 TTS_HUB_ROOT="${TTS_HUB_ROOT:-$(cd "$ROOT_DIR/.." && pwd)}"
@@ -66,6 +67,20 @@ if command -v npm >/dev/null 2>&1; then
 else
   HAS_NPM=0
 fi
+
+# Networking helpers
+port_in_use() {
+  local p="$1"
+  lsof -ti TCP:"$p" >/dev/null 2>&1
+}
+
+pick_free_port() {
+  local start="$1"; local limit="${2:-10}"; local p="$start"; local i=0
+  while port_in_use "$p" && [[ $i -lt $limit ]]; do
+    p=$((p+1)); i=$((i+1))
+  done
+  echo "$p"
+}
 
 MODE_LOWER=$(printf '%s' "$MODE" | tr '[:upper:]' '[:lower:]')
 
@@ -327,15 +342,29 @@ should_skip_backend() {
   esac
 }
 
+should_take_over() {
+  local v
+  v=$(printf '%s' "$TAKE_OVER_FLAG" | tr '[:upper:]' '[:lower:]')
+  case "$v" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 if ! should_skip_backend && [[ -x "$XTTS_PYTHON" && -f "$XTTS_SERVICE_DIR/run_server.py" ]]; then
   export XTTS_SERVER_URL="${XTTS_SERVER_URL:-http://$XTTS_SERVER_HOST:$XTTS_SERVER_PORT}"
   existing_xtts_pids=$(lsof -ti TCP:$XTTS_SERVER_PORT 2>/dev/null || true)
   if [[ -n "$existing_xtts_pids" ]]; then
-    log "Stopping existing XTTS server on port $XTTS_SERVER_PORT ($existing_xtts_pids)"
-    echo "$existing_xtts_pids" | xargs kill 2>/dev/null || true
-    sleep 1
+    if should_take_over; then
+      log "Taking over XTTS port $XTTS_SERVER_PORT (killing $existing_xtts_pids)"
+      echo "$existing_xtts_pids" | xargs kill 2>/dev/null || true
+      sleep 1
+    else
+      log "XTTS server detected on $XTTS_SERVER_PORT ($existing_xtts_pids); reusing."
+      XTTS_SERVER_PID="" # not ours
+    fi
   fi
-  if [[ -z "${XTTS_SERVER_PID:-}" ]] || ! kill -0 "$XTTS_SERVER_PID" 2>/dev/null; then
+  if [[ -z "$existing_xtts_pids" ]] || should_take_over; then
     log "Starting XTTS server on $XTTS_SERVER_URL"
     (
       cd "$XTTS_SERVICE_DIR"
@@ -343,8 +372,6 @@ if ! should_skip_backend && [[ -x "$XTTS_PYTHON" && -f "$XTTS_SERVICE_DIR/run_se
     ) >>"$XTTS_SERVER_LOG" 2>&1 &
     XTTS_SERVER_PID=$!
     log "XTTS server PID $XTTS_SERVER_PID (logs -> $XTTS_SERVER_LOG)"
-  else
-    log "XTTS server already running (PID $XTTS_SERVER_PID); skipping restart."
   fi
 else
   log "XTTS server script not found – falling back to CLI mode."
@@ -369,6 +396,12 @@ fi
 
 trap '[[ -n "${BACKEND_PID:-}" ]] && kill "$BACKEND_PID" 2>/dev/null; [[ -n "${FRONTEND_PID:-}" ]] && kill "$FRONTEND_PID" 2>/dev/null; [[ -n "${XTTS_SERVER_PID:-}" ]] && kill "$XTTS_SERVER_PID" 2>/dev/null' EXIT
 
+existing_backend_pids=$(lsof -ti TCP:$BACKEND_PORT 2>/dev/null || true)
+if [[ -n "$existing_backend_pids" && ! $(should_skip_backend; echo $?) -eq 0 ]]; then
+  log "Backend detected on $BACKEND_PORT ($existing_backend_pids); reusing (auto SKIP_BACKEND)."
+  SKIP_BACKEND_FLAG=1
+fi
+
 if ! should_skip_backend; then
   log "Starting Flask backend on http://$BACKEND_HOST:$BACKEND_PORT"
   BACKEND_HOST="$BACKEND_HOST" BACKEND_PORT="$BACKEND_PORT" "$VENV_PY" "$BACKEND_DIR/app.py" &
@@ -386,16 +419,24 @@ fi
 
 if [[ "$MODE_LOWER" == "prod" ]]; then
   log "Production mode active. Serving built assets via Flask."
-  if ! should_skip_backend; then
+  if should_skip_backend; then
+    log "Cannot run UI-only in prod; backend is required. Start backend in another session or run dev mode."
+    exit 1
+  else
     open_in_browser "http://$BACKEND_HOST:$BACKEND_PORT"
+    wait "$BACKEND_PID"
+    exit $?
   fi
-  wait "$BACKEND_PID"
-  exit $?
 fi
 
 DEV_PORT="${VITE_PORT:-5174}"
 DEV_HOST="${VITE_HOST:-127.0.0.1}"
+ORIG_DEV_PORT="$DEV_PORT"
+DEV_PORT="$(pick_free_port "$DEV_PORT" 10)"
 DEV_URL="http://$DEV_HOST:$DEV_PORT"
+if [[ "$DEV_PORT" != "$ORIG_DEV_PORT" ]]; then
+  log "Dev port $ORIG_DEV_PORT busy; using $DEV_PORT"
+fi
 
 log "Starting Vite dev server on $DEV_URL"
 
