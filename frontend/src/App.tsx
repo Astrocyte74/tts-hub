@@ -122,6 +122,7 @@ function App() {
   const [isFavoritesManagerOpen, setFavoritesManagerOpen] = useState(false);
   const [shouldReopenFavoritesManager, setShouldReopenFavoritesManager] = useState(false);
   const [openvoiceHelpOpen, setOpenvoiceHelpOpen] = useState(false);
+  const [isAiAssistOpen, setAiAssistOpen] = useState(false);
 
   const [openvoiceStyle, setOpenvoiceStyle] = useLocalStorage('kokoro:openvoiceStyle', 'default');
   const [openvoiceVoiceStyles, setOpenvoiceVoiceStyles] = useLocalStorage<Record<string, string>>('kokoro:openvoiceVoiceStyles', {});
@@ -1042,9 +1043,18 @@ function App() {
         voices={voices}
         selectedVoiceIds={selectedVoices}
         results={results}
+        ollamaAvailable={ollamaAvailable}
+        isResultsOpen={isResultsDrawerOpen}
+        canGenerate={canSynthesize}
         onQuickGenerate={handleSynthesize}
         onOpenSettings={() => setSettingsOpen(true)}
         onToggleResults={() => setResultsDrawerOpen((v) => !v)}
+        onShowVoicePalette={() => {
+          const el = document.getElementById('voice-selector-anchor');
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }}
       />
 
       {error ? <div className="app__banner app__banner--error">{error}</div> : null}
@@ -1089,6 +1099,8 @@ function App() {
             categories={categories}
             selectedCategory={randomCategory}
             onCategoryChange={setRandomCategory}
+            onAiAssistClick={() => setAiAssistOpen(true)}
+            aiAssistAvailable={ollamaAvailable}
           />
           <div id="settings-anchor"></div>
           <SynthesisControls
@@ -1145,7 +1157,7 @@ function App() {
             isAuditionLoading={auditionMutation.isPending}
           />
         </div>
-        <div className="app__column">
+        <div className="app__column" id="voice-selector-anchor">
           <VoiceSelector
             engineLabel={selectedEngine?.label ?? engineId ?? 'Engine'}
             engineAvailable={engineAvailable}
@@ -1213,6 +1225,22 @@ function App() {
         onRename={handleRenameFavorite}
         onDelete={handleDeleteFavorite}
       />
+      <InfoDialog
+        isOpen={isAiAssistOpen}
+        title="AI Assist"
+        onClose={() => setAiAssistOpen(false)}
+      >
+        {ollamaAvailable ? (
+          <div className="dialog-stack">
+            <p>Use AI Assist to rewrite the current script. Choose a tone in the sidebar, preview changes, then accept to replace your text.</p>
+            <p className="dialog-hint">Tip: adjust the prompt presets in <code>.env</code> to tailor rewrites to your workflow.</p>
+          </div>
+        ) : (
+          <div className="dialog-stack">
+            <p>Connect an Ollama instance to enable AI-assisted rewrites. Set <code>OLLAMA_URL</code> and <code>OLLAMA_MODEL</code> in your <code>.env</code>, then relaunch.</p>
+          </div>
+        )}
+      </InfoDialog>
       <PresetDialog
         isOpen={Boolean(saveDraft)}
         title={presetDialogTitle}
