@@ -198,6 +198,47 @@ should_auto_download() {
   esac
 }
 
+health_check_models() {
+  local model_path="${KOKORO_MODEL:-$MODEL_PATH_DEFAULT}"
+  local voices_path="${KOKORO_VOICES:-$VOICES_PATH_DEFAULT}"
+  local using_shared="no"
+  if [[ "$MODELS_DIR" == "$SHARED_MODELS_CANDIDATE" ]]; then
+    using_shared="yes"
+    log "Using shared models directory: $MODELS_DIR"
+  else
+    log "Using models directory: $MODELS_DIR"
+  fi
+
+  local exists_any=0
+  if [[ -f "$model_path" ]]; then
+    local sz; sz=$(du -h "$model_path" 2>/dev/null | awk '{print $1}')
+    log " - Model: $(basename "$model_path") present ($sz)"
+    exists_any=1
+  else
+    log " - Model: MISSING at $model_path"
+  fi
+  if [[ -f "$voices_path" ]]; then
+    local szv; szv=$(du -h "$voices_path" 2>/dev/null | awk '{print $1}')
+    log " - Voices: $(basename "$voices_path") present ($szv)"
+    exists_any=1
+  else
+    log " - Voices: MISSING at $voices_path"
+  fi
+
+  if [[ $exists_any -eq 0 ]]; then
+    if ! should_auto_download; then
+      if [[ "$using_shared" == "yes" ]]; then
+        log "Shared models not found and auto-download is disabled."
+        log "Tip: run the launcher in ../kokoro_twvv first to download assets, or set KOKORO_MODELS_DIR/.env to a valid path."
+      else
+        log "Models not found and auto-download is disabled. Set KOKORO_MODELS_DIR or enable KOKORO_AUTO_DOWNLOAD=1."
+      fi
+    else
+      log "Assets missing; auto-download is enabled and will attempt download."
+    fi
+  fi
+}
+
 ensure_asset() {
   local url="$1"
   local target="$2"
@@ -215,6 +256,7 @@ ensure_asset() {
   fi
 }
 
+health_check_models
 ensure_asset "$MODEL_URL" "$MODEL_PATH_DEFAULT" "Model"
 ensure_asset "$VOICES_URL" "$VOICES_PATH_DEFAULT" "Voice bank"
 
