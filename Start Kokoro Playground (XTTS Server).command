@@ -38,6 +38,23 @@ OPENVOICE_VENV="${OPENVOICE_VENV:-$OPENVOICE_ROOT/.venv}"
 CHATTT_ROOT="${CHATTT_ROOT:-$TTS_HUB_ROOT/chattts}"
 CHATTT_VENV="${CHATTT_VENV:-$CHATTT_ROOT/.venv}"
 
+log() {
+  printf '[Kokoro SPA] %s\n' "$*"
+}
+
+open_in_browser() {
+  local url="$1"
+  if command -v open >/dev/null 2>&1; then
+    log "Opening $url in default browser"
+    (sleep 2 && open "$url") >/dev/null 2>&1 &
+  elif command -v xdg-open >/dev/null 2>&1; then
+    log "Opening $url in default browser"
+    (sleep 2 && xdg-open "$url") >/dev/null 2>&1 &
+  else
+    log "Could not find a browser launcher; open $url manually."
+  fi
+}
+
 if command -v npm >/dev/null 2>&1; then
   HAS_NPM=1
 else
@@ -59,10 +76,6 @@ if [[ "$HAS_NPM" -eq 0 ]]; then
     log "npm not found; using existing frontend/dist bundle in prod mode."
   fi
 fi
-
-log() {
-  printf '[Kokoro SPA] %s\n' "$*"
-}
 
 ensure_python_venv() {
   local name="$1"
@@ -171,7 +184,9 @@ download_file() {
 }
 
 should_auto_download() {
-  case "${AUTO_DOWNLOAD,,}" in
+  local value
+  value=$(printf '%s' "$AUTO_DOWNLOAD" | tr '[:upper:]' '[:lower:]')
+  case "$value" in
     1|true|yes|on) return 0 ;;
     *) return 1 ;;
   esac
@@ -310,9 +325,7 @@ fi
 
 if [[ "$MODE_LOWER" == "prod" ]]; then
   log "Production mode active. Serving built assets via Flask."
-  if command -v open >/dev/null 2>&1; then
-    (sleep 2 && open "http://$BACKEND_HOST:$BACKEND_PORT") >/dev/null 2>&1 &
-  fi
+  open_in_browser "http://$BACKEND_HOST:$BACKEND_PORT"
   wait "$BACKEND_PID"
   exit $?
 fi
@@ -328,5 +341,7 @@ VITE_API_BASE_URL="http://$BACKEND_HOST:$BACKEND_PORT" \
 VITE_API_PREFIX="${VITE_API_PREFIX:-$BACKEND_API_PREFIX}" \
 npm run dev -- --host "$DEV_HOST" --port "$DEV_PORT" &
 FRONTEND_PID=$!
+
+open_in_browser "$DEV_URL"
 
 wait "$FRONTEND_PID"
