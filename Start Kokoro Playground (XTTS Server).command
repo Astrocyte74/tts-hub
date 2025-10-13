@@ -332,6 +332,8 @@ fi
 XTTS_SERVER_LOG="${XTTS_SERVER_LOG:-/tmp/kokoro_xtts_server.log}"
 XTTS_SERVER_HOST="${XTTS_SERVER_HOST:-127.0.0.1}"
 XTTS_SERVER_PORT="${XTTS_SERVER_PORT:-3333}"
+BACKEND_MODE="unknown"
+XTTS_MODE="skipped"
 
 should_skip_backend() {
   local v
@@ -362,6 +364,7 @@ if ! should_skip_backend && [[ -x "$XTTS_PYTHON" && -f "$XTTS_SERVICE_DIR/run_se
     else
       log "XTTS server detected on $XTTS_SERVER_PORT ($existing_xtts_pids); reusing."
       XTTS_SERVER_PID="" # not ours
+      XTTS_MODE="reused"
     fi
   fi
   if [[ -z "$existing_xtts_pids" ]] || should_take_over; then
@@ -372,6 +375,7 @@ if ! should_skip_backend && [[ -x "$XTTS_PYTHON" && -f "$XTTS_SERVICE_DIR/run_se
     ) >>"$XTTS_SERVER_LOG" 2>&1 &
     XTTS_SERVER_PID=$!
     log "XTTS server PID $XTTS_SERVER_PID (logs -> $XTTS_SERVER_LOG)"
+    XTTS_MODE="started"
   fi
 else
   log "XTTS server script not found – falling back to CLI mode."
@@ -413,8 +417,10 @@ if ! should_skip_backend; then
     wait "$BACKEND_PID"
     exit 1
   fi
+  BACKEND_MODE="started"
 else
   log "SKIP_BACKEND=1 set – using existing backend at http://$BACKEND_HOST:$BACKEND_PORT"
+  BACKEND_MODE="reused"
 fi
 
 if [[ "$MODE_LOWER" == "prod" ]]; then
@@ -437,6 +443,8 @@ DEV_URL="http://$DEV_HOST:$DEV_PORT"
 if [[ "$DEV_PORT" != "$ORIG_DEV_PORT" ]]; then
   log "Dev port $ORIG_DEV_PORT busy; using $DEV_PORT"
 fi
+
+log "Status summary: backend=$BACKEND_MODE, xtts=$XTTS_MODE, ui=$DEV_HOST:$DEV_PORT, mode=$MODE_LOWER"
 
 log "Starting Vite dev server on $DEV_URL"
 
