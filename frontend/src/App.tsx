@@ -9,6 +9,7 @@ import { SynthesisActions } from './components/SynthesisActions';
 import { AudioResultList } from './components/AudioResultList';
 import { TopContextBar } from './components/TopContextBar';
 import { ResultsDrawer } from './components/ResultsDrawer';
+import { SettingsPopover } from './components/SettingsPopover';
 import { PresetDialog } from './components/PresetDialog';
 import { InfoDialog } from './components/InfoDialog';
 import { FavoritesManagerDialog } from './components/FavoritesManagerDialog';
@@ -104,6 +105,14 @@ function App() {
   const [voiceGroupFilter, setVoiceGroupFilter] = useLocalStorage('kokoro:voiceGroupFilter', 'all');
   const [results, setResults] = useState<SynthesisResult[]>([]);
   const [isResultsDrawerOpen, setResultsDrawerOpen] = useState(false);
+  const [isSettingsOpen, setSettingsOpen] = useState(false);
+  const [queue, setQueue] = useState<{
+    id: string;
+    label: string;
+    engine: string;
+    status: 'pending' | 'rendering' | 'done' | 'error';
+    error?: string;
+  }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [extraCategories, setExtraCategories] = useState<string[]>([]);
   const [savingChatttsId, setSavingChatttsId] = useState<string | null>(null);
@@ -825,9 +834,17 @@ function App() {
 
     let pendingOpenvoiceStyles: Record<string, string> | null = null;
     let openvoiceStylesChanged = false;
+    const generateQueueId = () => `q-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+    const setStatus = (id: string, status: 'pending' | 'rendering' | 'done' | 'error', err?: string) => {
+      setQueue((prev) => prev.map((it) => (it.id === id ? { ...it, status, error: err } : it)));
+    };
 
     for (const voice of selectedVoices) {
       try {
+        const qid = generateQueueId();
+        const voiceLabel = voiceById.get(voice)?.label ?? voice;
+        setQueue((prev) => [...prev, { id: qid, label: `Synthesis · ${voiceLabel}`, engine: engineId, status: 'pending' }]);
+        setResultsDrawerOpen(true);
         const payload: SynthesisRequest & { style?: string; speaker?: string; seed?: number } = {
           text: script,
           voice,
@@ -874,9 +891,16 @@ function App() {
             }
           }
         }
+        setStatus(qid, 'rendering');
         await synthMutation.mutateAsync(payload);
+        setStatus(qid, 'done');
       } catch (err) {
         console.error(err);
+        setQueue((prev) => {
+          if (!prev.length) return prev;
+          const last = prev[prev.length - 1];
+          return [...prev.slice(0, -1), { ...last, status: 'error', error: err instanceof Error ? err.message : 'Error' }];
+        });
         break;
       }
     }
@@ -906,6 +930,12 @@ function App() {
     }
 
     const overridesByVoice: Record<string, Record<string, unknown>> = {};
+    const auditionQueueId = `q-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+    setQueue((prev) => [
+      ...prev,
+      { id: auditionQueueId, label: `Audition · ${selectedVoices.length} voices`, engine: engineId, status: 'pending' },
+    ]);
+    setResultsDrawerOpen(true);
     selectedVoices.forEach((voiceId) => {
       const override: Record<string, unknown> = {};
       const voiceMeta = voiceById.get(voiceId);
@@ -962,6 +992,7 @@ function App() {
     }
 
     try {
+      setQueue((prev) => prev.map((it) => (it.id === auditionQueueId ? { ...it, status: 'rendering' } : it)));
       await auditionMutation.mutateAsync({
         text: script,
         voices: selectedVoices,
@@ -975,7 +1006,9 @@ function App() {
       });
     } catch (err) {
       console.error(err);
+      setQueue((prev) => prev.map((it) => (it.id === auditionQueueId ? { ...it, status: 'error', error: String(err) } : it)));
     }
+    setQueue((prev) => prev.map((it) => (it.id === auditionQueueId ? { ...it, status: 'done' } : it)));
   };
 
   const handleRemoveResult = (id: string) => {
@@ -1010,12 +1043,7 @@ function App() {
         selectedVoiceIds={selectedVoices}
         results={results}
         onQuickGenerate={handleSynthesize}
-        onOpenSettings={() => {
-          const el = document.getElementById('settings-anchor');
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
-        }}
+        onOpenSettings={() => setSettingsOpen(true)}
         onToggleResults={() => setResultsDrawerOpen((v) => !v)}
       />
 
@@ -1159,12 +1187,23 @@ function App() {
         open={isResultsDrawerOpen}
         onToggle={() => setResultsDrawerOpen((v) => !v)}
         items={results}
+        queue={queue}
         autoPlay={Boolean(autoPlay)}
         onRemove={handleRemoveResult}
         onSaveChattts={engineId === 'chattts' ? handleSaveChatttsPresetFromResult : undefined}
         savingChatttsId={engineId === 'chattts' ? savingChatttsId : null}
         onSaveKokoroFavorite={handleSaveKokoroFavoriteFromResult}
         kokoroFavoritesByVoice={kokoroFavoritesByVoice}
+      />
+      <SettingsPopover
+        open={isSettingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        speed={Number(speed)}
+        onSpeedChange={(value) => setSpeed(Number(value))}
+        trimSilence={Boolean(trimSilence)}
+        onTrimSilenceChange={(value) => setTrimSilence(Boolean(value))}
+        autoPlay={Boolean(autoPlay)}
+        onAutoPlayChange={(value) => setAutoPlay(Boolean(value))}
       />
       <FavoritesManagerDialog
         isOpen={isFavoritesManagerOpen}

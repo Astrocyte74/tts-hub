@@ -794,6 +794,32 @@ textarea:focus-visible {
 .results-drawer__list { display: flex; flex-direction: column; gap: 12px; }
 .results-drawer__empty { color: rgba(148,163,184,.8); padding: 12px; }
 
+/* Tabs */
+.tabs { display: flex; gap: 8px; margin-bottom: 8px; }
+.tabs__tab { background: rgba(30,41,59,.7); color: #e2e8f0; border: 1px solid rgba(148,163,184,.35); padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+.tabs__tab.is-active { background: linear-gradient(135deg, rgba(56,189,248,.25), rgba(99,102,241,.25)); border-color: rgba(99,102,241,.55); }
+
+/* Queue */
+.queue-list { display: flex; flex-direction: column; gap: 8px; }
+.queue-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; background: rgba(15,23,42,.85); border: 1px solid rgba(148,163,184,.3); border-radius: 10px; padding: 10px 12px; color: #e2e8f0; font-size: 14px; }
+.queue-row--pending { border-color: rgba(148,163,184,.45); }
+.queue-row--rendering { border-color: rgba(59,130,246,.55); box-shadow: 0 0 0 2px rgba(59,130,246,.15) inset; }
+.queue-row--done { opacity: .9; }
+.queue-row--error { border-color: rgba(248,113,113,.6); }
+.queue-row__meta { color: rgba(148,163,184,.8); font-size: 12px; }
+.queue-row__status { text-transform: capitalize; font-size: 12px; color: rgba(165,243,252,.9); }
+
+/* Popover */
+.popover { position: fixed; inset: 0; z-index: 70; }
+.popover__backdrop { position: absolute; inset: 0; background: rgba(2,6,23,.4); backdrop-filter: blur(2px); }
+.popover__panel { position: absolute; top: 12px; right: 32px; width: 320px; background: rgba(15,23,42,.98); border: 1px solid rgba(148,163,184,.35); border-radius: 12px; box-shadow: 0 20px 60px rgba(2,6,23,.6); padding: 14px; }
+.popover__header { margin-bottom: 8px; }
+.popover__title { margin: 0; font-size: 16px; color: #f8fafc; }
+.popover__content { display: flex; flex-direction: column; gap: 10px; }
+.popover__row { display: block; }
+.popover__footer { display: flex; justify-content: flex-end; margin-top: 8px; }
+.popover__button { border: 1px solid rgba(148,163,184,.35); background: rgba(30,41,59,.7); color: #e2e8f0; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+
 .result-card {
   display: flex;
   flex-direction: column;
