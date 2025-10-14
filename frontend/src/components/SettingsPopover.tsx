@@ -11,6 +11,8 @@ interface SettingsPopoverProps {
   onHoverPreviewChange: (value: boolean) => void;
   autoOpenClips?: boolean;
   onAutoOpenClipsChange?: (value: boolean) => void;
+  recentCount?: number;
+  onClearRecents?: () => void;
 }
 
 export function SettingsPopover({
@@ -26,6 +28,8 @@ export function SettingsPopover({
   onHoverPreviewChange,
   autoOpenClips = true,
   onAutoOpenClipsChange,
+  recentCount = 0,
+  onClearRecents,
 }: SettingsPopoverProps) {
   if (!open) return null;
   return (
@@ -72,6 +76,17 @@ export function SettingsPopover({
               <span>Auto open Clips on completion</span>
             </label>
           </div>
+          {onClearRecents ? (
+            <div className="popover__row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <span>Recent voices</span>
+              <div>
+                <span style={{ opacity: 0.7, marginRight: 8 }}>{recentCount}</span>
+                <button className="popover__button" type="button" onClick={onClearRecents}>
+                  Clear recent voices
+                </button>
+              </div>
+            </div>
+          ) : null}
           <div className="popover__row">
             <label className="field">
               <span className="field__label">

@@ -162,7 +162,7 @@ export function TextWorkbench({
           onClick={onAiAssistClick}
           disabled={!onAiAssistClick}
         >
-          AI Assist {onAiAssistClick ? (aiAssistAvailable ? '· Ready' : '· Offline') : ''}
+          AI Assist
         </button>
       </div>
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { IconBrand, IconCaretDown, IconCog, IconCpu, IconDocument, IconMic, IconPlay, IconWave } from '../icons';
 import type { SynthesisResult, VoiceProfile } from '../types';
 
 interface TopContextBarProps {
@@ -106,7 +107,9 @@ export function TopContextBar({
     <header className="topbar" role="banner" aria-label="Session context">
       <div className="topbar__left">
         <button type="button" className="topbar__brand" onClick={onShowInfo} aria-label="Open about dialog">
-          <span className="topbar__brand-mark" aria-hidden>⧉</span>
+          <span className="topbar__brand-mark" aria-hidden>
+            <IconBrand />
+          </span>
           <span className="topbar__brand-label">Kokoro Playground</span>
         </button>
         <span className="topbar__divider" aria-hidden />
@@ -125,6 +128,7 @@ export function TopContextBar({
           aria-label="Edit script"
           title="Script (1)"
         >
+          <span className="topbar__chip-icon" aria-hidden><IconDocument /></span>
           <span className="topbar__chip-label">Script</span>
           <span className="topbar__chip-value">Text</span>
         </button>
@@ -139,6 +143,7 @@ export function TopContextBar({
           }}
           title="Engine (2)"
         >
+          <span className="topbar__chip-icon" aria-hidden><IconCpu /></span>
           <span className="topbar__chip-label">Engine</span>
           <span className="topbar__chip-value">
             <span className="topbar__status-dot" aria-hidden style={{ marginRight: 6, background: engineReady ? '#22c55e' : '#eab308' }} />
@@ -158,6 +163,7 @@ export function TopContextBar({
           title="Jump to voices (V)"
           ref={voiceBtnRef}
         >
+          <span className="topbar__chip-icon" aria-hidden><IconMic /></span>
           <span className="topbar__chip-label">Voice</span>
           <span className="topbar__chip-value">{voiceSummary}</span>
           {(quickFavorites.length > 0 || quickRecents.length > 0) ? (
@@ -170,7 +176,7 @@ export function TopContextBar({
                 setVoiceMenuOpen((v) => !v);
               }}
             >
-              ▼
+              <IconCaretDown />
             </span>
           ) : null}
         </button>
@@ -187,6 +193,7 @@ export function TopContextBar({
             aria-label="Show results"
             title="Results (4)"
           >
+            <span className="topbar__chip-icon" aria-hidden><IconWave /></span>
             <span className="topbar__chip-label">Clips</span>
             <span className="topbar__chip-value">{queueLabel}</span>
             {queueTotal > 0 ? (
@@ -200,7 +207,7 @@ export function TopContextBar({
 
       <div className="topbar__right">
         <button type="button" className="topbar__button" onClick={onOpenSettings} aria-label="Open settings" title="Settings (S)">
-          ⚙️
+          <IconCog />
         </button>
         <button
           type="button"
@@ -211,7 +218,7 @@ export function TopContextBar({
           aria-busy={isGenerating}
           title={canGenerate ? (isGenerating ? 'Generating…' : 'Create clip (G)') : 'Enter text and pick a voice'}
         >
-          {isGenerating ? '⏳' : '▶️'}
+          {isGenerating ? '⏳' : <IconPlay />}
           <span className="topbar__button-label">{isGenerating ? 'Generating…' : 'Create clip'}</span>
         </button>
       </div>
