@@ -280,6 +280,7 @@ export function VoiceSelector({
 
   const groupsToRender = useMemo(() => buildDisplayGroups(filteredForFacets, groups, new Set(filteredForFacets.map(v=>v.id)), activeGroup), [filteredForFacets, groups, activeGroup]);
   const missingPreviewIds = useMemo(() => filteredForFacets.filter((v) => !findPreviewUrl(v)).map((v) => v.id), [filteredForFacets]);
+  const bulkBusy = useMemo(() => missingPreviewIds.some((id) => previewBusyIds.includes(id)), [missingPreviewIds, previewBusyIds]);
 
   return (
     <section className="panel">
@@ -295,9 +296,10 @@ export function VoiceSelector({
             <button
               className="panel__button"
               type="button"
+              disabled={bulkBusy}
               onClick={() => onBulkGeneratePreview(missingPreviewIds)}
             >
-              Generate previews for {missingPreviewIds.length}
+              {bulkBusy ? 'Generating…' : `Generate previews for ${missingPreviewIds.length}`}
             </button>
           ) : null}
           <button className="panel__button" type="button" onClick={onClear}>

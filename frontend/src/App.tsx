@@ -1242,12 +1242,16 @@ function App() {
                 ]);
               const voiceLabel = (id: string) => voices.find((v) => v.id === id)?.label ?? id;
               try {
-                setPreviewBusy((prev) => Array.from(new Set([...prev, ...ids])));
+                // filter out ids already in progress or already queued
+                const activeLabels = new Set(queue.map((q) => q.label));
+                const toRun = ids.filter((id) => !previewBusy.includes(id) && !activeLabels.has(`Preview · ${voiceLabel(id)}`));
+                if (!toRun.length) return;
+                setPreviewBusy((prev) => Array.from(new Set([...prev, ...toRun])));
                 setResultsDrawerOpen(true);
-                for (const id of ids) {
+                for (const id of toRun) {
                   enqueue(id, voiceLabel(id));
                 }
-                for (const id of ids) {
+                for (const id of toRun) {
                   const label = voiceLabel(id);
                   // mark rendering
                   setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` && q.status === 'pending' ? { ...q, status: 'rendering' } : q));
