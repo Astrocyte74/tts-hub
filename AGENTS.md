@@ -55,7 +55,7 @@ This document orients future agents working on the CodexB branch so you can ship
 4) A11y
    - Use `role=list`/`listitem` for lists; label interactive elements (`aria-label`, `aria-pressed`).
 5) Docs
-   - Update `DESIGN_CodexB.md` and `README.md` sections relevant to the change.
+   - Update `DESIGN.md` and `README.md` sections relevant to the change.
 
 ## Coding Conventions
 - Prefer small, pure helpers in components; avoid global singletons except for shared audio element.
@@ -77,6 +77,6 @@ This document orients future agents working on the CodexB branch so you can ship
 - Previews currently implemented for Kokoro; other engines need parity when we add them.
 
 ## Contact Points / Quick Links
-- API routes overview: `API_ROUTES.md` (this worktree)
-- Phase 2 summary + a11y notes: `DESIGN_CodexB.md`
+- API routes overview: `API_ROUTES.md` (repo root)
+- Phase 2 summary + a11y notes: `DESIGN.md`
 - Worktrees usage: `../WORKTREES.md` and `README_WORKTREE.md`

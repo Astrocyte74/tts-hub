@@ -129,7 +129,7 @@ The backend also serves `frontend/dist/` assets when Vite is not running (produc
 - WaveSurfer.js playback for generated clips, with persistent history and download links.
 - LocalStorage persistence for script, voices, announcer, and playback preferences.
 
-### CodexB Phase 2 Additions
+### Kokoro UI v2 (Phase 2) Additions
 
 - Top context bar with engine, voice summary, clips, and quick actions.
 - Queue + History drawer at the bottom with optimistic progress, cancel stub, and session persistence.
