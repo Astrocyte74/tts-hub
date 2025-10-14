@@ -115,6 +115,7 @@ export function VoiceSelector({
 }: VoiceSelectorProps) {
   const [query, setQuery] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
   const disabled = !engineAvailable || isLoading;
   const availableStyleChoices = useMemo(() => {
     if (!styleOptions || !styleOptions.length) {
@@ -205,6 +206,12 @@ export function VoiceSelector({
   }, [filteredVoices, activeLocales, activeGenders, activeTags]);
 
   // Hover preview (best-effort) — attempts to find a preview URL in raw data
+  const toAbsolute = (url: string): string => {
+    if (!url) return url;
+    if (/^https?:\/\//i.test(url)) return url;
+    return API_BASE ? `${API_BASE}${url.startsWith('/') ? '' : '/'}${url}` : url;
+  };
+
   const findPreviewUrl = (voice: VoiceProfile): string | null => {
     const candidates = ['sample_url','sample','preview_url','preview','audio_url','audio','demo_url','demo'];
     const tryObject = (obj: unknown): string | null => {
@@ -212,7 +219,10 @@ export function VoiceSelector({
       const rec = obj as Record<string, unknown>;
       for (const key of candidates) {
         const v = typeof rec[key] === 'string' ? String(rec[key]) : '';
-        if (v) return (/^https?:\/\//i.test(v) || v.startsWith('/')) ? v : `/audio/${v}`;
+        if (v) {
+          const normalized = v.startsWith('/audio/') || v.startsWith('http') ? v : `/audio/${v}`;
+          return toAbsolute(normalized);
+        }
       }
       return null;
     };
