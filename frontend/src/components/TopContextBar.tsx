@@ -92,23 +92,6 @@ export function TopContextBar({
         <button
           type="button"
           role="tab"
-          aria-selected={activePanel === 'controls'}
-          className={`topbar__chip ${activePanel === 'controls' ? 'topbar__chip--active' : ''}`}
-          onClick={() => {
-            onChangePanel && onChangePanel('controls');
-            onEngineClick && onEngineClick();
-          }}
-          title="Engine (1)"
-        >
-          <span className="topbar__chip-label">Engine</span>
-          <span className="topbar__chip-value">
-            <span className="topbar__status-dot" aria-hidden style={{ marginRight: 6, background: engineReady ? '#22c55e' : '#eab308' }} />
-            {engineLabel}
-          </span>
-        </button>
-        <button
-          type="button"
-          role="tab"
           aria-selected={activePanel === 'script'}
           className={`topbar__chip ${activePanel === 'script' ? 'topbar__chip--active' : ''}`}
           onClick={() => {
@@ -120,6 +103,23 @@ export function TopContextBar({
         >
           <span className="topbar__chip-label">Script</span>
           <span className="topbar__chip-value">Text</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activePanel === 'controls'}
+          className={`topbar__chip ${activePanel === 'controls' ? 'topbar__chip--active' : ''}`}
+          onClick={() => {
+            onChangePanel && onChangePanel('controls');
+            onEngineClick && onEngineClick();
+          }}
+          title="Engine (2)"
+        >
+          <span className="topbar__chip-label">Engine</span>
+          <span className="topbar__chip-value">
+            <span className="topbar__status-dot" aria-hidden style={{ marginRight: 6, background: engineReady ? '#22c55e' : '#eab308' }} />
+            {engineLabel}
+          </span>
         </button>
         <button
           type="button"
