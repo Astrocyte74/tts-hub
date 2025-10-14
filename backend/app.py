@@ -18,7 +18,7 @@ import numpy as np
 import soundfile as sf
 from flask import Blueprint, Flask, abort, jsonify, make_response, request, send_from_directory
 from flask_cors import CORS
-from .favorites_store import FavoritesStore
+from favorites_store import FavoritesStore
 
 try:
     from kokoro_onnx import Kokoro
