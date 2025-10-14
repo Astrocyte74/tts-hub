@@ -26,6 +26,9 @@ interface TopContextBarProps {
   activePanel?: 'script' | 'voices' | 'controls' | 'results';
   onChangePanel?: (panel: 'script' | 'voices' | 'controls' | 'results') => void;
   onShowScript?: () => void;
+  quickFavorites?: { id: string; label: string }[];
+  quickRecents?: { id: string; label: string }[];
+  onQuickSelectVoice?: (id: string) => void;
 }
 
 function formatVoiceSummary(voices: VoiceProfile[], selectedVoiceIds: string[]) {
@@ -68,6 +71,9 @@ export function TopContextBar({
   activePanel,
   onChangePanel,
   onShowScript,
+  quickFavorites = [],
+  quickRecents = [],
+  onQuickSelectVoice,
 }: TopContextBarProps) {
   const voiceSummary = formatVoiceSummary(voices, selectedVoiceIds);
   const clipsCount = results.length;
@@ -75,6 +81,24 @@ export function TopContextBar({
   const queueLabel = clipsCount === 1 ? '1 clip' : `${clipsCount} clips`;
   const hasRunning = queueRunning > 0;
   const noVoiceSelected = selectedVoiceIds.length === 0;
+  const voiceBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!voiceMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setVoiceMenuOpen(false);
+    const onClick = (e: MouseEvent) => {
+      const el = voiceBtnRef.current;
+      if (!el) return;
+      if (e.target instanceof Node && !el.contains(e.target)) setVoiceMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('click', onClick, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('click', onClick, { capture: true } as any);
+    };
+  }, [voiceMenuOpen]);
 
   // Clicking the engine chip navigates to full controls rather than showing a menu.
 
@@ -126,12 +150,29 @@ export function TopContextBar({
           role="tab"
           aria-selected={activePanel === 'voices'}
           className={`topbar__chip ${activePanel === 'voices' ? 'topbar__chip--active' : ''} ${noVoiceSelected && activePanel === 'voices' ? 'topbar__chip--warn' : ''}`}
-          onClick={onShowVoicePalette}
+          onClick={() => {
+            onChangePanel && onChangePanel('voices');
+            onShowVoicePalette && onShowVoicePalette();
+          }}
           aria-label="Show voice palette"
           title="Jump to voices (V)"
+          ref={voiceBtnRef}
         >
           <span className="topbar__chip-label">Voice</span>
           <span className="topbar__chip-value">{voiceSummary}</span>
+          {(quickFavorites.length > 0 || quickRecents.length > 0) ? (
+            <span
+              className="topbar__badge"
+              title="Quick voices"
+              aria-label="Open quick voices"
+              onClick={(e) => {
+                e.stopPropagation();
+                setVoiceMenuOpen((v) => !v);
+              }}
+            >
+              ▼
+            </span>
+          ) : null}
         </button>
         {(queueTotal > 0 || clipsCount > 0) && (
           <button
@@ -174,6 +215,37 @@ export function TopContextBar({
           <span className="topbar__button-label">{isGenerating ? 'Generating…' : 'Create clip'}</span>
         </button>
       </div>
+
+      {voiceMenuOpen && (quickFavorites.length > 0 || quickRecents.length > 0) ? (
+        <div className="popover" role="dialog" aria-label="Quick voices">
+          <div className="popover__backdrop" />
+          <div className="popover__panel" style={{ position: 'absolute', top: 56, right: 160, width: 300 }}>
+            <div className="popover__header"><h3 className="popover__title">Quick voices</h3></div>
+            <div className="popover__content">
+              {quickFavorites.length > 0 ? (
+                <div>
+                  <strong>Favorites</strong>
+                  {quickFavorites.map((v) => (
+                    <button key={`fav-${v.id}`} className="popover__button" type="button" onClick={() => { onQuickSelectVoice && onQuickSelectVoice(v.id); setVoiceMenuOpen(false); }}>
+                      {v.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {quickRecents.length > 0 ? (
+                <div>
+                  <strong>Recent</strong>
+                  {quickRecents.map((v) => (
+                    <button key={`rec-${v.id}`} className="popover__button" type="button" onClick={() => { onQuickSelectVoice && onQuickSelectVoice(v.id); setVoiceMenuOpen(false); }}>
+                      {v.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
     </header>
   );

@@ -234,6 +234,29 @@ function App() {
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [kokoroFavorites, voices]);
 
+  const quickRecentVoices = useMemo(() => {
+    const ids: string[] = [];
+    for (const r of results) {
+      const id = typeof r.voice === 'string' ? r.voice : '';
+      if (id && !ids.includes(id)) ids.push(id);
+      if (ids.length >= 5) break;
+    }
+    return ids
+      .map((id) => ({ id, label: voiceById.get(id)?.label ?? id }))
+      .filter((v) => v.label && v.id);
+  }, [results, voiceById]);
+
+  const quickFavoriteVoices = useMemo(() => {
+    const favIds = new Set<string>(uiFavorites);
+    kokoroFavorites.forEach((f) => favIds.add(f.voiceId));
+    const out: { id: string; label: string }[] = [];
+    favIds.forEach((id) => {
+      const voice = voiceById.get(id);
+      if (voice) out.push({ id, label: voice.label });
+    });
+    return out.sort((a, b) => a.label.localeCompare(b.label)).slice(0, 5);
+  }, [uiFavorites, kokoroFavorites, voiceById]);
+
   useEffect(() => {
     if (engineId !== 'kokoro') {
       if (selectedKokoroFavoriteId !== '') {
@@ -1144,6 +1167,13 @@ function App() {
           setActivePanel('voices');
         }}
         onAiAssistClick={() => setAiAssistOpen(true)}
+        quickFavorites={quickFavoriteVoices}
+        quickRecents={quickRecentVoices}
+        onQuickSelectVoice={(id) => {
+          if (!id) return;
+          setSelectedVoices([id]);
+          setActivePanel('script');
+        }}
         engines={engineList.map((engine) => ({ id: engine.id, label: engine.label, available: engine.available, status: engine.status }))}
         onEngineChange={(id) => setEngineId(id)}
         activePanel={activePanel}
