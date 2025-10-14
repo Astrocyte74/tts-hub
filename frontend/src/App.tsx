@@ -138,6 +138,7 @@ function App() {
   const [engineId, setEngineId] = useLocalStorage('kokoro:engine', DEFAULT_ENGINE);
   const [uiFavorites, setUiFavorites] = useLocalStorage<string[]>('kokoro:uiVoiceFavorites', []);
   const [previewBusy, setPreviewBusy] = useState<string[]>([]);
+  const [activePanel, setActivePanel] = useLocalStorage<'script' | 'voices' | 'controls' | 'results'>('kokoro:activePanel', 'script');
   const metaQuery = useQuery({ queryKey: ['meta'], queryFn: fetchMeta, staleTime: 5 * 60 * 1000 });
   const voicesQuery = useQuery({
     queryKey: ['voices', engineId],
@@ -1054,7 +1055,7 @@ function App() {
   const canSynthesize = backendReady && Boolean(text.trim()) && selectedVoices.length > 0;
   const hasMultipleVoices = backendReady && selectedVoices.length > 1;
 
-  // Hotkeys for topbar actions: G (generate), R (results), V (voices), S (settings), Shift+/ (about)
+  // Hotkeys: 1 Script, 2 Voices, 3 Controls, 4 Results; G Generate; R Results; V Voices; S Settings; Shift+/ AI Assist
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -1064,18 +1065,29 @@ function App() {
       if (editable && noMod) return; // don't steal plain typing
 
       const k = e.key.toLowerCase();
-      if (noMod && k === 'g') {
+      if (noMod && k === '1') {
+        e.preventDefault();
+        setActivePanel('script');
+      } else if (noMod && k === '2') {
+        e.preventDefault();
+        setActivePanel('voices');
+      } else if (noMod && k === '3') {
+        e.preventDefault();
+        setActivePanel('controls');
+      } else if (noMod && k === '4') {
+        e.preventDefault();
+        setActivePanel('results');
+      } else if (noMod && k === 'g') {
         if (canSynthesize) {
           e.preventDefault();
           void handleSynthesize();
         }
       } else if (noMod && k === 'r') {
         e.preventDefault();
-        setResultsDrawerOpen((v) => !v);
+        setActivePanel('results');
       } else if (noMod && k === 'v') {
         e.preventDefault();
-        const el = document.getElementById('voice-selector-anchor');
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setActivePanel('voices');
       } else if (noMod && k === 's') {
         e.preventDefault();
         setSettingsOpen(true);
@@ -1086,7 +1098,7 @@ function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [canSynthesize]);
+  }, [canSynthesize, setActivePanel]);
 
   return (
     <div className="app">
@@ -1104,7 +1116,6 @@ function App() {
 
       <TopContextBar
         engineLabel={selectedEngine?.label ?? engineId}
-        engineId={engineId}
         engineStatus={engineStatus}
         engineReady={backendReady}
         voices={voices}
@@ -1113,7 +1124,7 @@ function App() {
         queueRunning={queue.filter((q) => q.status === 'pending' || q.status === 'rendering').length}
         queueTotal={queue.length}
         ollamaAvailable={ollamaAvailable}
-        isResultsOpen={isResultsDrawerOpen}
+        isResultsOpen={activePanel === 'results' ? true : isResultsDrawerOpen}
         canGenerate={canSynthesize}
         isGenerating={synthMutation.isPending}
         onQuickGenerate={handleSynthesize}
@@ -1124,16 +1135,15 @@ function App() {
             el.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }
         }}
-        onToggleResults={() => setResultsDrawerOpen((v) => !v)}
+        onToggleResults={() => setActivePanel('results')}
         onShowVoicePalette={() => {
-          const el = document.getElementById('voice-selector-anchor');
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
+          setActivePanel('voices');
         }}
         onAiAssistClick={() => setAiAssistOpen(true)}
         engines={engineList.map((engine) => ({ id: engine.id, label: engine.label, available: engine.available, status: engine.status }))}
         onEngineChange={(id) => setEngineId(id)}
+        activePanel={activePanel}
+        onChangePanel={setActivePanel}
       />
 
       {error ? <div className="app__banner app__banner--error">{error}</div> : null}
