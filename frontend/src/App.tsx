@@ -1054,6 +1054,40 @@ function App() {
   const canSynthesize = backendReady && Boolean(text.trim()) && selectedVoices.length > 0;
   const hasMultipleVoices = backendReady && selectedVoices.length > 1;
 
+  // Hotkeys for topbar actions: G (generate), R (results), V (voices), S (settings), Shift+/ (about)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = (target?.tagName || '').toUpperCase();
+      const editable = target?.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+      const noMod = !e.metaKey && !e.ctrlKey && !e.altKey;
+      if (editable && noMod) return; // don't steal plain typing
+
+      const k = e.key.toLowerCase();
+      if (noMod && k === 'g') {
+        if (canSynthesize) {
+          e.preventDefault();
+          void handleSynthesize();
+        }
+      } else if (noMod && k === 'r') {
+        e.preventDefault();
+        setResultsDrawerOpen((v) => !v);
+      } else if (noMod && k === 'v') {
+        e.preventDefault();
+        const el = document.getElementById('voice-selector-anchor');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else if (noMod && k === 's') {
+        e.preventDefault();
+        setSettingsOpen(true);
+      } else if (e.shiftKey && k === '?') {
+        e.preventDefault();
+        setAiAssistOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [canSynthesize]);
+
   return (
     <div className="app">
       <header className="app__header">
@@ -1089,6 +1123,7 @@ function App() {
             el.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }
         }}
+        onAiAssistClick={() => setAiAssistOpen(true)}
       />
 
       {error ? <div className="app__banner app__banner--error">{error}</div> : null}
