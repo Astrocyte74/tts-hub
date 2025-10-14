@@ -1104,6 +1104,7 @@ function App() {
 
       <TopContextBar
         engineLabel={selectedEngine?.label ?? engineId}
+        engineId={engineId}
         engineStatus={engineStatus}
         engineReady={backendReady}
         voices={voices}
@@ -1131,6 +1132,8 @@ function App() {
           }
         }}
         onAiAssistClick={() => setAiAssistOpen(true)}
+        engines={engineList.map((engine) => ({ id: engine.id, label: engine.label, available: engine.available, status: engine.status }))}
+        onEngineChange={(id) => setEngineId(id)}
       />
 
       {error ? <div className="app__banner app__banner--error">{error}</div> : null}

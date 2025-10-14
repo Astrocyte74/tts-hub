@@ -1,7 +1,9 @@
+import { useEffect, useRef, useState } from 'react';
 import type { SynthesisResult, VoiceProfile } from '../types';
 
 interface TopContextBarProps {
   engineLabel: string;
+  engineId?: string;
   engineStatus?: string | null;
   engineReady: boolean;
   voices: VoiceProfile[];
@@ -20,6 +22,8 @@ interface TopContextBarProps {
   onShowVoicePalette?: () => void;
   onShowInfo?: () => void;
   onAiAssistClick?: () => void;
+  engines?: { id: string; label: string; available?: boolean; status?: string | null }[];
+  onEngineChange?: (id: string) => void;
 }
 
 function formatVoiceSummary(voices: VoiceProfile[], selectedVoiceIds: string[]) {
@@ -59,6 +63,8 @@ export function TopContextBar({
   onShowVoicePalette,
   onShowInfo,
   onAiAssistClick,
+  engines,
+  onEngineChange,
 }: TopContextBarProps) {
   const voiceSummary = formatVoiceSummary(voices, selectedVoiceIds);
   const clipsCount = results.length;
@@ -66,6 +72,40 @@ export function TopContextBar({
   const queueLabel = clipsCount === 1 ? '1 clip' : `${clipsCount} clips`;
   const hasRunning = queueRunning > 0;
   const noVoiceSelected = selectedVoiceIds.length === 0;
+
+  const [engineMenuOpen, setEngineMenuOpen] = useState(false);
+  const engineBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (!engineMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setEngineMenuOpen(false);
+    };
+    const onClick = (e: MouseEvent) => {
+      const el = engineBtnRef.current;
+      if (!el) return;
+      if (!(e.target instanceof Node)) return;
+      if (!el.contains(e.target)) setEngineMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('click', onClick, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('click', onClick, { capture: true } as any);
+    };
+  }, [engineMenuOpen]);
+
+  const openEngineMenu = () => {
+    if (!engines || !engines.length) {
+      if (onEngineClick) onEngineClick();
+      else if (onOpenSettings) onOpenSettings();
+      return;
+    }
+    const rect = engineBtnRef.current?.getBoundingClientRect();
+    if (rect) setMenuPos({ top: Math.round(rect.bottom + 8), left: Math.round(rect.left) });
+    setEngineMenuOpen((v) => !v);
+  };
 
   return (
     <header className="topbar" role="banner" aria-label="Session context">
@@ -78,9 +118,10 @@ export function TopContextBar({
         <button
           type="button"
           className="topbar__chip topbar__chip--muted"
-          onClick={onEngineClick ?? onOpenSettings}
+          onClick={openEngineMenu}
           aria-label={`Active engine ${engineLabel} — change engine`}
-          title="Change engine"
+          title={engines && engines.length ? 'Change engine' : 'Open engine settings'}
+          ref={engineBtnRef}
         >
           <span className="topbar__chip-label">Engine</span>
           <span className="topbar__chip-value">{engineLabel}</span>
@@ -151,6 +192,54 @@ export function TopContextBar({
           <span className="topbar__button-label">{isGenerating ? 'Generating…' : 'Quick Generate'}</span>
         </button>
       </div>
+
+      {engineMenuOpen && engines && engines.length ? (
+        <div className="popover" role="dialog" aria-label="Change engine">
+          <div className="popover__backdrop" />
+          <div
+            className="popover__panel"
+            style={{ position: 'absolute', top: menuPos?.top ?? 64, left: menuPos?.left ?? 24, width: 320 }}
+          >
+            <div className="popover__header">
+              <h3 className="popover__title">Choose engine</h3>
+            </div>
+            <div className="popover__content" role="list">
+              {engines.map((e) => {
+                const disabled = e.available === false;
+                return (
+                  <button
+                    key={e.id}
+                    type="button"
+                    className="popover__button"
+                    aria-disabled={disabled}
+                    onClick={() => {
+                      if (disabled) return;
+                      onEngineChange && onEngineChange(e.id);
+                      setEngineMenuOpen(false);
+                    }}
+                    title={e.status ?? ''}
+                  >
+                    {e.label} {disabled ? '· Unavailable' : ''}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="popover__footer">
+              <button
+                type="button"
+                className="popover__button"
+                onClick={() => {
+                  setEngineMenuOpen(false);
+                  if (onEngineClick) onEngineClick();
+                  else if (onOpenSettings) onOpenSettings();
+                }}
+              >
+                More settings…
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </header>
   );
 }
