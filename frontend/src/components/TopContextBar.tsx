@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { IconBrand, IconCaretDown, IconCog, IconCpu, IconDocument, IconMic, IconPlay, IconWave } from '../icons';
+import { IconBrand, IconCaretDown, IconCog, IconCpu, IconDocument, IconMic, IconPlay, IconWave, IconBookmark } from '../icons';
 import type { SynthesisResult, VoiceProfile } from '../types';
 
 interface TopContextBarProps {
@@ -22,6 +22,8 @@ interface TopContextBarProps {
   onShowVoicePalette?: () => void;
   onShowInfo?: () => void;
   onAiAssistClick?: () => void;
+  onSaveProfile?: () => void;
+  canSaveProfile?: boolean;
   engines?: { id: string; label: string; available?: boolean; status?: string | null }[];
   onEngineChange?: (id: string) => void;
   activePanel?: 'script' | 'voices' | 'controls' | 'results';
@@ -71,6 +73,8 @@ export function TopContextBar({
   onShowVoicePalette,
   onShowInfo,
   onAiAssistClick,
+  onSaveProfile,
+  canSaveProfile = true,
   activePanel,
   onChangePanel,
   onShowScript,
@@ -170,7 +174,7 @@ export function TopContextBar({
           <span className="topbar__chip-icon" aria-hidden><IconMic /></span>
           <span className="topbar__chip-label">Voice</span>
           <span className="topbar__chip-value">{voiceSummary}</span>
-          {(quickFavorites.length > 0 || quickRecents.length > 0) ? (
+          {(quickProfiles.length > 0 || quickFavorites.length > 0 || quickRecents.length > 0) ? (
             <span
               className="topbar__badge"
               title="Quick voices"
@@ -210,6 +214,17 @@ export function TopContextBar({
       </div>
 
       <div className="topbar__right">
+        <button
+          type="button"
+          className="topbar__button"
+          onClick={onSaveProfile}
+          disabled={!canSaveProfile}
+          aria-label="Save profile"
+          title={canSaveProfile ? 'Save profile' : 'Select a single voice to save profile'}
+        >
+          <IconBookmark />
+          <span className="topbar__button-label">Save profile</span>
+        </button>
         <button type="button" className="topbar__button" onClick={onOpenSettings} aria-label="Open settings" title="Settings (S)">
           <IconCog />
         </button>

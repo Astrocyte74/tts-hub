@@ -284,6 +284,37 @@ function App() {
       .slice(0, 5);
   }, [profilesQuery.data]);
 
+  const canSaveProfile = useMemo(() => backendReady && selectedVoices.length === 1 && Boolean(text.trim()), [backendReady, selectedVoices.length, text]);
+
+  const handleSaveProfileQuick = async () => {
+    try {
+      if (!canSaveProfile) return;
+      const voiceId = selectedVoices[0];
+      const voiceLabel = voiceById.get(voiceId)?.label ?? voiceId;
+      const base: Record<string, unknown> = {
+        label: `Profile · ${voiceLabel}`,
+        engine: engineId,
+        voiceId,
+        language: normaliseLanguage(language),
+        speed: Number(speed),
+        trimSilence: Boolean(trimSilence),
+        tags: ['ui'],
+        meta: { source: 'topbar' },
+      };
+      if (engineId === 'openvoice') {
+        base['style'] = openvoiceVoiceStyles[voiceId] ?? openvoiceStyle ?? 'default';
+      }
+      if (engineId === 'chattts' && chatttsSeed && chatttsSeed.trim()) {
+        const parsed = Number(chatttsSeed.trim());
+        if (!Number.isNaN(parsed) && Number.isFinite(parsed)) base['seed'] = Math.floor(parsed);
+      }
+      await createProfile(base);
+      profilesQuery.refetch();
+    } catch (err) {
+      console.error('Save profile failed', err);
+    }
+  };
+
   useEffect(() => {
     if (engineId !== 'kokoro') {
       if (selectedKokoroFavoriteId !== '') {
@@ -1250,6 +1281,8 @@ function App() {
         canGenerate={canSynthesize}
         isGenerating={synthMutation.isPending}
         onQuickGenerate={handleSynthesize}
+        onSaveProfile={handleSaveProfileQuick}
+        canSaveProfile={canSaveProfile}
         onOpenSettings={() => setSettingsOpen(true)}
         onEngineClick={() => {
           setActivePanel('controls');
