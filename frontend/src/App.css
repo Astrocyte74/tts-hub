@@ -1041,6 +1041,11 @@ textarea:focus-visible {
   margin-left: 6px;
 }
 
+.waveform-trim { display: flex; flex-direction: column; gap: 8px; }
+.waveform-trim__canvas { width: 100%; display: block; border-radius: 8px; background: rgba(2,6,23,.35); }
+.waveform-trim__controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.waveform-trim__controls label { display: flex; align-items: center; gap: 6px; color: rgba(148,163,184,.85); font-size: 12px; }
+
 .result-grid {
   display: flex;
   flex-direction: column;
