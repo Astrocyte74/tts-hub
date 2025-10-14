@@ -101,6 +101,8 @@ function App() {
   const [speed, setSpeed] = useLocalStorage('kokoro:speed', 1);
   const [trimSilence, setTrimSilence] = useLocalStorage('kokoro:trimSilence', true);
   const [autoPlay, setAutoPlay] = useLocalStorage('kokoro:autoPlay', true);
+  const [hoverPreview, setHoverPreview] = useLocalStorage('kokoro:hoverPreview', true);
+  const [autoOpenClips, setAutoOpenClips] = useLocalStorage('kokoro:autoOpenClips', true);
   const [announcerEnabled, setAnnouncerEnabled] = useLocalStorage('kokoro:announcerEnabled', false);
   const [announcerVoice, setAnnouncerVoice] = useLocalStorage<string | null>('kokoro:announcerVoice', null);
   const [announcerTemplate, setAnnouncerTemplate] = useLocalStorage('kokoro:announcerTemplate', DEFAULT_ANNOUNCER_TEMPLATE);
@@ -121,6 +123,7 @@ function App() {
   };
   const [queue, setQueue] = useSessionStorage<QueueItem[]>('kokoro:queue.v1', []);
   const [persistedResults, setPersistedResults] = useSessionStorage<SynthesisResult[]>('kokoro:history.v1', []);
+  const [highlightResultId, setHighlightResultId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [extraCategories, setExtraCategories] = useState<string[]>([]);
   const [savingChatttsId, setSavingChatttsId] = useState<string | null>(null);
@@ -138,6 +141,7 @@ function App() {
   const [engineId, setEngineId] = useLocalStorage('kokoro:engine', DEFAULT_ENGINE);
   const [uiFavorites, setUiFavorites] = useLocalStorage<string[]>('kokoro:uiVoiceFavorites', []);
   const [previewBusy, setPreviewBusy] = useState<string[]>([]);
+  const [activePanel, setActivePanel] = useLocalStorage<'script' | 'voices' | 'controls' | 'results'>('kokoro:activePanel', 'controls');
   const metaQuery = useQuery({ queryKey: ['meta'], queryFn: fetchMeta, staleTime: 5 * 60 * 1000 });
   const voicesQuery = useQuery({
     queryKey: ['voices', engineId],
@@ -231,6 +235,29 @@ function App() {
       })
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [kokoroFavorites, voices]);
+
+  const quickRecentVoices = useMemo(() => {
+    const ids: string[] = [];
+    for (const r of results) {
+      const id = typeof r.voice === 'string' ? r.voice : '';
+      if (id && !ids.includes(id)) ids.push(id);
+      if (ids.length >= 5) break;
+    }
+    return ids
+      .map((id) => ({ id, label: voiceById.get(id)?.label ?? id }))
+      .filter((v) => v.label && v.id);
+  }, [results, voiceById]);
+
+  const quickFavoriteVoices = useMemo(() => {
+    const favIds = new Set<string>(uiFavorites);
+    kokoroFavorites.forEach((f) => favIds.add(f.voiceId));
+    const out: { id: string; label: string }[] = [];
+    favIds.forEach((id) => {
+      const voice = voiceById.get(id);
+      if (voice) out.push({ id, label: voice.label });
+    });
+    return out.sort((a, b) => a.label.localeCompare(b.label)).slice(0, 5);
+  }, [uiFavorites, kokoroFavorites, voiceById]);
 
   useEffect(() => {
     if (engineId !== 'kokoro') {
@@ -429,6 +456,27 @@ function App() {
       setRandomCategory(categories[0]);
     }
   }, [categories, randomCategory, setRandomCategory]);
+
+  // Queue housekeeping: prune finished items after a short delay so Queue stays focused
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setQueue((prev) => {
+        const now = Date.now();
+        return prev.filter((it) => {
+          if ((it.status === 'pending') || (it.status === 'rendering')) return true;
+          if (it.status === 'done' && it.finishedAt) {
+            const finished = new Date(it.finishedAt).getTime();
+            // Keep around for 10s, then prune
+            return now - finished < 10_000;
+          }
+          // Retain errors for visibility
+          if (it.status === 'error') return true;
+          return false;
+        });
+      });
+    }, 4_000);
+    return () => window.clearInterval(interval);
+  }, [setQueue]);
 
   useEffect(() => {
     if (!voices.length || !selectedVoices.length) {
@@ -817,6 +865,14 @@ function App() {
     setPersistedResults(results);
   }, [results, setPersistedResults]);
 
+  // Highlight newest clip briefly in Clips
+  useEffect(() => {
+    if (!results.length) return;
+    setHighlightResultId(results[0].id);
+    const t = window.setTimeout(() => setHighlightResultId(null), 1600);
+    return () => window.clearTimeout(t);
+  }, [results]);
+
   const handleSynthesize = async () => {
     setError(null);
     const script = text.trim();
@@ -1054,6 +1110,51 @@ function App() {
   const canSynthesize = backendReady && Boolean(text.trim()) && selectedVoices.length > 0;
   const hasMultipleVoices = backendReady && selectedVoices.length > 1;
 
+  // Hotkeys: 1 Script, 2 Voices, 3 Controls, 4 Results; G Generate; R Results; V Voices; S Settings; Shift+/ AI Assist
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = (target?.tagName || '').toUpperCase();
+      const editable = target?.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+      const noMod = !e.metaKey && !e.ctrlKey && !e.altKey;
+      if (editable && noMod) return; // don't steal plain typing
+
+      const k = e.key.toLowerCase();
+      if (noMod && k === '1') {
+        e.preventDefault();
+        setActivePanel('script');
+      } else if (noMod && k === '2') {
+        e.preventDefault();
+        setActivePanel('voices');
+      } else if (noMod && k === '3') {
+        e.preventDefault();
+        setActivePanel('controls');
+      } else if (noMod && k === '4') {
+        e.preventDefault();
+        setActivePanel('results');
+      } else if (noMod && k === 'g') {
+        if (canSynthesize) {
+          e.preventDefault();
+          void handleSynthesize();
+        }
+      } else if (noMod && k === 'r') {
+        e.preventDefault();
+        setActivePanel('results');
+      } else if (noMod && k === 'v') {
+        e.preventDefault();
+        setActivePanel('voices');
+      } else if (noMod && k === 's') {
+        e.preventDefault();
+        setSettingsOpen(true);
+      } else if (e.shiftKey && k === '?') {
+        e.preventDefault();
+        setAiAssistOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [canSynthesize, setActivePanel]);
+
   return (
     <div className="app">
       <header className="app__header">
@@ -1078,17 +1179,36 @@ function App() {
         queueRunning={queue.filter((q) => q.status === 'pending' || q.status === 'rendering').length}
         queueTotal={queue.length}
         ollamaAvailable={ollamaAvailable}
-        isResultsOpen={isResultsDrawerOpen}
+        isResultsOpen={activePanel === 'results' ? true : isResultsDrawerOpen}
         canGenerate={canSynthesize}
+        isGenerating={synthMutation.isPending}
         onQuickGenerate={handleSynthesize}
         onOpenSettings={() => setSettingsOpen(true)}
-        onToggleResults={() => setResultsDrawerOpen((v) => !v)}
-        onShowVoicePalette={() => {
-          const el = document.getElementById('voice-selector-anchor');
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
+        onEngineClick={() => {
+          setActivePanel('controls');
+          setTimeout(() => {
+            const el = document.getElementById('settings-anchor');
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          }, 0);
         }}
+        onToggleResults={() => setActivePanel('results')}
+        onShowVoicePalette={() => {
+          setActivePanel('voices');
+        }}
+        onAiAssistClick={() => setAiAssistOpen(true)}
+        quickFavorites={quickFavoriteVoices}
+        quickRecents={quickRecentVoices}
+        onQuickSelectVoice={(id) => {
+          if (!id) return;
+          setSelectedVoices([id]);
+          setActivePanel('script');
+        }}
+        engines={engineList.map((engine) => ({ id: engine.id, label: engine.label, available: engine.available, status: engine.status }))}
+        onEngineChange={(id) => setEngineId(id)}
+        activePanel={activePanel}
+        onChangePanel={setActivePanel}
       />
 
       {error ? <div className="app__banner app__banner--error">{error}</div> : null}
@@ -1122,180 +1242,188 @@ function App() {
         </div>
       ) : null}
 
-      <main className="app__layout">
-        <div className="app__column">
-          <TextWorkbench
-            text={text}
-            onChange={setText}
-            onInsertRandom={handleInsertRandom}
-            onAppendRandom={handleAppendRandom}
-            isRandomLoading={randomTextMutation.isPending}
-            categories={categories}
-            selectedCategory={randomCategory}
-            onCategoryChange={setRandomCategory}
-            onAiAssistClick={() => setAiAssistOpen(true)}
-            aiAssistAvailable={ollamaAvailable}
-          />
-          <div id="settings-anchor"></div>
-          <SynthesisControls
-            engineId={engineId}
-            engines={engineList.map((engine) => ({
-              id: engine.id,
-              label: engine.label,
-              available: engine.available,
-              status: engine.status,
-              description: engine.description,
-            }))}
-            onEngineChange={(value) => setEngineId(value)}
-            engineAvailable={engineAvailable}
-            engineMessage={engineMessage}
-            language={language}
-            languages={availableLanguages}
-            onLanguageChange={(value) => setLanguage(normaliseLanguage(value))}
-            speed={Number(speed)}
-            onSpeedChange={(value) => setSpeed(Number(value))}
-            trimSilence={Boolean(trimSilence)}
-            onTrimSilenceChange={(value) => setTrimSilence(value)}
-            autoPlay={Boolean(autoPlay)}
-            onAutoPlayChange={(value) => setAutoPlay(value)}
-            styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
-            selectedStyle={engineId === 'openvoice' ? openvoiceStyle : undefined}
-            onStyleChange={engineId === 'openvoice' ? handleOpenvoiceStyleChange : undefined}
-            chatttsSeed={engineId === 'chattts' ? chatttsSeed : undefined}
-            onChatttsSeedChange={engineId === 'chattts' ? setChatttsSeed : undefined}
-            kokoroFavoriteOptions={engineId === 'kokoro' ? kokoroFavoriteOptions : undefined}
-            kokoroFavoriteId={engineId === 'kokoro' ? selectedKokoroFavoriteId : undefined}
-            onKokoroFavoriteChange={engineId === 'kokoro' ? handleKokoroFavoriteChange : undefined}
-            onManageKokoroFavorites={engineId === 'kokoro' ? handleOpenFavoritesManager : undefined}
-            kokoroFavoritesCount={engineId === 'kokoro' ? kokoroFavorites.length : undefined}
-          />
-          {engineAvailable ? (
-            <AnnouncerControls
-              enabled={announcerEnabled}
-              onEnabledChange={setAnnouncerEnabled}
-              voices={voices}
-              selectedVoice={announcerVoice}
-              onVoiceChange={setAnnouncerVoice}
-              template={announcerTemplate}
-              onTemplateChange={setAnnouncerTemplate}
-              gapSeconds={Number(announcerGap)}
-              onGapChange={(value) => setAnnouncerGap(Number(value))}
+      <main className={`app__layout is-single`}>
+        {activePanel === 'script' ? (
+          <div className="app__column">
+            <TextWorkbench
+              text={text}
+              onChange={setText}
+              onInsertRandom={handleInsertRandom}
+              onAppendRandom={handleAppendRandom}
+              isRandomLoading={randomTextMutation.isPending}
+              categories={categories}
+              selectedCategory={randomCategory}
+              onCategoryChange={setRandomCategory}
+              onAiAssistClick={() => setAiAssistOpen(true)}
+              aiAssistAvailable={ollamaAvailable}
             />
-          ) : null}
-          <SynthesisActions
-            canSynthesize={canSynthesize}
-            hasMultipleVoices={hasMultipleVoices}
-            onSynthesize={handleSynthesize}
-            onAudition={handleAudition}
-            isSynthLoading={synthMutation.isPending}
-            isAuditionLoading={auditionMutation.isPending}
-          />
-        </div>
-        <div className="app__column" id="voice-selector-anchor">
+            <SynthesisActions
+              canSynthesize={canSynthesize}
+              hasMultipleVoices={hasMultipleVoices}
+              onSynthesize={handleSynthesize}
+              onAudition={handleAudition}
+              isSynthLoading={synthMutation.isPending}
+              isAuditionLoading={auditionMutation.isPending}
+            />
+          </div>
+        ) : activePanel === 'controls' ? (
+          <div className="app__column">
+            <div id="settings-anchor"></div>
+            <SynthesisControls
+              engineId={engineId}
+              engines={engineList.map((engine) => ({
+                id: engine.id,
+                label: engine.label,
+                available: engine.available,
+                status: engine.status,
+                description: engine.description,
+              }))}
+              onEngineChange={(value) => setEngineId(value)}
+              engineAvailable={engineAvailable}
+              engineMessage={engineMessage}
+              language={language}
+              languages={availableLanguages}
+              onLanguageChange={(value) => setLanguage(normaliseLanguage(value))}
+              speed={Number(speed)}
+              onSpeedChange={(value) => setSpeed(Number(value))}
+              trimSilence={Boolean(trimSilence)}
+              onTrimSilenceChange={(value) => setTrimSilence(value)}
+              autoPlay={Boolean(autoPlay)}
+              onAutoPlayChange={(value) => setAutoPlay(value)}
+              styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
+              selectedStyle={engineId === 'openvoice' ? openvoiceStyle : undefined}
+              onStyleChange={engineId === 'openvoice' ? handleOpenvoiceStyleChange : undefined}
+              chatttsSeed={engineId === 'chattts' ? chatttsSeed : undefined}
+              onChatttsSeedChange={engineId === 'chattts' ? setChatttsSeed : undefined}
+              kokoroFavoriteOptions={engineId === 'kokoro' ? kokoroFavoriteOptions : undefined}
+              kokoroFavoriteId={engineId === 'kokoro' ? selectedKokoroFavoriteId : undefined}
+              onKokoroFavoriteChange={engineId === 'kokoro' ? handleKokoroFavoriteChange : undefined}
+              onManageKokoroFavorites={engineId === 'kokoro' ? handleOpenFavoritesManager : undefined}
+              kokoroFavoritesCount={engineId === 'kokoro' ? kokoroFavorites.length : undefined}
+            />
+            {engineAvailable ? (
+              <AnnouncerControls
+                enabled={announcerEnabled}
+                onEnabledChange={setAnnouncerEnabled}
+                voices={voices}
+                selectedVoice={announcerVoice}
+                onVoiceChange={setAnnouncerVoice}
+                template={announcerTemplate}
+                onTemplateChange={setAnnouncerTemplate}
+                gapSeconds={Number(announcerGap)}
+                onGapChange={(value) => setAnnouncerGap(Number(value))}
+              />
+            ) : null}
+          </div>
+        ) : activePanel === 'voices' ? (
+          <div className="app__column" id="voice-selector-anchor">
           <VoiceSelector
             engineLabel={selectedEngine?.label ?? engineId ?? 'Engine'}
             engineAvailable={engineAvailable}
             engineMessage={engineMessage}
             isLoading={voicesQuery.isLoading}
             voices={voices}
-            groups={accentGroups.length ? accentGroups : undefined}
-            selected={selectedVoices}
-            onToggle={(voiceId) => {
-              setError(null);
-              const next = selectedVoices.includes(voiceId)
-                ? selectedVoices.filter((id) => id !== voiceId)
-                : [...selectedVoices, voiceId];
-              setSelectedVoices(next);
-            }}
-            onClear={() => {
-              setError(null);
-              setSelectedVoices([]);
-            }}
-            activeGroup={voiceGroupFilter}
-            onGroupChange={setVoiceGroupFilter}
-            voiceStyles={engineId === 'openvoice' ? openvoiceVoiceStyles : undefined}
-            styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
-            onVoiceStyleChange={engineId === 'openvoice' ? handleOpenvoiceVoiceStyleChange : undefined}
+              groups={accentGroups.length ? accentGroups : undefined}
+              selected={selectedVoices}
+              onToggle={(voiceId) => {
+                setError(null);
+                const next = selectedVoices.includes(voiceId)
+                  ? selectedVoices.filter((id) => id !== voiceId)
+                  : [...selectedVoices, voiceId];
+                setSelectedVoices(next);
+              }}
+              onClear={() => {
+                setError(null);
+                setSelectedVoices([]);
+              }}
+              activeGroup={voiceGroupFilter}
+              onGroupChange={setVoiceGroupFilter}
+              voiceStyles={engineId === 'openvoice' ? openvoiceVoiceStyles : undefined}
+              styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
+              onVoiceStyleChange={engineId === 'openvoice' ? handleOpenvoiceVoiceStyleChange : undefined}
             onOpenvoiceInstructions={engineId === 'openvoice' ? () => setOpenvoiceHelpOpen(true) : undefined}
             favorites={uiFavorites}
             onToggleFavorite={(voiceId) => {
               setUiFavorites((prev) => (prev.includes(voiceId) ? prev.filter((v) => v !== voiceId) : [...prev, voiceId]));
             }}
             onGeneratePreview={engineId === 'kokoro' ? async (voiceId) => {
-              try {
-                setPreviewBusy((prev) => (prev.includes(voiceId) ? prev : [...prev, voiceId]));
-                await createVoicePreview({ engine: 'kokoro', voiceId, language });
-                // Refresh voices to pick up preview_url
-                voicesQuery.refetch();
-              } catch (err) {
-                setError(err instanceof Error ? err.message : 'Failed to generate preview.');
-              } finally {
-                setPreviewBusy((prev) => prev.filter((id) => id !== voiceId));
+                try {
+                  setPreviewBusy((prev) => (prev.includes(voiceId) ? prev : [...prev, voiceId]));
+                  await createVoicePreview({ engine: 'kokoro', voiceId, language });
+                  voicesQuery.refetch();
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : 'Failed to generate preview.');
+                } finally {
+                  setPreviewBusy((prev) => prev.filter((id) => id !== voiceId));
               }
             } : undefined}
             previewBusyIds={previewBusy}
             onBulkGeneratePreview={engineId === 'kokoro' ? async (voiceIds) => {
-              const ids = Array.from(new Set(voiceIds));
-              if (!ids.length) return;
-              const enqueue = (id: string, label: string) =>
-                setQueue((prev) => [
-                  ...prev,
-                  { id: `pv-${id}-${Date.now()}`, label: `Preview · ${label}`, engine: 'kokoro', status: 'pending', progress: 0, startedAt: new Date().toISOString() },
-                ]);
-              const voiceLabel = (id: string) => voices.find((v) => v.id === id)?.label ?? id;
-              try {
-                // filter out ids already in progress or already queued
-                const activeLabels = new Set(queue.map((q) => q.label));
-                const toRun = ids.filter((id) => !previewBusy.includes(id) && !activeLabels.has(`Preview · ${voiceLabel(id)}`));
-                if (!toRun.length) return;
-                setPreviewBusy((prev) => Array.from(new Set([...prev, ...toRun])));
-                setResultsDrawerOpen(true);
-                for (const id of toRun) {
-                  enqueue(id, voiceLabel(id));
-                }
-                for (const id of toRun) {
-                  const label = voiceLabel(id);
-                  // mark rendering
-                  setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` && q.status === 'pending' ? { ...q, status: 'rendering' } : q));
-                  try {
-                    await createVoicePreview({ engine: 'kokoro', voiceId: id, language });
-                    setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` && (q.status === 'rendering' || q.status === 'pending') ? { ...q, status: 'done', progress: 100, finishedAt: new Date().toISOString() } : q));
-                  } catch (err) {
-                    setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` ? { ...q, status: 'error', error: String(err) } : q));
+                const ids = Array.from(new Set(voiceIds));
+                if (!ids.length) return;
+                const enqueue = (id: string, label: string) =>
+                  setQueue((prev) => [
+                    ...prev,
+                    { id: `pv-${id}-${Date.now()}`, label: `Preview · ${label}`, engine: 'kokoro', status: 'pending', progress: 0, startedAt: new Date().toISOString() },
+                  ]);
+                const voiceLabel = (id: string) => voices.find((v) => v.id === id)?.label ?? id;
+                try {
+                  const activeLabels = new Set(queue.map((q) => q.label));
+                  const toRun = ids.filter((id) => !previewBusy.includes(id) && !activeLabels.has(`Preview · ${voiceLabel(id)}`));
+                  if (!toRun.length) return;
+                  setPreviewBusy((prev) => Array.from(new Set([...prev, ...toRun])));
+                  setResultsDrawerOpen(true);
+                  for (const id of toRun) enqueue(id, voiceLabel(id));
+                  for (const id of toRun) {
+                    const label = voiceLabel(id);
+                    setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` && q.status === 'pending' ? { ...q, status: 'rendering' } : q));
+                    try {
+                      await createVoicePreview({ engine: 'kokoro', voiceId: id, language });
+                      setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` && (q.status === 'rendering' || q.status === 'pending') ? { ...q, status: 'done', progress: 100, finishedAt: new Date().toISOString() } : q));
+                    } catch (err) {
+                      setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` ? { ...q, status: 'error', error: String(err) } : q));
+                    }
                   }
-                }
-                voicesQuery.refetch();
+                  voicesQuery.refetch();
               } finally {
                 setPreviewBusy((prev) => prev.filter((id) => !ids.includes(id)));
               }
             } : undefined}
+            enableHoverPreview={Boolean(hoverPreview)}
           />
-          <AudioResultList
-            items={results}
-            autoPlay={Boolean(autoPlay)}
-            onRemove={handleRemoveResult}
-            onSaveChattts={engineId === 'chattts' ? handleSaveChatttsPresetFromResult : undefined}
-            savingChatttsId={engineId === 'chattts' ? savingChatttsId : null}
-            onSaveKokoroFavorite={handleSaveKokoroFavoriteFromResult}
-            kokoroFavoritesByVoice={kokoroFavoritesByVoice}
-          />
-        </div>
+          </div>
+        ) : (
+          <div className="app__column">
+            <AudioResultList
+              items={results}
+              autoPlay={Boolean(autoPlay)}
+              onRemove={handleRemoveResult}
+              onSaveChattts={engineId === 'chattts' ? handleSaveChatttsPresetFromResult : undefined}
+              savingChatttsId={engineId === 'chattts' ? savingChatttsId : null}
+              onSaveKokoroFavorite={handleSaveKokoroFavoriteFromResult}
+              kokoroFavoritesByVoice={kokoroFavoritesByVoice}
+            />
+          </div>
+        )}
       </main>
-      <ResultsDrawer
-        open={isResultsDrawerOpen}
-        onToggle={() => setResultsDrawerOpen((v) => !v)}
-        items={results}
-        queue={queue}
-        autoPlay={Boolean(autoPlay)}
-        onRemove={handleRemoveResult}
-        onCancelQueue={(id) => setQueue((prev) => prev.map((it) => (it.id === id ? { ...it, status: 'canceled' } : it)))}
-        onClearHistory={() => setResults([])}
-        onClearQueue={() => setQueue([])}
-        onSaveChattts={engineId === 'chattts' ? handleSaveChatttsPresetFromResult : undefined}
-        savingChatttsId={engineId === 'chattts' ? savingChatttsId : null}
-        onSaveKokoroFavorite={handleSaveKokoroFavoriteFromResult}
-        kokoroFavoritesByVoice={kokoroFavoritesByVoice}
-      />
+      {activePanel !== 'results' ? (
+        <ResultsDrawer
+          open={isResultsDrawerOpen}
+          onToggle={() => setResultsDrawerOpen((v) => !v)}
+          items={results}
+          queue={queue}
+          autoPlay={Boolean(autoPlay)}
+          onRemove={handleRemoveResult}
+          onCancelQueue={(id) => setQueue((prev) => prev.map((it) => (it.id === id ? { ...it, status: 'canceled' } : it)))}
+          onClearHistory={() => setResults([])}
+          onClearQueue={() => setQueue([])}
+          onSaveChattts={engineId === 'chattts' ? handleSaveChatttsPresetFromResult : undefined}
+          savingChatttsId={engineId === 'chattts' ? savingChatttsId : null}
+          onSaveKokoroFavorite={handleSaveKokoroFavoriteFromResult}
+          kokoroFavoritesByVoice={kokoroFavoritesByVoice}
+          highlightId={highlightResultId}
+        />
+      ) : null}
       <SettingsPopover
         open={isSettingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -1305,6 +1433,10 @@ function App() {
         onTrimSilenceChange={(value) => setTrimSilence(Boolean(value))}
         autoPlay={Boolean(autoPlay)}
         onAutoPlayChange={(value) => setAutoPlay(Boolean(value))}
+        hoverPreview={Boolean(hoverPreview)}
+        onHoverPreviewChange={(value) => setHoverPreview(Boolean(value))}
+        autoOpenClips={Boolean(autoOpenClips)}
+        onAutoOpenClipsChange={(value) => setAutoOpenClips(Boolean(value))}
       />
       <FavoritesManagerDialog
         isOpen={isFavoritesManagerOpen}
@@ -1378,3 +1510,11 @@ function App() {
 }
 
 export default App;
+  // Auto-open Clips when queue completes
+  useEffect(() => {
+    const active = queue.filter((q) => q.status === 'pending' || q.status === 'rendering').length;
+    if (autoOpenClips && active === 0 && results.length) {
+      setResultsDrawerOpen(true);
+      setActivePanel('results');
+    }
+  }, [queue, autoOpenClips, results.length, setActivePanel]);

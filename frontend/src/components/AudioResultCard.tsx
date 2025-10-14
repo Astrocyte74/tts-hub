@@ -6,6 +6,7 @@ import type { SynthesisResult } from '../types';
 interface AudioResultCardProps {
   item: SynthesisResult;
   autoPlay?: boolean;
+  highlighted?: boolean;
   onRemove?: (id: string) => void;
   onSaveChattts?: (item: SynthesisResult) => void;
   isSavingChattts?: boolean;
@@ -19,6 +20,7 @@ interface AudioResultCardProps {
 export function AudioResultCard({
   item,
   autoPlay = false,
+  highlighted = false,
   onRemove,
   onSaveChattts,
   isSavingChattts = false,
@@ -107,7 +109,7 @@ export function AudioResultCard({
   const kokoroMetadataAvailable = typeof item.voice === 'string' && item.voice.trim().length > 0;
 
   return (
-    <article className="result-card">
+    <article className={`result-card ${highlighted ? 'result-card--highlight' : ''}`}>
       <header className="result-card__header">
         <div>
           <h3 className="result-card__title">{item.voice}</h3>
