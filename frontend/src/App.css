@@ -42,6 +42,14 @@
   flex-wrap: wrap;
 }
 
+/* Keep brand/engine/status on one line to avoid misalignment */
+.topbar__left { flex-wrap: nowrap; }
+
+/* On narrow widths, allow center to wrap but keep compact spacing */
+@media (max-width: 980px) {
+  .topbar__center { row-gap: 6px; }
+}
+
 .topbar__brand {
   display: inline-flex;
   align-items: center;

@@ -15,6 +15,7 @@ interface TopContextBarProps {
   isGenerating?: boolean;
   onQuickGenerate?: () => void;
   onOpenSettings?: () => void;
+  onEngineClick?: () => void;
   onToggleResults?: () => void;
   onShowVoicePalette?: () => void;
   onShowInfo?: () => void;
@@ -53,6 +54,7 @@ export function TopContextBar({
   isGenerating = false,
   onQuickGenerate,
   onOpenSettings,
+  onEngineClick,
   onToggleResults,
   onShowVoicePalette,
   onShowInfo,
@@ -76,13 +78,21 @@ export function TopContextBar({
         <button
           type="button"
           className="topbar__chip topbar__chip--muted"
-          onClick={onOpenSettings}
-          aria-label={`Active engine ${engineLabel}`}
-          title="Settings (S)"
+          onClick={onEngineClick ?? onOpenSettings}
+          aria-label={`Active engine ${engineLabel} — change engine`}
+          title="Change engine"
         >
           <span className="topbar__chip-label">Engine</span>
           <span className="topbar__chip-value">{engineLabel}</span>
         </button>
+        <span
+          className={`topbar__status ${engineReady ? 'topbar__status--ok' : 'topbar__status--warn'}`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="topbar__status-dot" aria-hidden />
+          <span>{statusLabel}</span>
+        </span>
       </div>
 
       <div className="topbar__center">
@@ -112,14 +122,6 @@ export function TopContextBar({
             </span>
           ) : null}
         </button>
-        <span
-          className={`topbar__status ${engineReady ? 'topbar__status--ok' : 'topbar__status--warn'}`}
-          role="status"
-          aria-live="polite"
-        >
-          <span className="topbar__status-dot" aria-hidden />
-          <span>{statusLabel}</span>
-        </span>
       </div>
 
       <div className="topbar__right">

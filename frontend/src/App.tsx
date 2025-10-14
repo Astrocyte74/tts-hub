@@ -1117,6 +1117,12 @@ function App() {
         isGenerating={synthMutation.isPending}
         onQuickGenerate={handleSynthesize}
         onOpenSettings={() => setSettingsOpen(true)}
+        onEngineClick={() => {
+          const el = document.getElementById('settings-anchor');
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }}
         onToggleResults={() => setResultsDrawerOpen((v) => !v)}
         onShowVoicePalette={() => {
           const el = document.getElementById('voice-selector-anchor');
