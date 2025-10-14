@@ -1510,11 +1510,3 @@ function App() {
 }
 
 export default App;
-  // Auto-open Clips when queue completes
-  useEffect(() => {
-    const active = queue.filter((q) => q.status === 'pending' || q.status === 'rendering').length;
-    if (autoOpenClips && active === 0 && results.length) {
-      setResultsDrawerOpen(true);
-      setActivePanel('results');
-    }
-  }, [queue, autoOpenClips, results.length, setActivePanel]);
