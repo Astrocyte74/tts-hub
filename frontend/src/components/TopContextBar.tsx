@@ -17,11 +17,12 @@ interface TopContextBarProps {
   onToggleResults?: () => void;
   onShowVoicePalette?: () => void;
   onShowInfo?: () => void;
+  onAiAssistClick?: () => void;
 }
 
 function formatVoiceSummary(voices: VoiceProfile[], selectedVoiceIds: string[]) {
   if (!selectedVoiceIds.length) {
-    return 'No voice selected';
+    return 'Pick a voice';
   }
   if (selectedVoiceIds.length === 1) {
     const id = selectedVoiceIds[0];
@@ -53,6 +54,7 @@ export function TopContextBar({
   onToggleResults,
   onShowVoicePalette,
   onShowInfo,
+  onAiAssistClick,
 }: TopContextBarProps) {
   const voiceSummary = formatVoiceSummary(voices, selectedVoiceIds);
   const clipsCount = results.length;
@@ -63,7 +65,7 @@ export function TopContextBar({
   return (
     <header className="topbar" role="banner" aria-label="Session context">
       <div className="topbar__left">
-        <button type="button" className="topbar__brand" onClick={onShowInfo} aria-label="Open about dialog">
+        <button type="button" className="topbar__brand" onClick={onShowInfo} aria-label="Open about dialog (Shift+/)">
           <span className="topbar__brand-mark" aria-hidden>⧉</span>
           <span className="topbar__brand-label">Kokoro Playground</span>
         </button>
@@ -73,6 +75,7 @@ export function TopContextBar({
           className="topbar__chip topbar__chip--muted"
           onClick={onOpenSettings}
           aria-label={`Active engine ${engineLabel}`}
+          title="Settings (S)"
         >
           <span className="topbar__chip-label">Engine</span>
           <span className="topbar__chip-value">{engineLabel}</span>
@@ -80,7 +83,13 @@ export function TopContextBar({
       </div>
 
       <div className="topbar__center">
-        <button type="button" className="topbar__chip" onClick={onShowVoicePalette} aria-label="Show voice palette">
+        <button
+          type="button"
+          className="topbar__chip"
+          onClick={onShowVoicePalette}
+          aria-label="Show voice palette"
+          title="Jump to voices (V)"
+        >
           <span className="topbar__chip-label">Voice</span>
           <span className="topbar__chip-value">{voiceSummary}</span>
         </button>
@@ -88,7 +97,9 @@ export function TopContextBar({
           type="button"
           className={`topbar__chip ${isResultsOpen ? 'topbar__chip--active' : ''}`}
           onClick={onToggleResults}
+          aria-pressed={isResultsOpen}
           aria-label={isResultsOpen ? 'Hide results drawer' : 'Show results drawer'}
+          title="Toggle results (R)"
         >
           <span className="topbar__chip-label">Clips</span>
           <span className="topbar__chip-value">{queueLabel}</span>
@@ -98,21 +109,28 @@ export function TopContextBar({
             </span>
           ) : null}
         </button>
-        <span className={`topbar__status ${engineReady ? 'topbar__status--ok' : 'topbar__status--warn'}`} role="status">
+        <span
+          className={`topbar__status ${engineReady ? 'topbar__status--ok' : 'topbar__status--warn'}`}
+          role="status"
+          aria-live="polite"
+        >
           <span className="topbar__status-dot" aria-hidden />
           <span>{statusLabel}</span>
         </span>
       </div>
 
       <div className="topbar__right">
-        <span
-          className={`topbar__chip ${ollamaAvailable ? 'topbar__chip--muted' : 'topbar__chip--warn'}`}
-          aria-label={ollamaAvailable ? 'Ollama connected' : 'Ollama offline'}
+        <button
+          type="button"
+          className={`topbar__chip ${ollamaAvailable ? '' : 'topbar__chip--warn'}`}
+          onClick={onAiAssistClick}
+          aria-label={ollamaAvailable ? 'Open AI Assist' : 'Ollama offline – learn how to enable'}
+          title={ollamaAvailable ? 'Open AI Assist' : 'Ollama offline – click for help'}
         >
           <span className="topbar__chip-label">AI Assist</span>
           <span className="topbar__chip-value">{ollamaAvailable ? 'Ready' : 'Offline'}</span>
-        </span>
-        <button type="button" className="topbar__button" onClick={onOpenSettings} aria-label="Open settings">
+        </button>
+        <button type="button" className="topbar__button" onClick={onOpenSettings} aria-label="Open settings" title="Settings (S)">
           ⚙️
         </button>
         <button
@@ -121,6 +139,7 @@ export function TopContextBar({
           onClick={onQuickGenerate}
           disabled={!canGenerate}
           aria-label="Quick generate"
+          title={canGenerate ? 'Quick Generate (G)' : 'Select a voice and enter text'}
         >
           ▶️
           <span className="topbar__button-label">Quick Generate</span>
