@@ -101,6 +101,7 @@ function App() {
   const [speed, setSpeed] = useLocalStorage('kokoro:speed', 1);
   const [trimSilence, setTrimSilence] = useLocalStorage('kokoro:trimSilence', true);
   const [autoPlay, setAutoPlay] = useLocalStorage('kokoro:autoPlay', true);
+  const [hoverPreview, setHoverPreview] = useLocalStorage('kokoro:hoverPreview', true);
   const [announcerEnabled, setAnnouncerEnabled] = useLocalStorage('kokoro:announcerEnabled', false);
   const [announcerVoice, setAnnouncerVoice] = useLocalStorage<string | null>('kokoro:announcerVoice', null);
   const [announcerTemplate, setAnnouncerTemplate] = useLocalStorage('kokoro:announcerTemplate', DEFAULT_ANNOUNCER_TEMPLATE);
@@ -1255,12 +1256,12 @@ function App() {
           </div>
         ) : activePanel === 'voices' ? (
           <div className="app__column" id="voice-selector-anchor">
-            <VoiceSelector
-              engineLabel={selectedEngine?.label ?? engineId ?? 'Engine'}
-              engineAvailable={engineAvailable}
-              engineMessage={engineMessage}
-              isLoading={voicesQuery.isLoading}
-              voices={voices}
+          <VoiceSelector
+            engineLabel={selectedEngine?.label ?? engineId ?? 'Engine'}
+            engineAvailable={engineAvailable}
+            engineMessage={engineMessage}
+            isLoading={voicesQuery.isLoading}
+            voices={voices}
               groups={accentGroups.length ? accentGroups : undefined}
               selected={selectedVoices}
               onToggle={(voiceId) => {
@@ -1279,12 +1280,12 @@ function App() {
               voiceStyles={engineId === 'openvoice' ? openvoiceVoiceStyles : undefined}
               styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
               onVoiceStyleChange={engineId === 'openvoice' ? handleOpenvoiceVoiceStyleChange : undefined}
-              onOpenvoiceInstructions={engineId === 'openvoice' ? () => setOpenvoiceHelpOpen(true) : undefined}
-              favorites={uiFavorites}
-              onToggleFavorite={(voiceId) => {
-                setUiFavorites((prev) => (prev.includes(voiceId) ? prev.filter((v) => v !== voiceId) : [...prev, voiceId]));
-              }}
-              onGeneratePreview={engineId === 'kokoro' ? async (voiceId) => {
+            onOpenvoiceInstructions={engineId === 'openvoice' ? () => setOpenvoiceHelpOpen(true) : undefined}
+            favorites={uiFavorites}
+            onToggleFavorite={(voiceId) => {
+              setUiFavorites((prev) => (prev.includes(voiceId) ? prev.filter((v) => v !== voiceId) : [...prev, voiceId]));
+            }}
+            onGeneratePreview={engineId === 'kokoro' ? async (voiceId) => {
                 try {
                   setPreviewBusy((prev) => (prev.includes(voiceId) ? prev : [...prev, voiceId]));
                   await createVoicePreview({ engine: 'kokoro', voiceId, language });
@@ -1293,10 +1294,10 @@ function App() {
                   setError(err instanceof Error ? err.message : 'Failed to generate preview.');
                 } finally {
                   setPreviewBusy((prev) => prev.filter((id) => id !== voiceId));
-                }
-              } : undefined}
-              previewBusyIds={previewBusy}
-              onBulkGeneratePreview={engineId === 'kokoro' ? async (voiceIds) => {
+              }
+            } : undefined}
+            previewBusyIds={previewBusy}
+            onBulkGeneratePreview={engineId === 'kokoro' ? async (voiceIds) => {
                 const ids = Array.from(new Set(voiceIds));
                 if (!ids.length) return;
                 const enqueue = (id: string, label: string) =>
@@ -1323,11 +1324,12 @@ function App() {
                     }
                   }
                   voicesQuery.refetch();
-                } finally {
-                  setPreviewBusy((prev) => prev.filter((id) => !ids.includes(id)));
-                }
-              } : undefined}
-            />
+              } finally {
+                setPreviewBusy((prev) => prev.filter((id) => !ids.includes(id)));
+              }
+            } : undefined}
+            enableHoverPreview={Boolean(hoverPreview)}
+          />
           </div>
         ) : (
           <div className="app__column">
@@ -1369,6 +1371,8 @@ function App() {
         onTrimSilenceChange={(value) => setTrimSilence(Boolean(value))}
         autoPlay={Boolean(autoPlay)}
         onAutoPlayChange={(value) => setAutoPlay(Boolean(value))}
+        hoverPreview={Boolean(hoverPreview)}
+        onHoverPreviewChange={(value) => setHoverPreview(Boolean(value))}
       />
       <FavoritesManagerDialog
         isOpen={isFavoritesManagerOpen}

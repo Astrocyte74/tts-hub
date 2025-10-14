@@ -217,6 +217,11 @@
   color: #0f172a;
   font-weight: 600;
 }
+.topbar__button--primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+  box-shadow: 0 6px 20px rgba(56,189,248,.25);
+}
 
 .topbar__button-label {
   font-weight: 600;

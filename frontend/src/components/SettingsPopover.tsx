@@ -7,6 +7,8 @@ interface SettingsPopoverProps {
   onTrimSilenceChange: (value: boolean) => void;
   autoPlay: boolean;
   onAutoPlayChange: (value: boolean) => void;
+  hoverPreview: boolean;
+  onHoverPreviewChange: (value: boolean) => void;
 }
 
 export function SettingsPopover({
@@ -18,6 +20,8 @@ export function SettingsPopover({
   onTrimSilenceChange,
   autoPlay,
   onAutoPlayChange,
+  hoverPreview,
+  onHoverPreviewChange,
 }: SettingsPopoverProps) {
   if (!open) return null;
   return (
@@ -45,6 +49,16 @@ export function SettingsPopover({
             </label>
           </div>
           <div className="popover__row">
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={hoverPreview}
+                onChange={(e) => onHoverPreviewChange(e.target.checked)}
+              />
+              <span>Auto preview on hover</span>
+            </label>
+          </div>
+          <div className="popover__row">
             <label className="field">
               <span className="field__label">
                 Speed <span className="field__value">{speed.toFixed(2)}×</span>
@@ -69,4 +83,3 @@ export function SettingsPopover({
     </div>
   );
 }
-

@@ -23,6 +23,7 @@ interface VoiceSelectorProps {
   onGeneratePreview?: (voiceId: string) => void;
   previewBusyIds?: string[];
   onBulkGeneratePreview?: (voiceIds: string[]) => void;
+  enableHoverPreview?: boolean;
 }
 
 interface GroupedVoices {
@@ -114,6 +115,7 @@ export function VoiceSelector({
   onGeneratePreview,
   previewBusyIds = [],
   onBulkGeneratePreview,
+  enableHoverPreview = true,
 }: VoiceSelectorProps) {
   const [query, setQuery] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -392,10 +394,10 @@ export function VoiceSelector({
                     <button
                       type="button"
                       className="voice-card__toggle"
-                      onMouseEnter={() => playPreview(voice)}
-                      onMouseLeave={stopPreview}
-                      onFocus={() => playPreview(voice)}
-                      onBlur={stopPreview}
+                      onMouseEnter={enableHoverPreview ? () => playPreview(voice) : undefined}
+                      onMouseLeave={enableHoverPreview ? stopPreview : undefined}
+                      onFocus={enableHoverPreview ? () => playPreview(voice) : undefined}
+                      onBlur={enableHoverPreview ? stopPreview : undefined}
                       onClick={() => onToggle(voice.id)}
                       disabled={disabled}
                     >
@@ -471,10 +473,10 @@ export function VoiceSelector({
                         <button
                           type="button"
                           className="voice-card__toggle"
-                          onMouseEnter={() => playPreview(voice)}
-                          onMouseLeave={stopPreview}
-                          onFocus={() => playPreview(voice)}
-                          onBlur={stopPreview}
+                          onMouseEnter={enableHoverPreview ? () => playPreview(voice) : undefined}
+                          onMouseLeave={enableHoverPreview ? stopPreview : undefined}
+                          onFocus={enableHoverPreview ? () => playPreview(voice) : undefined}
+                          onBlur={enableHoverPreview ? stopPreview : undefined}
                           onClick={() => onToggle(voice.id)}
                           disabled={disabled}
                         >
