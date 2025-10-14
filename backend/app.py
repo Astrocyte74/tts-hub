@@ -360,31 +360,7 @@ def _get_or_create_kokoro_preview(voice_id: str, language: str, *, force: bool =
     return path
 
 
-@api.route("/voices/preview", methods=["POST"])
-def create_voice_preview_endpoint():
-    payload = parse_json_request()
-    engine_id = str(payload.get("engine") or "kokoro").lower()
-    voice_id = str(payload.get("voiceId") or payload.get("voice") or "").strip()
-    if not voice_id:
-        raise PlaygroundError("Field 'voiceId' is required.", status=400)
-    language = str(payload.get("language") or "en-us").lower()
-    force = bool(payload.get("force"))
-
-    engine, available = resolve_engine(engine_id)
-    if not available:
-        raise PlaygroundError(f"TTS engine '{engine_id}' is not available.", status=503)
-
-    if engine["id"] != "kokoro":
-        raise PlaygroundError("Preview generation is currently supported for Kokoro only.", status=400)
-
-    path = _get_or_create_kokoro_preview(voice_id, language, force=force)
-    rel = path.relative_to(OUTPUT_DIR)
-    return jsonify({
-        "engine": engine["id"],
-        "voice": voice_id,
-        "language": language,
-        "preview_url": f"/audio/{rel.as_posix()}",
-    })
+## preview route defined later (after api blueprint is declared)
 
 
 def _slugify_voice_id(name: str) -> str:
@@ -1591,6 +1567,38 @@ def voices_grouped_endpoint():
     if not groups and engine["id"] != "kokoro":
         response["message"] = "Grouped voice metadata not yet implemented for this engine."
     return jsonify(response)
+
+
+@api.route("/voices/preview", methods=["POST"])
+def create_voice_preview_endpoint():
+    """Generate or return a cached short preview clip for a voice.
+
+    Request JSON: { engine: string, voiceId: string, language?: string, force?: boolean }
+    Returns: { preview_url: string }
+    """
+    payload = parse_json_request()
+    engine_id = str(payload.get("engine") or "kokoro").lower()
+    voice_id = str(payload.get("voiceId") or payload.get("voice") or "").strip()
+    if not voice_id:
+        raise PlaygroundError("Field 'voiceId' is required.", status=400)
+    language = str(payload.get("language") or "en-us").lower()
+    force = bool(payload.get("force"))
+
+    engine, available = resolve_engine(engine_id)
+    if not available:
+        raise PlaygroundError(f"TTS engine '{engine_id}' is not available.", status=503)
+
+    if engine["id"] != "kokoro":
+        raise PlaygroundError("Preview generation is currently supported for Kokoro only.", status=400)
+
+    path = _get_or_create_kokoro_preview(voice_id, language, force=force)
+    rel = path.relative_to(OUTPUT_DIR)
+    return jsonify({
+        "engine": engine["id"],
+        "voice": voice_id,
+        "language": language,
+        "preview_url": f"/audio/{rel.as_posix()}",
+    })
 
 
 @api.route("/chattts/presets", methods=["POST"])
