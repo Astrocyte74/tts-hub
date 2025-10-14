@@ -6,7 +6,10 @@ interface QueueItem {
   id: string;
   label: string;
   engine: string;
-  status: 'pending' | 'rendering' | 'done' | 'error';
+  status: 'pending' | 'rendering' | 'done' | 'error' | 'canceled';
+  progress?: number; // 0..100
+  startedAt?: string;
+  finishedAt?: string;
   error?: string;
 }
 
@@ -17,6 +20,9 @@ interface ResultsDrawerProps {
   queue: QueueItem[];
   autoPlay: boolean;
   onRemove: (id: string) => void;
+  onCancelQueue?: (id: string) => void;
+  onClearHistory?: () => void;
+  onClearQueue?: () => void;
   onSaveChattts?: (item: SynthesisResult) => void;
   savingChatttsId?: string | null;
   onSaveKokoroFavorite?: (item: SynthesisResult) => void;
@@ -30,6 +36,9 @@ export function ResultsDrawer({
   queue,
   autoPlay,
   onRemove,
+  onCancelQueue,
+  onClearHistory,
+  onClearQueue,
   onSaveChattts,
   savingChatttsId = null,
   onSaveKokoroFavorite,
@@ -69,17 +78,37 @@ export function ResultsDrawer({
           </button>
         </div>
         {activeTab === 'queue' ? (
-          <div className="queue-list">
+          <div className="queue-list" role="list" aria-label="Render queue">
             {!queue.length ? (
               <div className="results-drawer__empty">No pending items.</div>
             ) : (
-              queue.map((q) => (
-                <div key={q.id} className={`queue-row queue-row--${q.status}`}>
-                  <div className="queue-row__title">{q.label}</div>
-                  <div className="queue-row__meta">{q.engine}</div>
-                  <div className="queue-row__status">{q.status}</div>
-                </div>
-              ))
+              <>
+                {queue.map((q) => (
+                  <div key={q.id} role="listitem" className={`queue-row queue-row--${q.status}`}>
+                    <div className="queue-row__title">{q.label}</div>
+                    <div className="queue-row__meta">{q.engine}</div>
+                    <div className="queue-row__progress">
+                      <div className="progress"><span style={{ width: `${Math.min(100, Math.max(0, q.progress ?? 0))}%` }} /></div>
+                    </div>
+                    <div className="queue-row__actions">
+                      {onCancelQueue && q.status === 'rendering' ? (
+                        <button type="button" className="small-btn" onClick={() => onCancelQueue(q.id)} aria-label="Cancel">
+                          Cancel
+                        </button>
+                      ) : (
+                        <span className="queue-row__status">{q.status}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {onClearQueue ? (
+                  <div className="queue-actions">
+                    <button type="button" className="small-btn" onClick={onClearQueue} aria-label="Clear queue">
+                      Clear queue
+                    </button>
+                  </div>
+                ) : null}
+              </>
             )}
           </div>
         ) : (
@@ -87,18 +116,27 @@ export function ResultsDrawer({
             {!items.length ? (
               <div className="results-drawer__empty">Generate audio to see the clips here.</div>
             ) : (
-              items.map((item, index) => (
-                <AudioResultCard
-                  key={item.id}
-                  item={item}
-                  autoPlay={autoPlay && index === 0}
-                  onRemove={onRemove}
-                  onSaveChattts={onSaveChattts}
-                  isSavingChattts={onSaveChattts && savingChatttsId === item.id && item.engine === 'chattts'}
-                  onSaveKokoroFavorite={onSaveKokoroFavorite}
-                  kokoroFavoriteSummary={item.voice ? kokoroFavoritesByVoice[item.voice] : undefined}
-                />
-              ))
+              <>
+                {items.map((item, index) => (
+                  <AudioResultCard
+                    key={item.id}
+                    item={item}
+                    autoPlay={autoPlay && index === 0}
+                    onRemove={onRemove}
+                    onSaveChattts={onSaveChattts}
+                    isSavingChattts={onSaveChattts && savingChatttsId === item.id && item.engine === 'chattts'}
+                    onSaveKokoroFavorite={onSaveKokoroFavorite}
+                    kokoroFavoriteSummary={item.voice ? kokoroFavoritesByVoice[item.voice] : undefined}
+                  />
+                ))}
+                {onClearHistory ? (
+                  <div className="queue-actions">
+                    <button type="button" className="small-btn" onClick={onClearHistory} aria-label="Clear history">
+                      Clear history
+                    </button>
+                  </div>
+                ) : null}
+              </>
             )}
           </div>
         )}
