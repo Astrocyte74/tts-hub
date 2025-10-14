@@ -65,7 +65,7 @@ export function TopContextBar({
   return (
     <header className="topbar" role="banner" aria-label="Session context">
       <div className="topbar__left">
-        <button type="button" className="topbar__brand" onClick={onShowInfo} aria-label="Open about dialog (Shift+/)">
+        <button type="button" className="topbar__brand" onClick={onShowInfo} aria-label="Open about dialog">
           <span className="topbar__brand-mark" aria-hidden>⧉</span>
           <span className="topbar__brand-label">Kokoro Playground</span>
         </button>
