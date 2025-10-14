@@ -1168,179 +1168,185 @@ function App() {
       ) : null}
 
       <main className="app__layout">
-        <div className="app__column">
-          <TextWorkbench
-            text={text}
-            onChange={setText}
-            onInsertRandom={handleInsertRandom}
-            onAppendRandom={handleAppendRandom}
-            isRandomLoading={randomTextMutation.isPending}
-            categories={categories}
-            selectedCategory={randomCategory}
-            onCategoryChange={setRandomCategory}
-            onAiAssistClick={() => setAiAssistOpen(true)}
-            aiAssistAvailable={ollamaAvailable}
-          />
-          <div id="settings-anchor"></div>
-          <SynthesisControls
-            engineId={engineId}
-            engines={engineList.map((engine) => ({
-              id: engine.id,
-              label: engine.label,
-              available: engine.available,
-              status: engine.status,
-              description: engine.description,
-            }))}
-            onEngineChange={(value) => setEngineId(value)}
-            engineAvailable={engineAvailable}
-            engineMessage={engineMessage}
-            language={language}
-            languages={availableLanguages}
-            onLanguageChange={(value) => setLanguage(normaliseLanguage(value))}
-            speed={Number(speed)}
-            onSpeedChange={(value) => setSpeed(Number(value))}
-            trimSilence={Boolean(trimSilence)}
-            onTrimSilenceChange={(value) => setTrimSilence(value)}
-            autoPlay={Boolean(autoPlay)}
-            onAutoPlayChange={(value) => setAutoPlay(value)}
-            styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
-            selectedStyle={engineId === 'openvoice' ? openvoiceStyle : undefined}
-            onStyleChange={engineId === 'openvoice' ? handleOpenvoiceStyleChange : undefined}
-            chatttsSeed={engineId === 'chattts' ? chatttsSeed : undefined}
-            onChatttsSeedChange={engineId === 'chattts' ? setChatttsSeed : undefined}
-            kokoroFavoriteOptions={engineId === 'kokoro' ? kokoroFavoriteOptions : undefined}
-            kokoroFavoriteId={engineId === 'kokoro' ? selectedKokoroFavoriteId : undefined}
-            onKokoroFavoriteChange={engineId === 'kokoro' ? handleKokoroFavoriteChange : undefined}
-            onManageKokoroFavorites={engineId === 'kokoro' ? handleOpenFavoritesManager : undefined}
-            kokoroFavoritesCount={engineId === 'kokoro' ? kokoroFavorites.length : undefined}
-          />
-          {engineAvailable ? (
-            <AnnouncerControls
-              enabled={announcerEnabled}
-              onEnabledChange={setAnnouncerEnabled}
-              voices={voices}
-              selectedVoice={announcerVoice}
-              onVoiceChange={setAnnouncerVoice}
-              template={announcerTemplate}
-              onTemplateChange={setAnnouncerTemplate}
-              gapSeconds={Number(announcerGap)}
-              onGapChange={(value) => setAnnouncerGap(Number(value))}
+        {activePanel === 'script' ? (
+          <div className="app__column">
+            <TextWorkbench
+              text={text}
+              onChange={setText}
+              onInsertRandom={handleInsertRandom}
+              onAppendRandom={handleAppendRandom}
+              isRandomLoading={randomTextMutation.isPending}
+              categories={categories}
+              selectedCategory={randomCategory}
+              onCategoryChange={setRandomCategory}
+              onAiAssistClick={() => setAiAssistOpen(true)}
+              aiAssistAvailable={ollamaAvailable}
             />
-          ) : null}
-          <SynthesisActions
-            canSynthesize={canSynthesize}
-            hasMultipleVoices={hasMultipleVoices}
-            onSynthesize={handleSynthesize}
-            onAudition={handleAudition}
-            isSynthLoading={synthMutation.isPending}
-            isAuditionLoading={auditionMutation.isPending}
-          />
-        </div>
-        <div className="app__column" id="voice-selector-anchor">
-          <VoiceSelector
-            engineLabel={selectedEngine?.label ?? engineId ?? 'Engine'}
-            engineAvailable={engineAvailable}
-            engineMessage={engineMessage}
-            isLoading={voicesQuery.isLoading}
-            voices={voices}
-            groups={accentGroups.length ? accentGroups : undefined}
-            selected={selectedVoices}
-            onToggle={(voiceId) => {
-              setError(null);
-              const next = selectedVoices.includes(voiceId)
-                ? selectedVoices.filter((id) => id !== voiceId)
-                : [...selectedVoices, voiceId];
-              setSelectedVoices(next);
-            }}
-            onClear={() => {
-              setError(null);
-              setSelectedVoices([]);
-            }}
-            activeGroup={voiceGroupFilter}
-            onGroupChange={setVoiceGroupFilter}
-            voiceStyles={engineId === 'openvoice' ? openvoiceVoiceStyles : undefined}
-            styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
-            onVoiceStyleChange={engineId === 'openvoice' ? handleOpenvoiceVoiceStyleChange : undefined}
-            onOpenvoiceInstructions={engineId === 'openvoice' ? () => setOpenvoiceHelpOpen(true) : undefined}
-            favorites={uiFavorites}
-            onToggleFavorite={(voiceId) => {
-              setUiFavorites((prev) => (prev.includes(voiceId) ? prev.filter((v) => v !== voiceId) : [...prev, voiceId]));
-            }}
-            onGeneratePreview={engineId === 'kokoro' ? async (voiceId) => {
-              try {
-                setPreviewBusy((prev) => (prev.includes(voiceId) ? prev : [...prev, voiceId]));
-                await createVoicePreview({ engine: 'kokoro', voiceId, language });
-                // Refresh voices to pick up preview_url
-                voicesQuery.refetch();
-              } catch (err) {
-                setError(err instanceof Error ? err.message : 'Failed to generate preview.');
-              } finally {
-                setPreviewBusy((prev) => prev.filter((id) => id !== voiceId));
-              }
-            } : undefined}
-            previewBusyIds={previewBusy}
-            onBulkGeneratePreview={engineId === 'kokoro' ? async (voiceIds) => {
-              const ids = Array.from(new Set(voiceIds));
-              if (!ids.length) return;
-              const enqueue = (id: string, label: string) =>
-                setQueue((prev) => [
-                  ...prev,
-                  { id: `pv-${id}-${Date.now()}`, label: `Preview · ${label}`, engine: 'kokoro', status: 'pending', progress: 0, startedAt: new Date().toISOString() },
-                ]);
-              const voiceLabel = (id: string) => voices.find((v) => v.id === id)?.label ?? id;
-              try {
-                // filter out ids already in progress or already queued
-                const activeLabels = new Set(queue.map((q) => q.label));
-                const toRun = ids.filter((id) => !previewBusy.includes(id) && !activeLabels.has(`Preview · ${voiceLabel(id)}`));
-                if (!toRun.length) return;
-                setPreviewBusy((prev) => Array.from(new Set([...prev, ...toRun])));
-                setResultsDrawerOpen(true);
-                for (const id of toRun) {
-                  enqueue(id, voiceLabel(id));
+            <SynthesisActions
+              canSynthesize={canSynthesize}
+              hasMultipleVoices={hasMultipleVoices}
+              onSynthesize={handleSynthesize}
+              onAudition={handleAudition}
+              isSynthLoading={synthMutation.isPending}
+              isAuditionLoading={auditionMutation.isPending}
+            />
+          </div>
+        ) : activePanel === 'controls' ? (
+          <div className="app__column">
+            <div id="settings-anchor"></div>
+            <SynthesisControls
+              engineId={engineId}
+              engines={engineList.map((engine) => ({
+                id: engine.id,
+                label: engine.label,
+                available: engine.available,
+                status: engine.status,
+                description: engine.description,
+              }))}
+              onEngineChange={(value) => setEngineId(value)}
+              engineAvailable={engineAvailable}
+              engineMessage={engineMessage}
+              language={language}
+              languages={availableLanguages}
+              onLanguageChange={(value) => setLanguage(normaliseLanguage(value))}
+              speed={Number(speed)}
+              onSpeedChange={(value) => setSpeed(Number(value))}
+              trimSilence={Boolean(trimSilence)}
+              onTrimSilenceChange={(value) => setTrimSilence(value)}
+              autoPlay={Boolean(autoPlay)}
+              onAutoPlayChange={(value) => setAutoPlay(value)}
+              styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
+              selectedStyle={engineId === 'openvoice' ? openvoiceStyle : undefined}
+              onStyleChange={engineId === 'openvoice' ? handleOpenvoiceStyleChange : undefined}
+              chatttsSeed={engineId === 'chattts' ? chatttsSeed : undefined}
+              onChatttsSeedChange={engineId === 'chattts' ? setChatttsSeed : undefined}
+              kokoroFavoriteOptions={engineId === 'kokoro' ? kokoroFavoriteOptions : undefined}
+              kokoroFavoriteId={engineId === 'kokoro' ? selectedKokoroFavoriteId : undefined}
+              onKokoroFavoriteChange={engineId === 'kokoro' ? handleKokoroFavoriteChange : undefined}
+              onManageKokoroFavorites={engineId === 'kokoro' ? handleOpenFavoritesManager : undefined}
+              kokoroFavoritesCount={engineId === 'kokoro' ? kokoroFavorites.length : undefined}
+            />
+            {engineAvailable ? (
+              <AnnouncerControls
+                enabled={announcerEnabled}
+                onEnabledChange={setAnnouncerEnabled}
+                voices={voices}
+                selectedVoice={announcerVoice}
+                onVoiceChange={setAnnouncerVoice}
+                template={announcerTemplate}
+                onTemplateChange={setAnnouncerTemplate}
+                gapSeconds={Number(announcerGap)}
+                onGapChange={(value) => setAnnouncerGap(Number(value))}
+              />
+            ) : null}
+          </div>
+        ) : activePanel === 'voices' ? (
+          <div className="app__column" id="voice-selector-anchor">
+            <VoiceSelector
+              engineLabel={selectedEngine?.label ?? engineId ?? 'Engine'}
+              engineAvailable={engineAvailable}
+              engineMessage={engineMessage}
+              isLoading={voicesQuery.isLoading}
+              voices={voices}
+              groups={accentGroups.length ? accentGroups : undefined}
+              selected={selectedVoices}
+              onToggle={(voiceId) => {
+                setError(null);
+                const next = selectedVoices.includes(voiceId)
+                  ? selectedVoices.filter((id) => id !== voiceId)
+                  : [...selectedVoices, voiceId];
+                setSelectedVoices(next);
+              }}
+              onClear={() => {
+                setError(null);
+                setSelectedVoices([]);
+              }}
+              activeGroup={voiceGroupFilter}
+              onGroupChange={setVoiceGroupFilter}
+              voiceStyles={engineId === 'openvoice' ? openvoiceVoiceStyles : undefined}
+              styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
+              onVoiceStyleChange={engineId === 'openvoice' ? handleOpenvoiceVoiceStyleChange : undefined}
+              onOpenvoiceInstructions={engineId === 'openvoice' ? () => setOpenvoiceHelpOpen(true) : undefined}
+              favorites={uiFavorites}
+              onToggleFavorite={(voiceId) => {
+                setUiFavorites((prev) => (prev.includes(voiceId) ? prev.filter((v) => v !== voiceId) : [...prev, voiceId]));
+              }}
+              onGeneratePreview={engineId === 'kokoro' ? async (voiceId) => {
+                try {
+                  setPreviewBusy((prev) => (prev.includes(voiceId) ? prev : [...prev, voiceId]));
+                  await createVoicePreview({ engine: 'kokoro', voiceId, language });
+                  voicesQuery.refetch();
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : 'Failed to generate preview.');
+                } finally {
+                  setPreviewBusy((prev) => prev.filter((id) => id !== voiceId));
                 }
-                for (const id of toRun) {
-                  const label = voiceLabel(id);
-                  // mark rendering
-                  setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` && q.status === 'pending' ? { ...q, status: 'rendering' } : q));
-                  try {
-                    await createVoicePreview({ engine: 'kokoro', voiceId: id, language });
-                    setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` && (q.status === 'rendering' || q.status === 'pending') ? { ...q, status: 'done', progress: 100, finishedAt: new Date().toISOString() } : q));
-                  } catch (err) {
-                    setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` ? { ...q, status: 'error', error: String(err) } : q));
+              } : undefined}
+              previewBusyIds={previewBusy}
+              onBulkGeneratePreview={engineId === 'kokoro' ? async (voiceIds) => {
+                const ids = Array.from(new Set(voiceIds));
+                if (!ids.length) return;
+                const enqueue = (id: string, label: string) =>
+                  setQueue((prev) => [
+                    ...prev,
+                    { id: `pv-${id}-${Date.now()}`, label: `Preview · ${label}`, engine: 'kokoro', status: 'pending', progress: 0, startedAt: new Date().toISOString() },
+                  ]);
+                const voiceLabel = (id: string) => voices.find((v) => v.id === id)?.label ?? id;
+                try {
+                  const activeLabels = new Set(queue.map((q) => q.label));
+                  const toRun = ids.filter((id) => !previewBusy.includes(id) && !activeLabels.has(`Preview · ${voiceLabel(id)}`));
+                  if (!toRun.length) return;
+                  setPreviewBusy((prev) => Array.from(new Set([...prev, ...toRun])));
+                  setResultsDrawerOpen(true);
+                  for (const id of toRun) enqueue(id, voiceLabel(id));
+                  for (const id of toRun) {
+                    const label = voiceLabel(id);
+                    setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` && q.status === 'pending' ? { ...q, status: 'rendering' } : q));
+                    try {
+                      await createVoicePreview({ engine: 'kokoro', voiceId: id, language });
+                      setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` && (q.status === 'rendering' || q.status === 'pending') ? { ...q, status: 'done', progress: 100, finishedAt: new Date().toISOString() } : q));
+                    } catch (err) {
+                      setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` ? { ...q, status: 'error', error: String(err) } : q));
+                    }
                   }
+                  voicesQuery.refetch();
+                } finally {
+                  setPreviewBusy((prev) => prev.filter((id) => !ids.includes(id)));
                 }
-                voicesQuery.refetch();
-              } finally {
-                setPreviewBusy((prev) => prev.filter((id) => !ids.includes(id)));
-              }
-            } : undefined}
-          />
-          <AudioResultList
-            items={results}
-            autoPlay={Boolean(autoPlay)}
-            onRemove={handleRemoveResult}
-            onSaveChattts={engineId === 'chattts' ? handleSaveChatttsPresetFromResult : undefined}
-            savingChatttsId={engineId === 'chattts' ? savingChatttsId : null}
-            onSaveKokoroFavorite={handleSaveKokoroFavoriteFromResult}
-            kokoroFavoritesByVoice={kokoroFavoritesByVoice}
-          />
-        </div>
+              } : undefined}
+            />
+          </div>
+        ) : (
+          <div className="app__column">
+            <AudioResultList
+              items={results}
+              autoPlay={Boolean(autoPlay)}
+              onRemove={handleRemoveResult}
+              onSaveChattts={engineId === 'chattts' ? handleSaveChatttsPresetFromResult : undefined}
+              savingChatttsId={engineId === 'chattts' ? savingChatttsId : null}
+              onSaveKokoroFavorite={handleSaveKokoroFavoriteFromResult}
+              kokoroFavoritesByVoice={kokoroFavoritesByVoice}
+            />
+          </div>
+        )}
       </main>
-      <ResultsDrawer
-        open={isResultsDrawerOpen}
-        onToggle={() => setResultsDrawerOpen((v) => !v)}
-        items={results}
-        queue={queue}
-        autoPlay={Boolean(autoPlay)}
-        onRemove={handleRemoveResult}
-        onCancelQueue={(id) => setQueue((prev) => prev.map((it) => (it.id === id ? { ...it, status: 'canceled' } : it)))}
-        onClearHistory={() => setResults([])}
-        onClearQueue={() => setQueue([])}
-        onSaveChattts={engineId === 'chattts' ? handleSaveChatttsPresetFromResult : undefined}
-        savingChatttsId={engineId === 'chattts' ? savingChatttsId : null}
-        onSaveKokoroFavorite={handleSaveKokoroFavoriteFromResult}
-        kokoroFavoritesByVoice={kokoroFavoritesByVoice}
-      />
+      {activePanel !== 'results' ? (
+        <ResultsDrawer
+          open={isResultsDrawerOpen}
+          onToggle={() => setResultsDrawerOpen((v) => !v)}
+          items={results}
+          queue={queue}
+          autoPlay={Boolean(autoPlay)}
+          onRemove={handleRemoveResult}
+          onCancelQueue={(id) => setQueue((prev) => prev.map((it) => (it.id === id ? { ...it, status: 'canceled' } : it)))}
+          onClearHistory={() => setResults([])}
+          onClearQueue={() => setQueue([])}
+          onSaveChattts={engineId === 'chattts' ? handleSaveChatttsPresetFromResult : undefined}
+          savingChatttsId={engineId === 'chattts' ? savingChatttsId : null}
+          onSaveKokoroFavorite={handleSaveKokoroFavoriteFromResult}
+          kokoroFavoritesByVoice={kokoroFavoritesByVoice}
+        />
+      ) : null}
       <SettingsPopover
         open={isSettingsOpen}
         onClose={() => setSettingsOpen(false)}

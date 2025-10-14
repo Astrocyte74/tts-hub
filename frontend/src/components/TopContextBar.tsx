@@ -24,6 +24,9 @@ interface TopContextBarProps {
   onAiAssistClick?: () => void;
   engines?: { id: string; label: string; available?: boolean; status?: string | null }[];
   onEngineChange?: (id: string) => void;
+  activePanel?: 'script' | 'voices' | 'controls' | 'results';
+  onChangePanel?: (panel: 'script' | 'voices' | 'controls' | 'results') => void;
+  onShowScript?: () => void;
 }
 
 function formatVoiceSummary(voices: VoiceProfile[], selectedVoiceIds: string[]) {
@@ -65,6 +68,9 @@ export function TopContextBar({
   onAiAssistClick,
   engines,
   onEngineChange,
+  activePanel,
+  onChangePanel,
+  onShowScript,
 }: TopContextBarProps) {
   const voiceSummary = formatVoiceSummary(voices, selectedVoiceIds);
   const clipsCount = results.length;
@@ -139,7 +145,20 @@ export function TopContextBar({
       <div className="topbar__center">
         <button
           type="button"
-          className={`topbar__chip ${noVoiceSelected ? 'topbar__chip--warn' : ''}`}
+          className={`topbar__chip ${activePanel === 'script' ? 'topbar__chip--active' : ''}`}
+          onClick={() => {
+            onChangePanel && onChangePanel('script');
+            onShowScript && onShowScript();
+          }}
+          aria-label="Edit script"
+          title="Script (1)"
+        >
+          <span className="topbar__chip-label">Script</span>
+          <span className="topbar__chip-value">Text</span>
+        </button>
+        <button
+          type="button"
+          className={`topbar__chip ${noVoiceSelected ? 'topbar__chip--warn' : ''} ${activePanel === 'voices' ? 'topbar__chip--active' : ''}`}
           onClick={onShowVoicePalette}
           aria-label="Show voice palette"
           title="Jump to voices (V)"
@@ -149,11 +168,14 @@ export function TopContextBar({
         </button>
         <button
           type="button"
-          className={`topbar__chip ${isResultsOpen ? 'topbar__chip--active' : ''}`}
-          onClick={onToggleResults}
-          aria-pressed={isResultsOpen}
-          aria-label={isResultsOpen ? 'Hide results drawer' : 'Show results drawer'}
-          title="Toggle results (R)"
+          className={`topbar__chip ${activePanel === 'results' || isResultsOpen ? 'topbar__chip--active' : ''}`}
+          onClick={() => {
+            onChangePanel && onChangePanel('results');
+            onToggleResults && onToggleResults();
+          }}
+          aria-pressed={activePanel === 'results' || Boolean(isResultsOpen)}
+          aria-label="Show results"
+          title="Results (4)"
         >
           <span className="topbar__chip-label">Clips</span>
           <span className="topbar__chip-value">{queueLabel}</span>
