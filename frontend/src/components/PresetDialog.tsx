@@ -9,7 +9,7 @@ interface PresetDialogProps {
   existingLabelHint?: string;
   existingLabelSuffix?: string;
   onCancel: () => void;
-  onConfirm: (label: string, notes?: string) => Promise<void> | void;
+  onConfirm: (label: string, notes?: string, saveGlobalProfile?: boolean) => Promise<void> | void;
   isSaving: boolean;
   defaultLabel: string;
   defaultNotes?: string;
@@ -20,6 +20,7 @@ interface PresetDialogProps {
   confirmLabel?: string;
   emptyLabelError?: string;
   dialogId?: string;
+  allowGlobalProfile?: boolean;
 }
 
 export function PresetDialog({
@@ -42,10 +43,12 @@ export function PresetDialog({
   confirmLabel = 'Save preset',
   emptyLabelError = 'Please enter a name.',
   dialogId,
+  allowGlobalProfile = false,
 }: PresetDialogProps) {
   const [label, setLabel] = useState(defaultLabel);
   const [notes, setNotes] = useState(defaultNotes);
   const [error, setError] = useState<string | null>(null);
+  const [saveGlobal, setSaveGlobal] = useState<boolean>(allowGlobalProfile);
 
   const headingId = useMemo(() => {
     if (dialogId) {
@@ -62,7 +65,8 @@ export function PresetDialog({
     setLabel(defaultLabel);
     setNotes(defaultNotes);
     setError(null);
-  }, [isOpen, defaultLabel, defaultNotes]);
+    setSaveGlobal(allowGlobalProfile);
+  }, [isOpen, defaultLabel, defaultNotes, allowGlobalProfile]);
 
   if (!isOpen) {
     return null;
@@ -77,7 +81,7 @@ export function PresetDialog({
     }
     try {
       const trimmedNotes = notes.trim();
-      await onConfirm(trimmedLabel, trimmedNotes ? trimmedNotes : undefined);
+      await onConfirm(trimmedLabel, trimmedNotes ? trimmedNotes : undefined, saveGlobal);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save preset.';
       setError(message);
@@ -122,6 +126,12 @@ export function PresetDialog({
               rows={3}
             />
           </label>
+          {allowGlobalProfile ? (
+            <label className="modal__field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <input type="checkbox" checked={saveGlobal} onChange={(e) => setSaveGlobal(e.target.checked)} />
+              <span>Also save as global profile (available via API)</span>
+            </label>
+          ) : null}
           {error ? <p className="modal__error">{error}</p> : null}
           <footer className="modal__footer">
             <button type="button" className="modal__button modal__button--ghost" onClick={onCancel} disabled={isSaving}>

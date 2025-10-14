@@ -26,6 +26,7 @@ import {
   fetchVoiceGroups,
   synthesiseClip,
   createVoicePreview,
+  createProfile,
 } from './api/client';
 import type {
   KokoroFavorite,
@@ -737,7 +738,7 @@ function App() {
     return `fav-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
   };
 
-  const handleConfirmSaveDraft = async (label: string, notes?: string) => {
+  const handleConfirmSaveDraft = async (label: string, notes?: string, saveGlobalProfile?: boolean) => {
     if (!saveDraft) {
       return;
     }
@@ -807,6 +808,25 @@ function App() {
         createdAt: new Date().toISOString(),
       };
       setKokoroFavorites([...kokoroFavorites, nextFavorite]);
+      if (saveGlobalProfile) {
+        try {
+          await createProfile({
+            label: nextFavorite.label,
+            engine: 'kokoro',
+            voiceId: nextFavorite.voiceId,
+            language: (nextFavorite.locale ?? undefined) || 'en-us',
+            tags: ['kokoro', 'favorite'],
+            meta: {
+              accent: nextFavorite.accent
+                ? { id: nextFavorite.accent.id, label: nextFavorite.accent.label, flag: nextFavorite.accent.flag }
+                : undefined,
+              source: 'ui',
+            },
+          });
+        } catch (err) {
+          console.error('Failed to create global profile:', err);
+        }
+      }
       if (engineId === 'kokoro') {
         setSelectedVoices([saveDraft.voiceId]);
         setSelectedKokoroFavoriteId(nextFavorite.id);
@@ -1503,6 +1523,7 @@ function App() {
         notesPlaceholder={presetDialogNotesPlaceholder}
         confirmLabel={presetDialogConfirmLabel}
         emptyLabelError={presetDialogEmptyError}
+        allowGlobalProfile={isKokoroDraft}
       />
       <InfoDialog
         isOpen={openvoiceHelpOpen}

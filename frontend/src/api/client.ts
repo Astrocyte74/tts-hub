@@ -341,6 +341,11 @@ export async function createVoicePreview(params: { engine: string; voiceId: stri
   return { preview_url: url };
 }
 
+// Favorites (Profiles)
+export async function createProfile(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return postJson<Record<string, unknown>>('favorites', payload);
+}
+
 function synthesiseResultFromResponse(
   response: SynthesisResponseShape,
   fallbackVoice: string,
