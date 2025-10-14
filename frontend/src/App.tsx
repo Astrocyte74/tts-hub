@@ -1177,7 +1177,7 @@ function App() {
         </div>
       ) : null}
 
-      <main className="app__layout">
+      <main className={`app__layout is-single`}>
         {activePanel === 'script' ? (
           <div className="app__column">
             <TextWorkbench

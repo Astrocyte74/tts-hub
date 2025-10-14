@@ -274,6 +274,11 @@
   align-items: start;
 }
 
+/* Single-column focus mode (Script, Voices, Controls, Results) */
+.app__layout.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .app__column {
   display: flex;
   flex-direction: column;
