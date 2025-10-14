@@ -1155,6 +1155,15 @@ function App() {
     return () => window.removeEventListener('keydown', handler);
   }, [canSynthesize, setActivePanel]);
 
+  // Auto-open Clips when the queue becomes empty and results exist
+  useEffect(() => {
+    const active = queue.filter((q) => q.status === 'pending' || q.status === 'rendering').length;
+    if (autoOpenClips && active === 0 && results.length) {
+      setResultsDrawerOpen(true);
+      setActivePanel('results');
+    }
+  }, [queue, autoOpenClips, results.length, setActivePanel]);
+
   return (
     <div className="app">
       <header className="app__header">
@@ -1510,11 +1519,3 @@ function App() {
 }
 
 export default App;
-  // Auto-open Clips when queue completes
-  useEffect(() => {
-    const active = queue.filter((q) => q.status === 'pending' || q.status === 'rendering').length;
-    if (autoOpenClips && active === 0 && results.length) {
-      setResultsDrawerOpen(true);
-      setActivePanel('results');
-    }
-  }, [queue, autoOpenClips, results.length, setActivePanel]);
