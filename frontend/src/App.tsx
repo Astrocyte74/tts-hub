@@ -284,8 +284,8 @@ function App() {
       .slice(0, 5);
   }, [profilesQuery.data]);
 
-  const canSaveProfile = useMemo(() => backendReady && selectedVoices.length === 1 && Boolean(text.trim()), [backendReady, selectedVoices.length, text]);
-
+  // Defer definition until after backendReady is computed below
+  let canSaveProfile = false as boolean;
   const handleSaveProfileQuick = async () => {
     try {
       if (!canSaveProfile) return;
@@ -358,6 +358,7 @@ function App() {
   const ollamaAvailable = metaQuery.data?.ollama_available ?? false;
   const kokoroReady = metaQuery.data ? metaQuery.data.has_model && metaQuery.data.has_voices : true;
   const backendReady = engineId === 'kokoro' ? engineAvailable && kokoroReady : engineAvailable;
+  canSaveProfile = useMemo(() => backendReady && selectedVoices.length === 1 && Boolean(text.trim()), [backendReady, selectedVoices.length, text]);
   const engineStatus = selectedEngine?.status ?? null;
 
   const applyOpenvoiceStyle = (style: string, options: { updateOverrides?: boolean } = {}) => {
