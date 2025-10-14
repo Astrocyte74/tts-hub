@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented here.
 
+## [UI revamp] – 2025-10-14
+
+Highlights
+- Segmented modes: Script | Engine | Voice | Clips with active styling and hotkeys (1=Script, 2=Voice, 3=Engine, 4=Clips; G=Create clip; V=Voices; R=Clips; S=Settings; Shift+/?=AI Assist).
+- Engine selection cards with strengths + overview; accessible fallback select retained off-screen.
+- Quick settings: “Auto preview on hover” and “Auto open Clips on completion” toggles (both default on; persisted to localStorage).
+- Queue → Clips flow: Queue tab shows only active items with a live count; auto-switch to Clips when queue becomes empty and results exist; newest clip highlight.
+- Voice quick menu: caret on the Voice segment opens Favorites (up to 5) and Recent (up to 5); selecting a voice returns to Script.
+- Script header: AI Assist pill shows Ready/Offline based on `/meta` `ollama_available`.
+
+Notes
+- “History” renamed to “Clips” across the UI and docs.
+- Drawer is hidden entirely when in the Clips segment; otherwise shown and toggleable.
+
 ## [ui-v2-beta] – 2025-10-13
 
 Highlights
@@ -36,4 +50,3 @@ Breaking changes
 Upgrade notes
 - Ensure `.env` (or `.env.local`) points to your backend if you run UI-only; set `VITE_API_BASE_URL=http://127.0.0.1:7860`.
 - The output directory `out/` and subfolder `out/voice_previews/` are ignored by Git.
-

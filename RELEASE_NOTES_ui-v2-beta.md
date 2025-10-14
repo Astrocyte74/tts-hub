@@ -27,3 +27,11 @@ API notes
 
 Have fun — it’s ready for usability testing and iterative polish.
 
+## UI polish (post-beta)
+
+- Segmented modes in the top bar (Script | Engine | Voice | Clips) with keyboard shortcuts and clear active styling.
+- Engine cards present strengths and a quick overview; the dropdown remains off-screen for accessibility.
+- Quick settings add “Auto preview on hover” and “Auto open Clips on completion” (both default on) with per-browser persistence.
+- Queue now shows only active items and switches to Clips when finished; a brief glow highlights newly completed clips.
+- Voice segment includes a Quick voices caret with Favorites and Recent for fast swapping.
+- AI Assist pill in Script shows Ready/Offline based on your Ollama connection.

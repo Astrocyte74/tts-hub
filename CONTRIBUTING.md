@@ -57,10 +57,27 @@ Ports
 - UI: 5175 (the launcher will auto‑pick the next free port)
 - Backend: 7860
 
+## Hotkeys + Top‑bar CTA
+- Keyboard: 1=Script, 2=Voice, 3=Engine, 4=Clips; G=Create clip; V=Voices; R=Clips; S=Settings; Shift+/?=AI Assist.
+- Scope: hotkeys are ignored while typing in inputs/textarea.
+- The top‑bar “Create clip” button is the primary action; it is disabled until text, voice, and engine preconditions are met.
+
 ## Previews (Kokoro)
 - Per‑card “Generate preview” chip on voices without samples.
 - Bulk: “Generate previews for N” in the Voices header (operates on filtered set).
 - Progress is shown in the bottom Results drawer (Queue tab) and as a live badge on the top bar Clips chip.
+
+## Adding a new engine
+- Engine cards live in `frontend/src/components/SynthesisControls.tsx`. Add a blurb by extending the `blurbs` map with a `tagline` and `strengths` list.
+- Iconography: we currently use emoji placeholders; prefer replacing with a small inline SVG set for consistency (future pass welcome).
+- A11y: keep the fallback `<select>` in place (off‑screen) for keyboard/screen‑reader users.
+
+## QA checklist (UI v2 revamp)
+- Queue → Clips auto-switches when the queue becomes empty and results exist.
+- “Auto preview on hover” toggle disables both hover and focus previews when off; Preview button remains functional.
+- “Auto open Clips on completion” works end-to-end and respects persistence.
+- Quick voices caret appears when Favorites/Recent exist; selecting a voice swaps and returns to Script.
+- History labels are replaced with “Clips” across the UI.
 
 ## Docs to read first
 - `AGENTS.md` — component map, state patterns, playbook
