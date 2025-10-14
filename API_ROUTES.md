@@ -21,6 +21,7 @@ Base URL: `${VITE_API_BASE_URL}/${VITE_API_PREFIX}` (defaults to same‑origin +
 
 ## POST /synthesise (alias: /synthesize)
 - Body: `{ text, voice, speed, language, trimSilence, engine? }` plus engine‑specific overrides (`style`, `speaker`, `seed`).
+- Also supports profiles: pass `profileId` or `profileSlug` to resolve engine/voice/options from Favorites, while the request body supplies the `text`.
 - Returns `{ id, engine, voice, path|url|filename|clip, sample_rate?, ... }`.
 
 ## POST /audition
@@ -41,6 +42,22 @@ Base URL: `${VITE_API_BASE_URL}/${VITE_API_PREFIX}` (defaults to same‑origin +
 
 ## GET /audio/openvoice/<path>
 - Serves OpenVoice reference files from `openvoice/resources/` for inline previews.
+
+## Favorites (Profiles)
+
+Profiles are engine‑agnostic favorites (label + engine + voice + optional params) stored locally and usable across apps/scripts.
+
+- GET `/favorites` → `{ profiles[], count }` (filter with `?engine=<id>` and/or `?tag=<name>`)
+- POST `/favorites` → create a profile. Body minimal fields: `{ label, engine, voiceId, slug?, language?, speed?, trimSilence?, style?, seed?, serverUrl?, tags?, meta? }`.
+- GET `/favorites/:id` → one profile
+- PATCH `/favorites/:id` → update allowed fields (same as create)
+- DELETE `/favorites/:id`
+- GET `/favorites/export` → `{ schemaVersion, profiles[] }`
+- POST `/favorites/import` → `{ imported, mode }` with body `{ profiles[], mode?: 'merge'|'replace' }`
+
+Auth: If `FAVORITES_API_KEY` is set, favorites routes require header `Authorization: Bearer <key>`.
+
+Storage: Defaults to `~/.kokoro/favorites.json` (override with `FAVORITES_STORE_PATH`).
 
 Notes
 - All errors should return JSON via `PlaygroundError` with `{ error, status }`.

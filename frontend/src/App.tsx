@@ -140,6 +140,7 @@ function App() {
   const [chatttsSeed, setChatttsSeed] = useLocalStorage('kokoro:chatttsSeed', '');
   const [engineId, setEngineId] = useLocalStorage('kokoro:engine', DEFAULT_ENGINE);
   const [uiFavorites, setUiFavorites] = useLocalStorage<string[]>('kokoro:uiVoiceFavorites', []);
+  const [voiceRecents, setVoiceRecents] = useLocalStorage<string[]>('kokoro:voiceRecents', []);
   const [previewBusy, setPreviewBusy] = useState<string[]>([]);
   const [activePanel, setActivePanel] = useLocalStorage<'script' | 'voices' | 'controls' | 'results'>('kokoro:activePanel', 'controls');
   const metaQuery = useQuery({ queryKey: ['meta'], queryFn: fetchMeta, staleTime: 5 * 60 * 1000 });
@@ -237,16 +238,13 @@ function App() {
   }, [kokoroFavorites, voices]);
 
   const quickRecentVoices = useMemo(() => {
-    const ids: string[] = [];
-    for (const r of results) {
-      const id = typeof r.voice === 'string' ? r.voice : '';
-      if (id && !ids.includes(id)) ids.push(id);
-      if (ids.length >= 5) break;
-    }
-    return ids
+    const base = voiceRecents.length ? voiceRecents : [];
+    const mapped = base
       .map((id) => ({ id, label: voiceById.get(id)?.label ?? id }))
-      .filter((v) => v.label && v.id);
-  }, [results, voiceById]);
+      .filter((v) => v.label && v.id)
+      .slice(0, 5);
+    return mapped;
+  }, [voiceRecents, voiceById]);
 
   const quickFavoriteVoices = useMemo(() => {
     const favIds = new Set<string>(uiFavorites);
@@ -977,6 +975,13 @@ function App() {
           }
         }
         setResults((prev) => [enriched, ...prev]);
+        // update recent voices (persisted)
+        if (typeof enriched.voice === 'string' && enriched.voice) {
+          setVoiceRecents((prev) => {
+            const next = [enriched.voice, ...prev.filter((v) => v !== enriched.voice)];
+            return next.slice(0, 10);
+          });
+        }
         setStatus(qid, 'done', { progress: 100, finishedAt: new Date().toISOString() });
       } catch (err) {
         console.error(err);
@@ -1080,7 +1085,7 @@ function App() {
         if (running) t = window.setTimeout(tick, 350);
       };
       let t = window.setTimeout(tick, 350);
-      await auditionMutation.mutateAsync({
+      const auditionResult = await auditionMutation.mutateAsync({
         text: script,
         voices: selectedVoices,
         speed: Number(speed),
@@ -1091,6 +1096,13 @@ function App() {
         engine: engineId,
         voiceOverrides: voiceOverridesPayload,
       });
+      // best-effort: add each selected voice to recents
+      if (Array.isArray(selectedVoices) && selectedVoices.length) {
+        setVoiceRecents((prev) => {
+          const merged = [...selectedVoices, ...prev.filter((v) => !selectedVoices.includes(v))];
+          return merged.slice(0, 10);
+        });
+      }
       running = false;
       window.clearTimeout(t);
     } catch (err) {
@@ -1154,6 +1166,15 @@ function App() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [canSynthesize, setActivePanel]);
+
+  // Auto-open Clips when the queue becomes empty and results exist
+  useEffect(() => {
+    const active = queue.filter((q) => q.status === 'pending' || q.status === 'rendering').length;
+    if (autoOpenClips && active === 0 && results.length) {
+      setResultsDrawerOpen(true);
+      setActivePanel('results');
+    }
+  }, [queue, autoOpenClips, results.length, setActivePanel]);
 
   return (
     <div className="app">
@@ -1437,6 +1458,8 @@ function App() {
         onHoverPreviewChange={(value) => setHoverPreview(Boolean(value))}
         autoOpenClips={Boolean(autoOpenClips)}
         onAutoOpenClipsChange={(value) => setAutoOpenClips(Boolean(value))}
+        recentCount={voiceRecents.length}
+        onClearRecents={() => setVoiceRecents([])}
       />
       <FavoritesManagerDialog
         isOpen={isFavoritesManagerOpen}
@@ -1510,11 +1533,3 @@ function App() {
 }
 
 export default App;
-  // Auto-open Clips when queue completes
-  useEffect(() => {
-    const active = queue.filter((q) => q.status === 'pending' || q.status === 'rendering').length;
-    if (autoOpenClips && active === 0 && results.length) {
-      setResultsDrawerOpen(true);
-      setActivePanel('results');
-    }
-  }, [queue, autoOpenClips, results.length, setActivePanel]);

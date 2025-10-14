@@ -144,6 +144,13 @@
   color: #e2e8f0;
 }
 
+.topbar__chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(148, 163, 184, 0.9);
+}
+
 .topbar__badge {
   display: inline-flex;
   align-items: center;
