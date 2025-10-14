@@ -21,6 +21,7 @@ interface VoiceSelectorProps {
   favorites?: string[];
   onToggleFavorite?: (voiceId: string) => void;
   onGeneratePreview?: (voiceId: string) => void;
+  previewBusyIds?: string[];
 }
 
 interface GroupedVoices {
@@ -110,6 +111,7 @@ export function VoiceSelector({
   favorites = [],
   onToggleFavorite,
   onGeneratePreview,
+  previewBusyIds = [],
 }: VoiceSelectorProps) {
   const [query, setQuery] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -382,7 +384,14 @@ export function VoiceSelector({
                       </span>
                     </button>
                     {(!findPreviewUrl(voice) && onGeneratePreview) ? (
-                      <button type="button" className="chip-button" onClick={() => onGeneratePreview(voice.id)}>Generate preview</button>
+                      <button
+                        type="button"
+                        className="chip-button"
+                        disabled={previewBusyIds.includes(voice.id)}
+                        onClick={() => onGeneratePreview(voice.id)}
+                      >
+                        {previewBusyIds.includes(voice.id) ? 'Generating…' : 'Generate preview'}
+                      </button>
                     ) : null}
                     {onToggleFavorite ? (
                       <button type="button" className={clsx('fav-btn', { 'is-active': isFav })} aria-label={isFav ? 'Unfavorite' : 'Favorite'} aria-pressed={isFav} onClick={() => onToggleFavorite(voice.id)}>
@@ -455,7 +464,14 @@ export function VoiceSelector({
                           ) : null}
                         </button>
                         {(!findPreviewUrl(voice) && onGeneratePreview) ? (
-                          <button type="button" className="chip-button" onClick={() => onGeneratePreview(voice.id)}>Generate preview</button>
+                          <button
+                            type="button"
+                            className="chip-button"
+                            disabled={previewBusyIds.includes(voice.id)}
+                            onClick={() => onGeneratePreview(voice.id)}
+                          >
+                            {previewBusyIds.includes(voice.id) ? 'Generating…' : 'Generate preview'}
+                          </button>
                         ) : null}
                         {onToggleFavorite ? (
                           <button type="button" className={clsx('fav-btn', { 'is-active': isFav })} aria-label={isFav ? 'Unfavorite' : 'Favorite'} aria-pressed={isFav} onClick={() => onToggleFavorite(voice.id)}>

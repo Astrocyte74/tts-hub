@@ -137,6 +137,7 @@ function App() {
   const [chatttsSeed, setChatttsSeed] = useLocalStorage('kokoro:chatttsSeed', '');
   const [engineId, setEngineId] = useLocalStorage('kokoro:engine', DEFAULT_ENGINE);
   const [uiFavorites, setUiFavorites] = useLocalStorage<string[]>('kokoro:uiVoiceFavorites', []);
+  const [previewBusy, setPreviewBusy] = useState<string[]>([]);
   const metaQuery = useQuery({ queryKey: ['meta'], queryFn: fetchMeta, staleTime: 5 * 60 * 1000 });
   const voicesQuery = useQuery({
     queryKey: ['voices', engineId],
@@ -1220,13 +1221,17 @@ function App() {
             }}
             onGeneratePreview={engineId === 'kokoro' ? async (voiceId) => {
               try {
+                setPreviewBusy((prev) => (prev.includes(voiceId) ? prev : [...prev, voiceId]));
                 await createVoicePreview({ engine: 'kokoro', voiceId, language });
                 // Refresh voices to pick up preview_url
                 voicesQuery.refetch();
               } catch (err) {
                 setError(err instanceof Error ? err.message : 'Failed to generate preview.');
+              } finally {
+                setPreviewBusy((prev) => prev.filter((id) => id !== voiceId));
               }
             } : undefined}
+            previewBusyIds={previewBusy}
           />
           <AudioResultList
             items={results}
