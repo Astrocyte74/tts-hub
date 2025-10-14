@@ -346,6 +346,18 @@ export async function createProfile(payload: Record<string, unknown>): Promise<R
   return postJson<Record<string, unknown>>('favorites', payload);
 }
 
+export async function listProfiles(): Promise<{ profiles: Record<string, unknown>[]; count: number }> {
+  return getJson<{ profiles: Record<string, unknown>[]; count: number }>('favorites');
+}
+
+export async function exportProfiles(): Promise<Record<string, unknown>> {
+  return getJson<Record<string, unknown>>('favorites/export');
+}
+
+export async function importProfiles(payload: Record<string, unknown>): Promise<{ imported: number; mode: string }> {
+  return postJson<{ imported: number; mode: string }>('favorites/import', payload);
+}
+
 function synthesiseResultFromResponse(
   response: SynthesisResponseShape,
   fallbackVoice: string,

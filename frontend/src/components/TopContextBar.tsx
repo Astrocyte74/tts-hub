@@ -30,6 +30,8 @@ interface TopContextBarProps {
   quickFavorites?: { id: string; label: string }[];
   quickRecents?: { id: string; label: string }[];
   onQuickSelectVoice?: (id: string) => void;
+  quickProfiles?: { id: string; label: string; engine: string; voiceId: string }[];
+  onQuickSelectProfile?: (profile: { id: string; engine: string; voiceId: string }) => void;
 }
 
 function formatVoiceSummary(voices: VoiceProfile[], selectedVoiceIds: string[]) {
@@ -75,6 +77,8 @@ export function TopContextBar({
   quickFavorites = [],
   quickRecents = [],
   onQuickSelectVoice,
+  quickProfiles = [],
+  onQuickSelectProfile,
 }: TopContextBarProps) {
   const voiceSummary = formatVoiceSummary(voices, selectedVoiceIds);
   const clipsCount = results.length;
@@ -223,12 +227,28 @@ export function TopContextBar({
         </button>
       </div>
 
-      {voiceMenuOpen && (quickFavorites.length > 0 || quickRecents.length > 0) ? (
+      {voiceMenuOpen && (quickProfiles.length > 0 || quickFavorites.length > 0 || quickRecents.length > 0) ? (
         <div className="popover" role="dialog" aria-label="Quick voices">
           <div className="popover__backdrop" />
           <div className="popover__panel" style={{ position: 'absolute', top: 56, right: 160, width: 300 }}>
             <div className="popover__header"><h3 className="popover__title">Quick voices</h3></div>
             <div className="popover__content">
+              {quickProfiles.length > 0 ? (
+                <div>
+                  <strong>Profiles</strong>
+                  {quickProfiles.map((p) => (
+                    <button
+                      key={`prof-${p.id}`}
+                      className="popover__button"
+                      type="button"
+                      title={`${p.engine} · ${p.voiceId}`}
+                      onClick={() => { onQuickSelectProfile && onQuickSelectProfile({ id: p.id, engine: p.engine, voiceId: p.voiceId }); setVoiceMenuOpen(false); }}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               {quickFavorites.length > 0 ? (
                 <div>
                   <strong>Favorites</strong>

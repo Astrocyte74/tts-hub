@@ -134,6 +134,24 @@ export interface MetaResponse {
   ollama_available: boolean;
 }
 
+export interface GlobalProfile {
+  id: string;
+  label: string;
+  engine: string;
+  voiceId: string;
+  slug?: string;
+  language?: string;
+  speed?: number;
+  trimSilence?: boolean;
+  style?: string;
+  seed?: number;
+  serverUrl?: string;
+  tags?: string[];
+  meta?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface AuditionAnnouncerConfig {
   enabled: boolean;
   voice?: string | null;

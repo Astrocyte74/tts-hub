@@ -27,6 +27,9 @@ import {
   synthesiseClip,
   createVoicePreview,
   createProfile,
+  listProfiles,
+  exportProfiles,
+  importProfiles,
 } from './api/client';
 import type {
   KokoroFavorite,
@@ -36,6 +39,7 @@ import type {
   VoiceCatalogue,
   VoiceProfile,
   AuditionAnnouncerConfig,
+  GlobalProfile,
 } from './types';
 
 const FALLBACK_CATEGORIES = ['any', 'narration', 'promo', 'dialogue', 'news', 'story', 'whimsy'];
@@ -158,6 +162,15 @@ function App() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const profilesQuery = useQuery({
+    queryKey: ['profiles'],
+    queryFn: async () => {
+      const res = await listProfiles();
+      return (res as any).profiles as Record<string, unknown>[];
+    },
+    staleTime: 60 * 1000,
+  });
+
   const engineList = useMemo(() => metaQuery.data?.engines ?? [], [metaQuery.data?.engines]);
   const defaultEngine = metaQuery.data?.default_engine ?? DEFAULT_ENGINE;
 
@@ -257,6 +270,19 @@ function App() {
     });
     return out.sort((a, b) => a.label.localeCompare(b.label)).slice(0, 5);
   }, [uiFavorites, kokoroFavorites, voiceById]);
+
+  const quickProfiles = useMemo(() => {
+    const list = (profilesQuery.data ?? []) as Record<string, unknown>[];
+    return list
+      .map((p) => ({
+        id: String(p['id'] ?? ''),
+        label: String(p['label'] ?? ''),
+        engine: String(p['engine'] ?? ''),
+        voiceId: String(p['voiceId'] ?? ''),
+      }))
+      .filter((p) => p.id && p.label && p.engine && p.voiceId)
+      .slice(0, 5);
+  }, [profilesQuery.data]);
 
   useEffect(() => {
     if (engineId !== 'kokoro') {
@@ -1246,6 +1272,16 @@ function App() {
           setSelectedVoices([id]);
           setActivePanel('script');
         }}
+        quickProfiles={quickProfiles}
+        onQuickSelectProfile={(p) => {
+          if (p.engine && p.engine !== engineId) {
+            setEngineId(p.engine);
+          }
+          if (p.voiceId) {
+            setSelectedVoices([p.voiceId]);
+          }
+          setActivePanel('script');
+        }}
         engines={engineList.map((engine) => ({ id: engine.id, label: engine.label, available: engine.available, status: engine.status }))}
         onEngineChange={(id) => setEngineId(id)}
         activePanel={activePanel}
@@ -1480,6 +1516,31 @@ function App() {
         onAutoOpenClipsChange={(value) => setAutoOpenClips(Boolean(value))}
         recentCount={voiceRecents.length}
         onClearRecents={() => setVoiceRecents([])}
+        onExportProfiles={async () => {
+          try {
+            const data = await exportProfiles();
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'kokoro-profiles.json';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+          } catch (err) {
+            console.error('Export profiles failed', err);
+          }
+        }}
+        onImportProfiles={async (data) => {
+          try {
+            const payload = (data && typeof data === 'object') ? (data as Record<string, unknown>) : { profiles: [] };
+            await importProfiles({ ...payload, mode: 'merge' });
+            profilesQuery.refetch();
+          } catch (err) {
+            console.error('Import profiles failed', err);
+          }
+        }}
       />
       <FavoritesManagerDialog
         isOpen={isFavoritesManagerOpen}
