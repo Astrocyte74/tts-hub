@@ -18,6 +18,7 @@ import numpy as np
 import soundfile as sf
 from flask import Blueprint, Flask, abort, jsonify, make_response, request, send_from_directory
 from flask_cors import CORS
+from .favorites_store import FavoritesStore
 
 try:
     from kokoro_onnx import Kokoro
@@ -44,6 +45,10 @@ VOICES_PATH = Path(os.environ.get("KOKORO_VOICES", str(APP_ROOT / "models" / "vo
 BACKEND_HOST = os.environ.get("BACKEND_HOST", os.environ.get("HOST", "127.0.0.1"))
 BACKEND_PORT = int(os.environ.get("BACKEND_PORT", os.environ.get("PORT", "7860")))
 API_PREFIX = os.environ.get("API_PREFIX", os.environ.get("VITE_API_PREFIX", "api")).strip("/")
+FAVORITES_STORE_PATH = Path(
+    os.environ.get("FAVORITES_STORE_PATH", str(Path.home() / ".kokoro" / "favorites.json"))
+).expanduser()
+FAVORITES_API_KEY = os.environ.get("FAVORITES_API_KEY")
 
 TTS_HUB_ROOT = APP_ROOT.parent
 XTTS_ROOT = Path(os.environ.get("XTTS_ROOT", TTS_HUB_ROOT / "XTTS")).expanduser()
@@ -1457,6 +1462,15 @@ def concatenate_clips(clips: Iterable[np.ndarray], sample_rate: int, gap_seconds
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 api = Blueprint("api", __name__)
+_favorites_store = FavoritesStore(FAVORITES_STORE_PATH)
+
+def _check_api_key() -> None:
+    if not FAVORITES_API_KEY:
+        return
+    auth = request.headers.get("Authorization", "")
+    token = auth.split(" ")[-1] if auth else ""
+    if token != FAVORITES_API_KEY:
+        raise PlaygroundError("Unauthorized", status=401)
 
 
 @app.errorhandler(PlaygroundError)
@@ -1737,6 +1751,65 @@ def parse_json_request() -> Dict[str, Any]:
     return data
 
 
+@api.route("/favorites", methods=["GET", "POST"])
+def favorites_collection_endpoint():
+    if request.method == "GET":
+        _check_api_key()
+        items = _favorites_store.list()
+        engine_filter = request.args.get("engine")
+        tag_filter = request.args.get("tag")
+        if engine_filter:
+            items = [p for p in items if p.get("engine") == engine_filter]
+        if tag_filter:
+            items = [p for p in items if isinstance(p.get("tags"), list) and tag_filter in p.get("tags")]
+        return jsonify({"profiles": items, "count": len(items)})
+    # POST create
+    _check_api_key()
+    payload = parse_json_request()
+    try:
+        created = _favorites_store.create(payload)
+    except ValueError as exc:
+        raise PlaygroundError(str(exc), status=400)
+    return jsonify(created)
+
+
+@api.route("/favorites/<profile_id>", methods=["GET", "PATCH", "DELETE"])
+def favorites_item_endpoint(profile_id: str):
+    _check_api_key()
+    if request.method == "GET":
+        item = _favorites_store.get(profile_id)
+        if not item:
+            raise PlaygroundError("Not found", status=404)
+        return jsonify(item)
+    if request.method == "PATCH":
+        payload = parse_json_request()
+        updated = _favorites_store.update(profile_id, payload)
+        if not updated:
+            raise PlaygroundError("Not found", status=404)
+        return jsonify(updated)
+    ok = _favorites_store.delete(profile_id)
+    if not ok:
+        raise PlaygroundError("Not found", status=404)
+    return jsonify({"ok": True})
+
+
+@api.route("/favorites/export", methods=["GET"])
+def favorites_export_endpoint():
+    _check_api_key()
+    return jsonify(_favorites_store.export())
+
+
+@api.route("/favorites/import", methods=["POST"])
+def favorites_import_endpoint():
+    _check_api_key()
+    payload = parse_json_request()
+    mode = str(payload.get("mode") or "merge").lower()
+    if mode not in {"merge", "replace"}:
+        mode = "merge"
+    count = _favorites_store.import_(payload, mode=mode)
+    return jsonify({"imported": count, "mode": mode})
+
+
 def validate_synthesis_payload(payload: Dict[str, Any], *, require_voice: bool = True) -> Dict[str, Any]:
     text = str(payload.get("text", "")).strip()
     voice = payload.get("voice")
@@ -1867,6 +1940,29 @@ ENGINE_REGISTRY: Dict[str, Dict[str, Any]] = {
 @api.route("/synthesize", methods=["POST"])
 def synthesise_endpoint():
     raw_payload = parse_json_request()
+    # Optional: resolve profileId/profileSlug from the Favorites store
+    profile_id = raw_payload.get("profileId") or raw_payload.get("profile_id")
+    profile_slug = raw_payload.get("profileSlug") or raw_payload.get("profile_slug")
+    profile = None
+    if profile_id:
+        profile = _favorites_store.get(str(profile_id))
+    elif profile_slug:
+        profile = _favorites_store.get_by_slug(str(profile_slug))
+    if profile:
+        raw_payload.setdefault("engine", profile.get("engine"))
+        raw_payload.setdefault("voice", profile.get("voiceId"))
+        if profile.get("language"):
+            raw_payload.setdefault("language", profile.get("language"))
+        if profile.get("speed") is not None:
+            raw_payload.setdefault("speed", profile.get("speed"))
+        if profile.get("trimSilence") is not None:
+            raw_payload.setdefault("trimSilence", profile.get("trimSilence"))
+        if profile.get("style"):
+            raw_payload.setdefault("style", profile.get("style"))
+        if profile.get("seed") is not None:
+            raw_payload.setdefault("seed", profile.get("seed"))
+        if profile.get("serverUrl"):
+            raw_payload.setdefault("serverUrl", profile.get("serverUrl"))
     engine, _ = resolve_engine(raw_payload.get("engine"))
 
     prepare = engine.get("prepare")
