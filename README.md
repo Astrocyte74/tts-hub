@@ -119,6 +119,32 @@ The backend also serves `frontend/dist/` assets when Vite is not running (produc
 - Voice browser with accent/flag filters (powered by `/api/voices_grouped`), quick search, and multi-select.
 - Random text helpers with automatic category updates from `/api/meta`.
 
+### What’s New (UI v2 revamp)
+
+- Segmented modes: Script | Engine | Voice | Clips with active styling, letter/digit hotkeys, and warning highlight only in Voice when none selected.
+- Engine selection cards with strengths + overview; accessible off-screen select remains for keyboard/screen-reader parity.
+- Quick settings gear: Auto preview on hover and Auto open Clips on completion (both on by default, persisted in localStorage).
+- Queue → Clips flow: Queue tab shows only active items with live count; auto-switches to Clips when queue becomes empty and results exist; newest clip briefly highlights.
+- Voice quick menu: caret on the Voice segment opens Favorites (up to 5) + Recent (up to 5); selecting a voice returns to Script.
+- Script header includes an AI Assist pill (Ready/Offline) reflecting backend Ollama availability.
+
+### Keyboard Shortcuts
+
+- 1 = Script, 2 = Voice, 3 = Engine, 4 = Clips
+- G = Create clip, V = Voices, R = Clips, S = Settings, Shift+/? = AI Assist
+- Shortcuts are ignored while typing in inputs/textarea (we check editable targets).
+
+### “Create a clip” Flow
+
+- Top-bar primary CTA is always rendered; it is disabled until preconditions are met: non-empty text, at least one voice selected, and engine ready.
+- Clicking CTA enqueues immediately and opens Queue; when finished, it auto-switches to Clips (subject to the “Auto open Clips” toggle).
+- One‑column layout: the main panel shows one primary column; segments map directly to the top bar chips (Script → Text, Engine → Controls, Voice → Selector, Clips → Drawer/View).
+
+### Quick Voices
+
+- The Voice segment chip includes a caret when Favorites or Recent exist.
+- The quick menu shows up to 5 Favorites and up to 5 Recent voices; selecting a voice sets it and returns to Script for a fast generate loop.
+
 ### Engine Notes
 
 - **XTTS v2** – the optional launcher `Start Kokoro Playground (XTTS Server).command` starts a persistent FastAPI server on port 3333 and exports `XTTS_SERVER_URL` so synthesise requests skip CLI warm-up. The script will stop any existing process bound to that port before launching a fresh server; logs stream to `/tmp/kokoro_xtts_server.log`.
@@ -137,6 +163,15 @@ The backend also serves `frontend/dist/` assets when Vite is not running (produc
 - Script authoring SSML helpers (Pause, Emphasis, Pitch, Rate) with word/char/duration counters and basic SSML validation.
 - Results: Waveform player and a mini waveform with Loop/Start/End controls and “Export selection” to WAV.
 - Accessibility: ARIA roles for voice lists and queue items; labeled buttons; consistent focus outlines.
+
+### UI v2 Revamp Additions (Hotkeys, Engine Cards, Clips Flow)
+
+- Segmented modes promoted to first-class navigation with digit and letter hotkeys.
+- Engine cards include per-engine strengths and overview blurbs; fallback select is retained off-screen for a11y.
+- Quick settings adds hover preview and auto-open Clips toggles (both default on).
+- Results “History” is renamed to “Clips” and the drawer auto-switches from Queue → Clips when the queue drains and results exist.
+- Newest clip gets a brief highlight for quick visual confirmation.
+- Top-bar CTA “Create clip” is the primary action for the one‑column layout.
 
 ---
 

@@ -29,10 +29,32 @@ This document orients future agents working on the CodexB branch so you can ship
 - `AudioResultCard.tsx` — clip card; includes `WaveformPlayer` and `WaveformTrim` (loop/trim/export WAV).
 - `SettingsPopover.tsx`, `InfoDialog.tsx`, `FavoritesManagerDialog.tsx`, `PresetDialog.tsx` — overlays/dialogs.
 
+## Component Changes (UI v2 revamp)
+
+TopContextBar
+- Props: `activePanel: 'script'|'controls'|'voices'|'results'`, `onChangePanel(panel)`, `onEngineClick()`, `isGenerating`, `onQuickGenerate()`, `quickFavorites`, `quickRecents`, `onQuickSelectVoice(id)`, `onOpenSettings()`, `onToggleResults()`.
+- Behavior: CTA is always rendered (disabled until ready). Engine popover removed; the Engine chip navigates to Controls. Voice chip shows a caret when quick menu (Favorites/Recent) is available; selection returns to Script.
+
+VoiceSelector
+- Prop: `enableHoverPreview?: boolean` (default: true). When false, disables both hover and focus previews; explicit Preview button still works.
+
+SettingsPopover
+- Props include `hoverPreview` + `onHoverPreviewChange`, `autoOpenClips` + `onAutoOpenClipsChange`, plus existing `trimSilence`/`autoPlay`/`speed` controls.
+
+ResultsDrawer
+- Tabs: Queue shows only active items (pending/rendering) with live count; Clips shows completed items.
+- Prop: `highlightId?: string | null` to briefly glow the matching clip.
+- Visibility: drawer is hidden entirely when the active segment is Clips; otherwise shown and toggleable.
+
+Mode-first Workflow
+- Segments order/labels: Script → Engine → Voice → Clips. Script is first segment; Engine second; Voice third. “History” is renamed to “Clips”.
+
 ## Data & State
 - API access via `src/api/client.ts`. `VITE_API_BASE_URL` and `VITE_API_PREFIX` govern API origin/prefix.
 - Async state: React Query (`useQuery`/`useMutation`).
 - Persistence: `useLocalStorage` for settings, `useSessionStorage` for queue/history.
+- Settings keys: `kokoro:hoverPreview` (default true), `kokoro:autoOpenClips` (default true), `kokoro:activePanel` (initial `'controls'`).
+- Scope: localStorage per browser profile.
 - Queue items are `{ id, label, engine, status, progress?, startedAt?, finishedAt?, error? }`.
 
 ## Preview Generation (Phase 3)
