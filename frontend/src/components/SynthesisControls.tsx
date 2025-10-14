@@ -1,3 +1,5 @@
+import { IconChatTTS, IconKokoro, IconOpenVoice, IconXTTS } from '../icons';
+
 interface EngineOption {
   id: string;
   label: string;
@@ -89,11 +91,31 @@ export function SynthesisControls({
         <div className="engine-cards" role="list" aria-label="Choose engine">
           {engines.map((engine) => {
             const selected = engine.id === engineId;
-            const blurbs: Record<string, { tagline: string; strengths: string[] }> = {
-              kokoro: { tagline: 'Local, fast, natural multi-speaker voices', strengths: ['Offline', 'Great default voices', 'Snappy'] },
-              openvoice: { tagline: 'Clone any speaker from short references', strengths: ['Custom voices', 'Reference-driven'] },
-              chattts: { tagline: 'Dialogue-style TTS, flexible tone via seeds', strengths: ['Conversational', 'Seed control'] },
-              xtts: { tagline: 'Server-based XTTS model for consistent long-form', strengths: ['Server persistent', 'Long clips'] },
+            const blurbs: Record<string, { tagline: string; strengths: string[]; helpUrl: string; icon: JSX.Element }> = {
+              kokoro: {
+                tagline: 'Local, fast, natural multi-speaker voices',
+                strengths: ['Offline', 'Great default voices', 'Snappy'],
+                helpUrl: 'https://github.com/Astrocyte74/tts-hub#kokoro-onnx',
+                icon: <IconKokoro />,
+              },
+              openvoice: {
+                tagline: 'Clone any speaker from short references',
+                strengths: ['Custom voices', 'Reference-driven'],
+                helpUrl: 'https://github.com/Astrocyte74/tts-hub#openvoice',
+                icon: <IconOpenVoice />,
+              },
+              chattts: {
+                tagline: 'Dialogue-style TTS, flexible tone via seeds',
+                strengths: ['Conversational', 'Seed control'],
+                helpUrl: 'https://github.com/Astrocyte74/tts-hub#chattts',
+                icon: <IconChatTTS />,
+              },
+              xtts: {
+                tagline: 'Server-based XTTS model for consistent long-form',
+                strengths: ['Server persistent', 'Long clips'],
+                helpUrl: 'https://github.com/Astrocyte74/tts-hub#xtts-v2',
+                icon: <IconXTTS />,
+              },
             };
             const info = blurbs[engine.id as keyof typeof blurbs];
             return (
@@ -107,8 +129,28 @@ export function SynthesisControls({
                 onClick={() => onEngineChange(engine.id)}
                 title={engine.status ?? ''}
               >
-                <div className="engine-card__title">{engine.label}</div>
-                <div className="engine-card__tagline">{info?.tagline ?? engine.description ?? ''}</div>
+                <div className="engine-card__row">
+                  <span className="engine-card__icon" aria-hidden>
+                    {info?.icon}
+                  </span>
+                  <div className="engine-card__title-group">
+                    <div className="engine-card__title">{engine.label}</div>
+                    <div className="engine-card__tagline">{info?.tagline ?? engine.description ?? ''}</div>
+                  </div>
+                  {info?.helpUrl ? (
+                    <a
+                      className="engine-card__help"
+                      href={info.helpUrl}
+                      onClick={(e) => e.stopPropagation()}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={`Open ${engine.label} quickstart`}
+                      aria-label={`Open ${engine.label} quickstart`}
+                    >
+                      ?
+                    </a>
+                  ) : null}
+                </div>
                 <div className="engine-card__badges">
                   {(info?.strengths ?? []).map((s) => (
                     <span key={s} className="engine-badge">{s}</span>
