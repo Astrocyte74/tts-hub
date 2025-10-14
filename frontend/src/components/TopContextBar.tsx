@@ -125,7 +125,7 @@ export function TopContextBar({
           type="button"
           role="tab"
           aria-selected={activePanel === 'voices'}
-          className={`topbar__chip ${(noVoiceSelected && activePanel !== 'controls') ? 'topbar__chip--warn' : ''} ${activePanel === 'voices' ? 'topbar__chip--active' : ''}`}
+          className={`topbar__chip ${activePanel === 'voices' ? 'topbar__chip--active' : ''} ${noVoiceSelected && activePanel === 'voices' ? 'topbar__chip--warn' : ''}`}
           onClick={onShowVoicePalette}
           aria-label="Show voice palette"
           title="Jump to voices (V)"
