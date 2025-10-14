@@ -357,6 +357,11 @@
   border: 1px solid rgba(99, 102, 241, 0.55);
 }
 
+/* Status pill (e.g., AI Assist) */
+.status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.status-pill--ok { background: rgba(34,197,94,.18); color: #bbf7d0; }
+.status-pill--warn { background: rgba(251,191,36,.18); color: #fde68a; }
+
 .panel__title {
   margin: 0;
   font-size: 20px;

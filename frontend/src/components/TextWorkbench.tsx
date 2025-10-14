@@ -119,6 +119,9 @@ export function TextWorkbench({
           </p>
         </div>
         <div className="panel__actions panel__actions--wrap">
+          <span className={`status-pill ${aiAssistAvailable ? 'status-pill--ok' : 'status-pill--warn'}`} title={aiAssistAvailable ? 'Ollama connected' : 'Connect Ollama (see .env)'}>
+            AI Assist · {aiAssistAvailable ? 'Ready' : 'Offline'}
+          </span>
           <label className="select">
             <span className="select__label">Random category</span>
             <select value={selectedCategory} onChange={(event) => onCategoryChange(event.target.value)}>
