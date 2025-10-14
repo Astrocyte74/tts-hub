@@ -1243,6 +1243,7 @@ function App() {
               const voiceLabel = (id: string) => voices.find((v) => v.id === id)?.label ?? id;
               try {
                 setPreviewBusy((prev) => Array.from(new Set([...prev, ...ids])));
+                setResultsDrawerOpen(true);
                 for (const id of ids) {
                   enqueue(id, voiceLabel(id));
                 }

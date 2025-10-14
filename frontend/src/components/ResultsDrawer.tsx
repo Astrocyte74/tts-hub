@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { SynthesisResult } from '../types';
 import { AudioResultCard } from './AudioResultCard';
 
@@ -46,6 +46,12 @@ export function ResultsDrawer({
 }: ResultsDrawerProps) {
   const hasQueue = queue.length > 0;
   const [activeTab, setActiveTab] = useState<'queue' | 'history'>(hasQueue ? 'queue' : 'history');
+
+  useEffect(() => {
+    if (open && queue.length) {
+      setActiveTab('queue');
+    }
+  }, [open, queue.length]);
 
   const toggleLabel = open ? 'Close' : `Open (${items.length})`;
 
