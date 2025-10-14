@@ -12,6 +12,7 @@ interface TopContextBarProps {
   ollamaAvailable?: boolean;
   isResultsOpen?: boolean;
   canGenerate?: boolean;
+  isGenerating?: boolean;
   onQuickGenerate?: () => void;
   onOpenSettings?: () => void;
   onToggleResults?: () => void;
@@ -49,6 +50,7 @@ export function TopContextBar({
   ollamaAvailable = false,
   isResultsOpen = false,
   canGenerate = true,
+  isGenerating = false,
   onQuickGenerate,
   onOpenSettings,
   onToggleResults,
@@ -61,6 +63,7 @@ export function TopContextBar({
   const statusLabel = engineReady ? 'Ready' : engineStatus || 'Not ready';
   const queueLabel = clipsCount === 1 ? '1 clip' : `${clipsCount} clips`;
   const hasRunning = queueRunning > 0;
+  const noVoiceSelected = selectedVoiceIds.length === 0;
 
   return (
     <header className="topbar" role="banner" aria-label="Session context">
@@ -85,7 +88,7 @@ export function TopContextBar({
       <div className="topbar__center">
         <button
           type="button"
-          className="topbar__chip"
+          className={`topbar__chip ${noVoiceSelected ? 'topbar__chip--warn' : ''}`}
           onClick={onShowVoicePalette}
           aria-label="Show voice palette"
           title="Jump to voices (V)"
@@ -137,12 +140,13 @@ export function TopContextBar({
           type="button"
           className="topbar__button topbar__button--primary"
           onClick={onQuickGenerate}
-          disabled={!canGenerate}
-          aria-label="Quick generate"
-          title={canGenerate ? 'Quick Generate (G)' : 'Select a voice and enter text'}
+          disabled={!canGenerate || isGenerating}
+          aria-label={isGenerating ? 'Generating' : 'Quick generate'}
+          aria-busy={isGenerating}
+          title={canGenerate ? (isGenerating ? 'Generating…' : 'Quick Generate (G)') : 'Select a voice and enter text'}
         >
-          ▶️
-          <span className="topbar__button-label">Quick Generate</span>
+          {isGenerating ? '⏳' : '▶️'}
+          <span className="topbar__button-label">{isGenerating ? 'Generating…' : 'Quick Generate'}</span>
         </button>
       </div>
     </header>

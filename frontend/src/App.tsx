@@ -1114,6 +1114,7 @@ function App() {
         ollamaAvailable={ollamaAvailable}
         isResultsOpen={isResultsDrawerOpen}
         canGenerate={canSynthesize}
+        isGenerating={synthMutation.isPending}
         onQuickGenerate={handleSynthesize}
         onOpenSettings={() => setSettingsOpen(true)}
         onToggleResults={() => setResultsDrawerOpen((v) => !v)}
