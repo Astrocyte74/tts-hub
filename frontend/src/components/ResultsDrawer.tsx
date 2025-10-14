@@ -27,6 +27,7 @@ interface ResultsDrawerProps {
   savingChatttsId?: string | null;
   onSaveKokoroFavorite?: (item: SynthesisResult) => void;
   kokoroFavoritesByVoice?: Record<string, { label: string; count: number }>;
+  highlightId?: string | null;
 }
 
 export function ResultsDrawer({
@@ -43,6 +44,7 @@ export function ResultsDrawer({
   savingChatttsId = null,
   onSaveKokoroFavorite,
   kokoroFavoritesByVoice = {},
+  highlightId = null,
 }: ResultsDrawerProps) {
   const activeCount = queue.filter((q) => q.status === 'pending' || q.status === 'rendering').length;
   const hasActiveQueue = activeCount > 0;
@@ -133,6 +135,7 @@ export function ResultsDrawer({
                     key={item.id}
                     item={item}
                     autoPlay={autoPlay && index === 0}
+                    highlighted={highlightId === item.id}
                     onRemove={onRemove}
                     onSaveChattts={onSaveChattts}
                     isSavingChattts={onSaveChattts && savingChatttsId === item.id && item.engine === 'chattts'}

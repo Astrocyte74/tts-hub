@@ -9,6 +9,8 @@ interface SettingsPopoverProps {
   onAutoPlayChange: (value: boolean) => void;
   hoverPreview: boolean;
   onHoverPreviewChange: (value: boolean) => void;
+  autoOpenClips?: boolean;
+  onAutoOpenClipsChange?: (value: boolean) => void;
 }
 
 export function SettingsPopover({
@@ -22,6 +24,8 @@ export function SettingsPopover({
   onAutoPlayChange,
   hoverPreview,
   onHoverPreviewChange,
+  autoOpenClips = true,
+  onAutoOpenClipsChange,
 }: SettingsPopoverProps) {
   if (!open) return null;
   return (
@@ -56,6 +60,16 @@ export function SettingsPopover({
                 onChange={(e) => onHoverPreviewChange(e.target.checked)}
               />
               <span>Auto preview on hover</span>
+            </label>
+          </div>
+          <div className="popover__row">
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={autoOpenClips}
+                onChange={(e) => onAutoOpenClipsChange && onAutoOpenClipsChange(e.target.checked)}
+              />
+              <span>Auto open Clips on completion</span>
             </label>
           </div>
           <div className="popover__row">

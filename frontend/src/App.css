@@ -1209,6 +1209,16 @@ textarea:focus-visible {
   cursor: default;
 }
 
+.result-card--highlight {
+  animation: newClipGlow 1600ms ease-out 1;
+  box-shadow: 0 30px 70px rgba(56,189,248,.25), 0 0 0 2px rgba(99,102,241,.35) inset;
+}
+
+@keyframes newClipGlow {
+  0% { box-shadow: 0 40px 80px rgba(56,189,248,.35), 0 0 0 3px rgba(99,102,241,.55) inset; }
+  100% { box-shadow: 0 25px 60px rgba(15,23,42,.45); }
+}
+
 .result-card--clickable:focus-visible {
   outline: 2px solid rgba(148, 163, 184, 0.8);
   outline-offset: 3px;

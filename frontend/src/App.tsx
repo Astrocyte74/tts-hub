@@ -102,6 +102,7 @@ function App() {
   const [trimSilence, setTrimSilence] = useLocalStorage('kokoro:trimSilence', true);
   const [autoPlay, setAutoPlay] = useLocalStorage('kokoro:autoPlay', true);
   const [hoverPreview, setHoverPreview] = useLocalStorage('kokoro:hoverPreview', true);
+  const [autoOpenClips, setAutoOpenClips] = useLocalStorage('kokoro:autoOpenClips', true);
   const [announcerEnabled, setAnnouncerEnabled] = useLocalStorage('kokoro:announcerEnabled', false);
   const [announcerVoice, setAnnouncerVoice] = useLocalStorage<string | null>('kokoro:announcerVoice', null);
   const [announcerTemplate, setAnnouncerTemplate] = useLocalStorage('kokoro:announcerTemplate', DEFAULT_ANNOUNCER_TEMPLATE);
@@ -122,6 +123,7 @@ function App() {
   };
   const [queue, setQueue] = useSessionStorage<QueueItem[]>('kokoro:queue.v1', []);
   const [persistedResults, setPersistedResults] = useSessionStorage<SynthesisResult[]>('kokoro:history.v1', []);
+  const [highlightResultId, setHighlightResultId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [extraCategories, setExtraCategories] = useState<string[]>([]);
   const [savingChatttsId, setSavingChatttsId] = useState<string | null>(null);
@@ -863,6 +865,14 @@ function App() {
     setPersistedResults(results);
   }, [results, setPersistedResults]);
 
+  // Highlight newest clip briefly in Clips
+  useEffect(() => {
+    if (!results.length) return;
+    setHighlightResultId(results[0].id);
+    const t = window.setTimeout(() => setHighlightResultId(null), 1600);
+    return () => window.clearTimeout(t);
+  }, [results]);
+
   const handleSynthesize = async () => {
     setError(null);
     const script = text.trim();
@@ -1411,6 +1421,7 @@ function App() {
           savingChatttsId={engineId === 'chattts' ? savingChatttsId : null}
           onSaveKokoroFavorite={handleSaveKokoroFavoriteFromResult}
           kokoroFavoritesByVoice={kokoroFavoritesByVoice}
+          highlightId={highlightResultId}
         />
       ) : null}
       <SettingsPopover
@@ -1424,6 +1435,8 @@ function App() {
         onAutoPlayChange={(value) => setAutoPlay(Boolean(value))}
         hoverPreview={Boolean(hoverPreview)}
         onHoverPreviewChange={(value) => setHoverPreview(Boolean(value))}
+        autoOpenClips={Boolean(autoOpenClips)}
+        onAutoOpenClipsChange={(value) => setAutoOpenClips(Boolean(value))}
       />
       <FavoritesManagerDialog
         isOpen={isFavoritesManagerOpen}
@@ -1497,3 +1510,11 @@ function App() {
 }
 
 export default App;
+  // Auto-open Clips when queue completes
+  useEffect(() => {
+    const active = queue.filter((q) => q.status === 'pending' || q.status === 'rendering').length;
+    if (autoOpenClips && active === 0 && results.length) {
+      setResultsDrawerOpen(true);
+      setActivePanel('results');
+    }
+  }, [queue, autoOpenClips, results.length, setActivePanel]);
