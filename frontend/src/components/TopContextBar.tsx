@@ -97,7 +97,11 @@ export function TopContextBar({
         >
           <span className="topbar__chip-label">Engine</span>
           <span className="topbar__chip-value">
-            <span className="topbar__status-dot" aria-hidden style={{ marginRight: 6 }} />
+            <span
+              className="topbar__status-dot"
+              aria-hidden
+              style={{ marginRight: 6, background: engineReady ? '#22c55e' : '#eab308' }}
+            />
             {engineLabel}
           </span>
         </button>
@@ -127,30 +131,44 @@ export function TopContextBar({
           <span className="topbar__chip-label">Voice</span>
           <span className="topbar__chip-value">{voiceSummary}</span>
         </button>
-        <button
-          type="button"
-          className={`topbar__chip ${activePanel === 'results' || isResultsOpen ? 'topbar__chip--active' : ''}`}
-          onClick={() => {
-            onChangePanel && onChangePanel('results');
-            onToggleResults && onToggleResults();
-          }}
-          aria-pressed={activePanel === 'results' || Boolean(isResultsOpen)}
-          aria-label="Show results"
-          title="Results (4)"
-        >
-          <span className="topbar__chip-label">Clips</span>
-          <span className="topbar__chip-value">{queueLabel}</span>
-          {queueTotal > 0 ? (
-            <span className="topbar__badge" title={`${queueTotal} in queue`} aria-label={`${queueTotal} in queue`}>
-              {hasRunning ? `${queueRunning}/${queueTotal}` : `${queueTotal}`}
-            </span>
-          ) : null}
-        </button>
+        {(queueTotal > 0 || clipsCount > 0) && (
+          <button
+            type="button"
+            className={`topbar__chip ${activePanel === 'results' || isResultsOpen ? 'topbar__chip--active' : ''}`}
+            onClick={() => {
+              onChangePanel && onChangePanel('results');
+              onToggleResults && onToggleResults();
+            }}
+            aria-pressed={activePanel === 'results' || Boolean(isResultsOpen)}
+            aria-label="Show results"
+            title="Results (4)"
+          >
+            <span className="topbar__chip-label">Clips</span>
+            <span className="topbar__chip-value">{queueLabel}</span>
+            {queueTotal > 0 ? (
+              <span className="topbar__badge" title={`${queueTotal} in queue`} aria-label={`${queueTotal} in queue`}>
+                {hasRunning ? `${queueRunning}/${queueTotal}` : `${queueTotal}`}
+              </span>
+            ) : null}
+          </button>
+        )}
       </div>
 
       <div className="topbar__right">
         <button type="button" className="topbar__button" onClick={onOpenSettings} aria-label="Open settings" title="Settings (S)">
           ⚙️
+        </button>
+        <button
+          type="button"
+          className="topbar__button topbar__button--primary"
+          onClick={onQuickGenerate}
+          disabled={!canGenerate || isGenerating}
+          aria-label={isGenerating ? 'Generating' : 'Create clip'}
+          aria-busy={isGenerating}
+          title={canGenerate ? (isGenerating ? 'Generating…' : 'Create clip (G)') : 'Enter text and pick a voice'}
+        >
+          {isGenerating ? '⏳' : '▶️'}
+          <span className="topbar__button-label">{isGenerating ? 'Generating…' : 'Create clip'}</span>
         </button>
       </div>
 

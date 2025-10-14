@@ -1130,10 +1130,13 @@ function App() {
         onQuickGenerate={handleSynthesize}
         onOpenSettings={() => setSettingsOpen(true)}
         onEngineClick={() => {
-          const el = document.getElementById('settings-anchor');
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
+          setActivePanel('controls');
+          setTimeout(() => {
+            const el = document.getElementById('settings-anchor');
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          }, 0);
         }}
         onToggleResults={() => setActivePanel('results')}
         onShowVoicePalette={() => {
