@@ -25,6 +25,7 @@ import {
   fetchVoices,
   fetchVoiceGroups,
   synthesiseClip,
+  createVoicePreview,
 } from './api/client';
 import type {
   KokoroFavorite,
@@ -1217,6 +1218,15 @@ function App() {
             onToggleFavorite={(voiceId) => {
               setUiFavorites((prev) => (prev.includes(voiceId) ? prev.filter((v) => v !== voiceId) : [...prev, voiceId]));
             }}
+            onGeneratePreview={engineId === 'kokoro' ? async (voiceId) => {
+              try {
+                await createVoicePreview({ engine: 'kokoro', voiceId, language });
+                // Refresh voices to pick up preview_url
+                voicesQuery.refetch();
+              } catch (err) {
+                setError(err instanceof Error ? err.message : 'Failed to generate preview.');
+              }
+            } : undefined}
           />
           <AudioResultList
             items={results}

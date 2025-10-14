@@ -20,6 +20,7 @@ interface VoiceSelectorProps {
   onOpenvoiceInstructions?: () => void;
   favorites?: string[];
   onToggleFavorite?: (voiceId: string) => void;
+  onGeneratePreview?: (voiceId: string) => void;
 }
 
 interface GroupedVoices {
@@ -108,6 +109,7 @@ export function VoiceSelector({
   onOpenvoiceInstructions,
   favorites = [],
   onToggleFavorite,
+  onGeneratePreview,
 }: VoiceSelectorProps) {
   const [query, setQuery] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -379,6 +381,9 @@ export function VoiceSelector({
                         {voice.gender ? <span>{voice.gender}</span> : null}
                       </span>
                     </button>
+                    {(!findPreviewUrl(voice) && onGeneratePreview) ? (
+                      <button type="button" className="chip-button" onClick={() => onGeneratePreview(voice.id)}>Generate preview</button>
+                    ) : null}
                     {onToggleFavorite ? (
                       <button type="button" className={clsx('fav-btn', { 'is-active': isFav })} aria-label={isFav ? 'Unfavorite' : 'Favorite'} aria-pressed={isFav} onClick={() => onToggleFavorite(voice.id)}>
                         {isFav ? '★' : '☆'}
@@ -449,6 +454,9 @@ export function VoiceSelector({
                             </span>
                           ) : null}
                         </button>
+                        {(!findPreviewUrl(voice) && onGeneratePreview) ? (
+                          <button type="button" className="chip-button" onClick={() => onGeneratePreview(voice.id)}>Generate preview</button>
+                        ) : null}
                         {onToggleFavorite ? (
                           <button type="button" className={clsx('fav-btn', { 'is-active': isFav })} aria-label={isFav ? 'Unfavorite' : 'Favorite'} aria-pressed={isFav} onClick={() => onToggleFavorite(voice.id)}>
                             {isFav ? '★' : '☆'}
