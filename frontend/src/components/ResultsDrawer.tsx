@@ -44,14 +44,19 @@ export function ResultsDrawer({
   onSaveKokoroFavorite,
   kokoroFavoritesByVoice = {},
 }: ResultsDrawerProps) {
-  const hasQueue = queue.length > 0;
-  const [activeTab, setActiveTab] = useState<'queue' | 'history'>(hasQueue ? 'queue' : 'history');
+  const activeCount = queue.filter((q) => q.status === 'pending' || q.status === 'rendering').length;
+  const hasActiveQueue = activeCount > 0;
+  const [activeTab, setActiveTab] = useState<'queue' | 'history'>(hasActiveQueue ? 'queue' : 'history');
 
   useEffect(() => {
-    if (open && queue.length) {
+    if (!open) return;
+    if (hasActiveQueue) {
       setActiveTab('queue');
+    } else if (items.length) {
+      setActiveTab('history');
     }
-  }, [open, queue.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, hasActiveQueue, items.length]);
 
   const toggleLabel = open ? 'Close' : `Open (${items.length})`;
 
@@ -73,23 +78,23 @@ export function ResultsDrawer({
             className={`tabs__tab ${activeTab === 'queue' ? 'is-active' : ''}`}
             onClick={() => setActiveTab('queue')}
           >
-            Queue {hasQueue ? `(${queue.length})` : ''}
+            Queue {hasActiveQueue ? `(${activeCount})` : ''}
           </button>
           <button
             type="button"
             className={`tabs__tab ${activeTab === 'history' ? 'is-active' : ''}`}
             onClick={() => setActiveTab('history')}
           >
-            History ({items.length})
+            Clips ({items.length})
           </button>
         </div>
         {activeTab === 'queue' ? (
           <div className="queue-list" role="list" aria-label="Render queue">
-            {!queue.length ? (
+            {!hasActiveQueue ? (
               <div className="results-drawer__empty">No pending items.</div>
             ) : (
               <>
-                {queue.map((q) => (
+                {queue.filter((q) => q.status === 'pending' || q.status === 'rendering').map((q) => (
                   <div key={q.id} role="listitem" className={`queue-row queue-row--${q.status}`}>
                     <div className="queue-row__title">{q.label}</div>
                     <div className="queue-row__meta">{q.engine}</div>

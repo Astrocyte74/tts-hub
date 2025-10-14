@@ -86,15 +86,41 @@ export function SynthesisControls({
       </header>
       <div className="field">
         <span className="field__label">TTS Engine</span>
-        <select value={engineId} onChange={(event) => onEngineChange(event.target.value)}>
-          {engines.map((engine) => (
-            <option key={engine.id} value={engine.id} disabled={!engine.available}>
-              {engine.label}
-              {!engine.available ? ' (unavailable)' : ''}
-            </option>
-          ))}
-          {!engines.some((engine) => engine.id === engineId) ? <option value={engineId}>{engineId}</option> : null}
-        </select>
+        <div className="engine-cards" role="list" aria-label="Choose engine">
+          {engines.map((engine) => {
+            const selected = engine.id === engineId;
+            const blurbs: Record<string, { tagline: string; strengths: string[] }> = {
+              kokoro: { tagline: 'Local, fast, natural multi-speaker voices', strengths: ['Offline', 'Great default voices', 'Snappy'] },
+              openvoice: { tagline: 'Clone any speaker from short references', strengths: ['Custom voices', 'Reference-driven'] },
+              chattts: { tagline: 'Dialogue-style TTS, flexible tone via seeds', strengths: ['Conversational', 'Seed control'] },
+              xtts: { tagline: 'Server-based XTTS model for consistent long-form', strengths: ['Server persistent', 'Long clips'] },
+            };
+            const info = blurbs[engine.id as keyof typeof blurbs];
+            return (
+              <button
+                key={engine.id}
+                className={`engine-card ${selected ? 'is-selected' : ''}`}
+                type="button"
+                role="listitem"
+                aria-pressed={selected}
+                disabled={!engine.available}
+                onClick={() => onEngineChange(engine.id)}
+                title={engine.status ?? ''}
+              >
+                <div className="engine-card__title">{engine.label}</div>
+                <div className="engine-card__tagline">{info?.tagline ?? engine.description ?? ''}</div>
+                <div className="engine-card__badges">
+                  {(info?.strengths ?? []).map((s) => (
+                    <span key={s} className="engine-badge">{s}</span>
+                  ))}
+                  {!engine.available ? <span className="engine-badge engine-badge--warn">Unavailable</span> : null}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        {/* Accessible fallback */}
+        <select value={engineId} onChange={(e) => onEngineChange(e.target.value)} style={{ position: 'absolute', left: -9999 }} aria-hidden />
         {description ? <p className="panel__hint panel__hint--muted">{description}</p> : null}
         {!engineAvailable ? (
           <p className="panel__hint panel__hint--warning">This engine is not ready yet. Choose another engine or complete its setup.</p>
