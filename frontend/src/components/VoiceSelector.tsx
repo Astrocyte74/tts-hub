@@ -22,6 +22,7 @@ interface VoiceSelectorProps {
   onToggleFavorite?: (voiceId: string) => void;
   onGeneratePreview?: (voiceId: string) => void;
   previewBusyIds?: string[];
+  onBulkGeneratePreview?: (voiceIds: string[]) => void;
 }
 
 interface GroupedVoices {
@@ -112,6 +113,7 @@ export function VoiceSelector({
   onToggleFavorite,
   onGeneratePreview,
   previewBusyIds = [],
+  onBulkGeneratePreview,
 }: VoiceSelectorProps) {
   const [query, setQuery] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -277,6 +279,7 @@ export function VoiceSelector({
   );
 
   const groupsToRender = useMemo(() => buildDisplayGroups(filteredForFacets, groups, new Set(filteredForFacets.map(v=>v.id)), activeGroup), [filteredForFacets, groups, activeGroup]);
+  const missingPreviewIds = useMemo(() => filteredForFacets.filter((v) => !findPreviewUrl(v)).map((v) => v.id), [filteredForFacets]);
 
   return (
     <section className="panel">
@@ -287,9 +290,20 @@ export function VoiceSelector({
             {engineLabel} · {voices.length} available
           </p>
         </div>
-        <button className="panel__button" type="button" onClick={onClear}>
-          Clear
-        </button>
+        <div className="panel__actions">
+          {onBulkGeneratePreview && missingPreviewIds.length > 0 ? (
+            <button
+              className="panel__button"
+              type="button"
+              onClick={() => onBulkGeneratePreview(missingPreviewIds)}
+            >
+              Generate previews for {missingPreviewIds.length}
+            </button>
+          ) : null}
+          <button className="panel__button" type="button" onClick={onClear}>
+            Clear
+          </button>
+        </div>
       </header>
       {engineMessage ? <p className="panel__hint panel__hint--muted">{engineMessage}</p> : null}
       {engineLabel.toLowerCase().includes('openvoice') && onOpenvoiceInstructions ? (

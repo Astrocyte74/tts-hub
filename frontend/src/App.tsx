@@ -1232,6 +1232,36 @@ function App() {
               }
             } : undefined}
             previewBusyIds={previewBusy}
+            onBulkGeneratePreview={engineId === 'kokoro' ? async (voiceIds) => {
+              const ids = Array.from(new Set(voiceIds));
+              if (!ids.length) return;
+              const enqueue = (id: string, label: string) =>
+                setQueue((prev) => [
+                  ...prev,
+                  { id: `pv-${id}-${Date.now()}`, label: `Preview · ${label}`, engine: 'kokoro', status: 'pending', progress: 0, startedAt: new Date().toISOString() },
+                ]);
+              const voiceLabel = (id: string) => voices.find((v) => v.id === id)?.label ?? id;
+              try {
+                setPreviewBusy((prev) => Array.from(new Set([...prev, ...ids])));
+                for (const id of ids) {
+                  enqueue(id, voiceLabel(id));
+                }
+                for (const id of ids) {
+                  const label = voiceLabel(id);
+                  // mark rendering
+                  setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` && q.status === 'pending' ? { ...q, status: 'rendering' } : q));
+                  try {
+                    await createVoicePreview({ engine: 'kokoro', voiceId: id, language });
+                    setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` && (q.status === 'rendering' || q.status === 'pending') ? { ...q, status: 'done', progress: 100, finishedAt: new Date().toISOString() } : q));
+                  } catch (err) {
+                    setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` ? { ...q, status: 'error', error: String(err) } : q));
+                  }
+                }
+                voicesQuery.refetch();
+              } finally {
+                setPreviewBusy((prev) => prev.filter((id) => !ids.includes(id)));
+              }
+            } : undefined}
           />
           <AudioResultList
             items={results}
