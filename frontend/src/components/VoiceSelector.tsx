@@ -359,6 +359,7 @@ export function VoiceSelector({
               {favoritesInScope.map((voice) => {
                 const isSelected = selected.includes(voice.id);
                 const isFav = favoriteSet.has(voice.id);
+                const hasPreview = Boolean(findPreviewUrl(voice));
                 return (
                   <div key={`fav-${voice.id}`} className={clsx('voice-card', { 'voice-card--selected': isSelected, 'voice-card--disabled': disabled })}>
                     <button
@@ -383,6 +384,11 @@ export function VoiceSelector({
                         {voice.gender ? <span>{voice.gender}</span> : null}
                       </span>
                     </button>
+                    {hasPreview ? (
+                      <button type="button" className="chip-button" aria-label="Play preview" onClick={() => playPreview(voice)}>
+                        Preview
+                      </button>
+                    ) : null}
                     {(!findPreviewUrl(voice) && onGeneratePreview) ? (
                       <button
                         type="button"
@@ -424,6 +430,7 @@ export function VoiceSelector({
                   {group.voices.map((voice) => {
                     const isSelected = selected.includes(voice.id);
                     const isFav = favoriteSet.has(voice.id);
+                    const hasPreview = Boolean(findPreviewUrl(voice));
                     const voiceStyle = voiceStyles?.[voice.id];
                     const canEditStyle = !!availableStyleChoices?.length && typeof onVoiceStyleChange === 'function';
                     return (
@@ -463,6 +470,11 @@ export function VoiceSelector({
                             </span>
                           ) : null}
                         </button>
+                        {hasPreview ? (
+                          <button type="button" className="chip-button" aria-label="Play preview" onClick={() => playPreview(voice)}>
+                            Preview
+                          </button>
+                        ) : null}
                         {(!findPreviewUrl(voice) && onGeneratePreview) ? (
                           <button
                             type="button"
