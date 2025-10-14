@@ -45,6 +45,7 @@ export function IconXTTS({ size = 20, ...props }: IconProps) {
   );
 }
 
+<<<<<<< HEAD
 export function IconDocument({ size = 16, ...props }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden {...props}>
@@ -116,3 +117,5 @@ export function IconBrand({ size = 16, ...props }: IconProps) {
   );
 }
 
+=======
+>>>>>>> origin/main
