@@ -380,7 +380,7 @@ export function VoiceSelector({
                       </span>
                     </button>
                     {onToggleFavorite ? (
-                      <button type="button" className={clsx('fav-btn', { 'is-active': isFav })} aria-label={isFav ? 'Unfavorite' : 'Favorite'} onClick={() => onToggleFavorite(voice.id)}>
+                      <button type="button" className={clsx('fav-btn', { 'is-active': isFav })} aria-label={isFav ? 'Unfavorite' : 'Favorite'} aria-pressed={isFav} onClick={() => onToggleFavorite(voice.id)}>
                         {isFav ? '★' : '☆'}
                       </button>
                     ) : null}
@@ -450,7 +450,7 @@ export function VoiceSelector({
                           ) : null}
                         </button>
                         {onToggleFavorite ? (
-                          <button type="button" className={clsx('fav-btn', { 'is-active': isFav })} aria-label={isFav ? 'Unfavorite' : 'Favorite'} onClick={() => onToggleFavorite(voice.id)}>
+                          <button type="button" className={clsx('fav-btn', { 'is-active': isFav })} aria-label={isFav ? 'Unfavorite' : 'Favorite'} aria-pressed={isFav} onClick={() => onToggleFavorite(voice.id)}>
                             {isFav ? '★' : '☆'}
                           </button>
                         ) : null}

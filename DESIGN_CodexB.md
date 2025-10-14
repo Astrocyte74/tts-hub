@@ -1,16 +1,32 @@
-# CodexB UI/UX Wireframe – Scope
+# Kokoro UI — CodexB Branch (Phase 2)
 
-This branch focuses on two high‑impact layout improvements to make comparisons easy:
+This branch delivers the Phase 2 UI/UX enhancements on top of the modernized SPA. It is the reference for “Kokoro UI v2 Beta”.
 
-- Top Context Bar: persistent header with engine, selection summary, status, and quick actions (Settings, Quick Generate, Results).
-- Bottom Results Drawer: collapsible dock for Queue/Results (wireframe shows Results for now).
+What’s included
+- Top Context Bar (Phase 1): engine, selection summary, clips, status; quick actions (Settings, Quick Generate, Results).
+- Queue + History drawer: bottom dock with tabs, optimistic progress, cancel stub, and session persistence.
+- Voice Browser 2.0: hover micro‑preview, favorites with a pinned row, facet chips (Language/Gender/Style) with counts.
+- Script Authoring: SSML helper chips (Pause, Emphasis, Pitch, Rate), word/char/duration counters, basic SSML validation.
+- Results: Waveform player + new mini waveform with loop/trim and “Export selection” (WAV).
+- Accessibility: ARIA roles for lists, buttons, and controls; consistent focus outlines.
 
-Notes
-- Intent is non‑destructive: existing panels remain; drawer mirrors the Results panel for evaluation.
-- Scrolling to Settings is supported via a simple anchor so the header’s button has a visible effect immediately.
-- Further items from the redesign plan will be layered onto this branch if we proceed with it.
+Usage
+1) Launch the worktree: `./Start Kokoro Playground (XTTS Server).command`
+   - Uses shared models from `../kokoro_twvv/models` when available
+   - If another backend is running, launcher reuses it and runs UI‑only
+2) Generate audio; open the Results drawer to see Queue/History.
+3) Voice Browser: hover a card to preview (if sample provided), star favorites, filter via facet chips.
+4) Waveform Trim: adjust Start/End, toggle Loop, click Export selection to download a WAV slice.
 
-Run locally
-1. Checkout: `git checkout ui-redesign-codexB` in `kokoro_twvv/`.
-2. Dev: `cd frontend && npm run dev` (or use the launcher script in repo root).
-3. Toggle the drawer from the top bar; try Quick Generate with a selected voice.
+Queue & History
+- Queue items progress from pending → rendering → done (or error/canceled).
+- Progress is optimistic (UI ticks to ~90% while waiting, then 100%).
+- Clear queue/history buttons; both persist using sessionStorage.
+
+Accessibility
+- Voice lists and queue use role=list/listitem.
+- Interactive controls have aria-label/aria-pressed where applicable.
+- Focus outlines use :focus-visible and pass WCAG AA contrast.
+
+Phase 3 (planned)
+- Permanent preview generation (opt‑in): `POST /api/voices/preview` to cache short MP3s under `audio/voice_previews/`, with TTL cleanup. UI adds a “Generate preview” chip on cards without samples and a bulk action for filtered sets. Results integrate with the Queue drawer.
