@@ -135,6 +135,7 @@ function App() {
   const [openvoiceVoiceStyles, setOpenvoiceVoiceStyles] = useLocalStorage<Record<string, string>>('kokoro:openvoiceVoiceStyles', {});
   const [chatttsSeed, setChatttsSeed] = useLocalStorage('kokoro:chatttsSeed', '');
   const [engineId, setEngineId] = useLocalStorage('kokoro:engine', DEFAULT_ENGINE);
+  const [uiFavorites, setUiFavorites] = useLocalStorage<string[]>('kokoro:uiVoiceFavorites', []);
   const metaQuery = useQuery({ queryKey: ['meta'], queryFn: fetchMeta, staleTime: 5 * 60 * 1000 });
   const voicesQuery = useQuery({
     queryKey: ['voices', engineId],
@@ -1212,6 +1213,10 @@ function App() {
             styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
             onVoiceStyleChange={engineId === 'openvoice' ? handleOpenvoiceVoiceStyleChange : undefined}
             onOpenvoiceInstructions={engineId === 'openvoice' ? () => setOpenvoiceHelpOpen(true) : undefined}
+            favorites={uiFavorites}
+            onToggleFavorite={(voiceId) => {
+              setUiFavorites((prev) => (prev.includes(voiceId) ? prev.filter((v) => v !== voiceId) : [...prev, voiceId]));
+            }}
           />
           <AudioResultList
             items={results}
