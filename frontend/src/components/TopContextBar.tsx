@@ -65,8 +65,6 @@ export function TopContextBar({
   onShowVoicePalette,
   onShowInfo,
   onAiAssistClick,
-  engines,
-  onEngineChange,
   activePanel,
   onChangePanel,
   onShowScript,
@@ -88,28 +86,30 @@ export function TopContextBar({
           <span className="topbar__brand-label">Kokoro Playground</span>
         </button>
         <span className="topbar__divider" aria-hidden />
+      </div>
+
+      <div className="topbar__center topbar__modes" role="tablist" aria-label="Mode">
         <button
           type="button"
-          className="topbar__chip topbar__chip--muted"
-          onClick={onEngineClick ?? onOpenSettings}
-          aria-label={`Active engine ${engineLabel} — change engine`}
-          title="Change engine"
+          role="tab"
+          aria-selected={activePanel === 'controls'}
+          className={`topbar__chip ${activePanel === 'controls' ? 'topbar__chip--active' : ''}`}
+          onClick={() => {
+            onChangePanel && onChangePanel('controls');
+            onEngineClick && onEngineClick();
+          }}
+          title="Engine (1)"
         >
           <span className="topbar__chip-label">Engine</span>
           <span className="topbar__chip-value">
-            <span
-              className="topbar__status-dot"
-              aria-hidden
-              style={{ marginRight: 6, background: engineReady ? '#22c55e' : '#eab308' }}
-            />
+            <span className="topbar__status-dot" aria-hidden style={{ marginRight: 6, background: engineReady ? '#22c55e' : '#eab308' }} />
             {engineLabel}
           </span>
         </button>
-      </div>
-
-      <div className="topbar__center">
         <button
           type="button"
+          role="tab"
+          aria-selected={activePanel === 'script'}
           className={`topbar__chip ${activePanel === 'script' ? 'topbar__chip--active' : ''}`}
           onClick={() => {
             onChangePanel && onChangePanel('script');
@@ -123,7 +123,9 @@ export function TopContextBar({
         </button>
         <button
           type="button"
-          className={`topbar__chip ${noVoiceSelected ? 'topbar__chip--warn' : ''} ${activePanel === 'voices' ? 'topbar__chip--active' : ''}`}
+          role="tab"
+          aria-selected={activePanel === 'voices'}
+          className={`topbar__chip ${(noVoiceSelected && activePanel !== 'controls') ? 'topbar__chip--warn' : ''} ${activePanel === 'voices' ? 'topbar__chip--active' : ''}`}
           onClick={onShowVoicePalette}
           aria-label="Show voice palette"
           title="Jump to voices (V)"
@@ -134,12 +136,13 @@ export function TopContextBar({
         {(queueTotal > 0 || clipsCount > 0) && (
           <button
             type="button"
+            role="tab"
+            aria-selected={activePanel === 'results' || Boolean(isResultsOpen)}
             className={`topbar__chip ${activePanel === 'results' || isResultsOpen ? 'topbar__chip--active' : ''}`}
             onClick={() => {
               onChangePanel && onChangePanel('results');
               onToggleResults && onToggleResults();
             }}
-            aria-pressed={activePanel === 'results' || Boolean(isResultsOpen)}
             aria-label="Show results"
             title="Results (4)"
           >
