@@ -328,6 +328,19 @@ export async function createChatttsPreset(payload: CreateChatttsPresetPayload): 
   return postJson<CreateChatttsPresetResponse>('chattts/presets', payload);
 }
 
+export async function createVoicePreview(params: { engine: string; voiceId: string; language?: string; force?: boolean }): Promise<{ preview_url: string }> {
+  const body: Record<string, unknown> = {
+    engine: params.engine,
+    voiceId: params.voiceId,
+  };
+  if (params.language) body.language = params.language;
+  if (params.force) body.force = true;
+  const res = await postJson<Record<string, unknown>>('voices/preview', body);
+  const url = typeof res['preview_url'] === 'string' ? (res['preview_url'] as string) : '';
+  if (!url) throw new Error('Preview generation did not return a URL.');
+  return { preview_url: url };
+}
+
 function synthesiseResultFromResponse(
   response: SynthesisResponseShape,
   fallbackVoice: string,

@@ -129,6 +129,15 @@ The backend also serves `frontend/dist/` assets when Vite is not running (produc
 - WaveSurfer.js playback for generated clips, with persistent history and download links.
 - LocalStorage persistence for script, voices, announcer, and playback preferences.
 
+### CodexB Phase 2 Additions
+
+- Top context bar with engine, voice summary, clips, and quick actions.
+- Queue + History drawer at the bottom with optimistic progress, cancel stub, and session persistence.
+- Voice Browser 2.0: hover micro‑preview (when samples exist), favorites with a pinned row, facet chips (Language/Gender/Style) with counts and multi-select, plus a clear‑filters button.
+- Script authoring SSML helpers (Pause, Emphasis, Pitch, Rate) with word/char/duration counters and basic SSML validation.
+- Results: Waveform player and a mini waveform with Loop/Start/End controls and “Export selection” to WAV.
+- Accessibility: ARIA roles for voice lists and queue items; labeled buttons; consistent focus outlines.
+
 ---
 
 ## Repository Layout

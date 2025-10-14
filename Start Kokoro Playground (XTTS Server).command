@@ -20,6 +20,11 @@ VENV_DIR="${VENV_DIR:-$ROOT_DIR/.venv}"
 VENV_PY="$VENV_DIR/bin/python"
 VENV_PIP="$VENV_DIR/bin/pip"
 MODELS_DIR="${KOKORO_MODELS_DIR:-$ROOT_DIR/models}"
+# Prefer shared models from the original repo if available (avoids re-downloads in worktrees)
+SHARED_MODELS_CANDIDATE="$(cd "$ROOT_DIR/.." && pwd)/kokoro_twvv/models"
+if [[ -z "${KOKORO_MODELS_DIR:-}" && -d "$SHARED_MODELS_CANDIDATE" ]]; then
+  MODELS_DIR="$SHARED_MODELS_CANDIDATE"
+fi
 MODEL_URL="${KOKORO_MODEL_URL:-https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx}"
 VOICES_URL="${KOKORO_VOICES_URL:-https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin}"
 MODEL_PATH_DEFAULT="$MODELS_DIR/kokoro-v1.0.onnx"
@@ -27,6 +32,8 @@ VOICES_PATH_DEFAULT="$MODELS_DIR/voices-v1.0.bin"
 DEPS_STAMP="${DEPS_STAMP:-$ROOT_DIR/.deps_installed}"
 AUTO_DOWNLOAD="${KOKORO_AUTO_DOWNLOAD:-1}"
 MODE="${KOKORO_MODE:-dev}"
+SKIP_BACKEND_FLAG="${SKIP_BACKEND:-0}"
+TAKE_OVER_FLAG="${TAKE_OVER:-0}"
 BACKEND_API_PREFIX="${API_PREFIX:-${VITE_API_PREFIX:-api}}"
 DIST_INDEX="$FRONTEND_DIR/dist/index.html"
 TTS_HUB_ROOT="${TTS_HUB_ROOT:-$(cd "$ROOT_DIR/.." && pwd)}"
@@ -60,6 +67,20 @@ if command -v npm >/dev/null 2>&1; then
 else
   HAS_NPM=0
 fi
+
+# Networking helpers
+port_in_use() {
+  local p="$1"
+  lsof -ti TCP:"$p" >/dev/null 2>&1
+}
+
+pick_free_port() {
+  local start="$1"; local limit="${2:-10}"; local p="$start"; local i=0
+  while port_in_use "$p" && [[ $i -lt $limit ]]; do
+    p=$((p+1)); i=$((i+1))
+  done
+  echo "$p"
+}
 
 MODE_LOWER=$(printf '%s' "$MODE" | tr '[:upper:]' '[:lower:]')
 
@@ -192,6 +213,47 @@ should_auto_download() {
   esac
 }
 
+health_check_models() {
+  local model_path="${KOKORO_MODEL:-$MODEL_PATH_DEFAULT}"
+  local voices_path="${KOKORO_VOICES:-$VOICES_PATH_DEFAULT}"
+  local using_shared="no"
+  if [[ "$MODELS_DIR" == "$SHARED_MODELS_CANDIDATE" ]]; then
+    using_shared="yes"
+    log "Using shared models directory: $MODELS_DIR"
+  else
+    log "Using models directory: $MODELS_DIR"
+  fi
+
+  local exists_any=0
+  if [[ -f "$model_path" ]]; then
+    local sz; sz=$(du -h "$model_path" 2>/dev/null | awk '{print $1}')
+    log " - Model: $(basename "$model_path") present ($sz)"
+    exists_any=1
+  else
+    log " - Model: MISSING at $model_path"
+  fi
+  if [[ -f "$voices_path" ]]; then
+    local szv; szv=$(du -h "$voices_path" 2>/dev/null | awk '{print $1}')
+    log " - Voices: $(basename "$voices_path") present ($szv)"
+    exists_any=1
+  else
+    log " - Voices: MISSING at $voices_path"
+  fi
+
+  if [[ $exists_any -eq 0 ]]; then
+    if ! should_auto_download; then
+      if [[ "$using_shared" == "yes" ]]; then
+        log "Shared models not found and auto-download is disabled."
+        log "Tip: run the launcher in ../kokoro_twvv first to download assets, or set KOKORO_MODELS_DIR/.env to a valid path."
+      else
+        log "Models not found and auto-download is disabled. Set KOKORO_MODELS_DIR or enable KOKORO_AUTO_DOWNLOAD=1."
+      fi
+    else
+      log "Assets missing; auto-download is enabled and will attempt download."
+    fi
+  fi
+}
+
 ensure_asset() {
   local url="$1"
   local target="$2"
@@ -209,6 +271,7 @@ ensure_asset() {
   fi
 }
 
+health_check_models
 ensure_asset "$MODEL_URL" "$MODEL_PATH_DEFAULT" "Model"
 ensure_asset "$VOICES_URL" "$VOICES_PATH_DEFAULT" "Voice bank"
 
@@ -269,16 +332,42 @@ fi
 XTTS_SERVER_LOG="${XTTS_SERVER_LOG:-/tmp/kokoro_xtts_server.log}"
 XTTS_SERVER_HOST="${XTTS_SERVER_HOST:-127.0.0.1}"
 XTTS_SERVER_PORT="${XTTS_SERVER_PORT:-3333}"
+BACKEND_MODE="unknown"
+XTTS_MODE="skipped"
 
-if [[ -x "$XTTS_PYTHON" && -f "$XTTS_SERVICE_DIR/run_server.py" ]]; then
+should_skip_backend() {
+  local v
+  v=$(printf '%s' "$SKIP_BACKEND_FLAG" | tr '[:upper:]' '[:lower:]')
+  case "$v" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+should_take_over() {
+  local v
+  v=$(printf '%s' "$TAKE_OVER_FLAG" | tr '[:upper:]' '[:lower:]')
+  case "$v" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if ! should_skip_backend && [[ -x "$XTTS_PYTHON" && -f "$XTTS_SERVICE_DIR/run_server.py" ]]; then
   export XTTS_SERVER_URL="${XTTS_SERVER_URL:-http://$XTTS_SERVER_HOST:$XTTS_SERVER_PORT}"
   existing_xtts_pids=$(lsof -ti TCP:$XTTS_SERVER_PORT 2>/dev/null || true)
   if [[ -n "$existing_xtts_pids" ]]; then
-    log "Stopping existing XTTS server on port $XTTS_SERVER_PORT ($existing_xtts_pids)"
-    echo "$existing_xtts_pids" | xargs kill 2>/dev/null || true
-    sleep 1
+    if should_take_over; then
+      log "Taking over XTTS port $XTTS_SERVER_PORT (killing $existing_xtts_pids)"
+      echo "$existing_xtts_pids" | xargs kill 2>/dev/null || true
+      sleep 1
+    else
+      log "XTTS server detected on $XTTS_SERVER_PORT ($existing_xtts_pids); reusing."
+      XTTS_SERVER_PID=""
+      XTTS_MODE="reused"
+    fi
   fi
-  if [[ -z "${XTTS_SERVER_PID:-}" ]] || ! kill -0 "$XTTS_SERVER_PID" 2>/dev/null; then
+  if [[ -z "$existing_xtts_pids" ]] || should_take_over; then
     log "Starting XTTS server on $XTTS_SERVER_URL"
     (
       cd "$XTTS_SERVICE_DIR"
@@ -286,8 +375,7 @@ if [[ -x "$XTTS_PYTHON" && -f "$XTTS_SERVICE_DIR/run_server.py" ]]; then
     ) >>"$XTTS_SERVER_LOG" 2>&1 &
     XTTS_SERVER_PID=$!
     log "XTTS server PID $XTTS_SERVER_PID (logs -> $XTTS_SERVER_LOG)"
-  else
-    log "XTTS server already running (PID $XTTS_SERVER_PID); skipping restart."
+    XTTS_MODE="started"
   fi
 else
   log "XTTS server script not found – falling back to CLI mode."
@@ -312,27 +400,51 @@ fi
 
 trap '[[ -n "${BACKEND_PID:-}" ]] && kill "$BACKEND_PID" 2>/dev/null; [[ -n "${FRONTEND_PID:-}" ]] && kill "$FRONTEND_PID" 2>/dev/null; [[ -n "${XTTS_SERVER_PID:-}" ]] && kill "$XTTS_SERVER_PID" 2>/dev/null' EXIT
 
-log "Starting Flask backend on http://$BACKEND_HOST:$BACKEND_PORT"
-BACKEND_HOST="$BACKEND_HOST" BACKEND_PORT="$BACKEND_PORT" "$VENV_PY" "$BACKEND_DIR/app.py" &
-BACKEND_PID=$!
+existing_backend_pids=$(lsof -ti TCP:$BACKEND_PORT 2>/dev/null || true)
+if [[ -n "$existing_backend_pids" && ! $(should_skip_backend; echo $?) -eq 0 ]]; then
+  log "Backend detected on $BACKEND_PORT ($existing_backend_pids); reusing (auto SKIP_BACKEND)."
+  SKIP_BACKEND_FLAG=1
+fi
 
-sleep 2 || true
-if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
-  log "Backend failed to start. Check the output above for details."
-  wait "$BACKEND_PID"
-  exit 1
+if ! should_skip_backend; then
+  log "Starting Flask backend on http://$BACKEND_HOST:$BACKEND_PORT"
+  BACKEND_HOST="$BACKEND_HOST" BACKEND_PORT="$BACKEND_PORT" "$VENV_PY" "$BACKEND_DIR/app.py" &
+  BACKEND_PID=$!
+
+  sleep 2 || true
+  if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+    log "Backend failed to start. Check the output above for details."
+    wait "$BACKEND_PID"
+    exit 1
+  fi
+  BACKEND_MODE="started"
+else
+  log "SKIP_BACKEND=1 set – using existing backend at http://$BACKEND_HOST:$BACKEND_PORT"
+  BACKEND_MODE="reused"
 fi
 
 if [[ "$MODE_LOWER" == "prod" ]]; then
   log "Production mode active. Serving built assets via Flask."
-  open_in_browser "http://$BACKEND_HOST:$BACKEND_PORT"
-  wait "$BACKEND_PID"
-  exit $?
+  if should_skip_backend; then
+    log "Cannot run UI-only in prod; backend is required. Start backend in another session or run dev mode."
+    exit 1
+  else
+    open_in_browser "http://$BACKEND_HOST:$BACKEND_PORT"
+    wait "$BACKEND_PID"
+    exit $?
+  fi
 fi
 
-DEV_PORT="${VITE_PORT:-5173}"
+DEV_PORT="${VITE_PORT:-5175}"
 DEV_HOST="${VITE_HOST:-127.0.0.1}"
+ORIG_DEV_PORT="$DEV_PORT"
+DEV_PORT="$(pick_free_port "$DEV_PORT" 10)"
 DEV_URL="http://$DEV_HOST:$DEV_PORT"
+if [[ "$DEV_PORT" != "$ORIG_DEV_PORT" ]]; then
+  log "Dev port $ORIG_DEV_PORT busy; using $DEV_PORT"
+fi
+
+log "Status summary: backend=$BACKEND_MODE, xtts=$XTTS_MODE, ui=$DEV_HOST:$DEV_PORT, mode=$MODE_LOWER"
 
 log "Starting Vite dev server on $DEV_URL"
 

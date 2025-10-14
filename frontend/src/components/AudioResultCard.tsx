@@ -1,5 +1,6 @@
 import type { SVGProps } from 'react';
 import { WaveformPlayer } from './WaveformPlayer';
+import { WaveformTrim } from './WaveformTrim';
 import type { SynthesisResult } from '../types';
 
 interface AudioResultCardProps {
@@ -154,6 +155,7 @@ export function AudioResultCard({
         </div>
       ) : null}
       <WaveformPlayer src={item.audioUrl} autoPlay={autoPlay} />
+      <WaveformTrim src={item.audioUrl} filenameBase={item.voice || 'clip'} />
       <p className="result-card__text">{item.text}</p>
       {showChatttsSaveButton ? (
         <button

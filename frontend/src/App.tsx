@@ -7,10 +7,14 @@ import { SynthesisControls } from './components/SynthesisControls';
 import { AnnouncerControls } from './components/AnnouncerControls';
 import { SynthesisActions } from './components/SynthesisActions';
 import { AudioResultList } from './components/AudioResultList';
+import { TopContextBar } from './components/TopContextBar';
+import { ResultsDrawer } from './components/ResultsDrawer';
+import { SettingsPopover } from './components/SettingsPopover';
 import { PresetDialog } from './components/PresetDialog';
 import { InfoDialog } from './components/InfoDialog';
 import { FavoritesManagerDialog } from './components/FavoritesManagerDialog';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { useSessionStorage } from './hooks/useSessionStorage';
 import {
   createAudition,
   createChatttsPreset,
@@ -21,6 +25,7 @@ import {
   fetchVoices,
   fetchVoiceGroups,
   synthesiseClip,
+  createVoicePreview,
 } from './api/client';
 import type {
   KokoroFavorite,
@@ -29,6 +34,7 @@ import type {
   SynthesisResult,
   VoiceCatalogue,
   VoiceProfile,
+  AuditionAnnouncerConfig,
 } from './types';
 
 const FALLBACK_CATEGORIES = ['any', 'narration', 'promo', 'dialogue', 'news', 'story', 'whimsy'];
@@ -101,6 +107,20 @@ function App() {
   const [announcerGap, setAnnouncerGap] = useLocalStorage('kokoro:announcerGap', 0.5);
   const [voiceGroupFilter, setVoiceGroupFilter] = useLocalStorage('kokoro:voiceGroupFilter', 'all');
   const [results, setResults] = useState<SynthesisResult[]>([]);
+  const [isResultsDrawerOpen, setResultsDrawerOpen] = useState(false);
+  const [isSettingsOpen, setSettingsOpen] = useState(false);
+  type QueueItem = {
+    id: string;
+    label: string;
+    engine: string;
+    status: 'pending' | 'rendering' | 'done' | 'error' | 'canceled';
+    progress: number;
+    startedAt?: string;
+    finishedAt?: string;
+    error?: string;
+  };
+  const [queue, setQueue] = useSessionStorage<QueueItem[]>('kokoro:queue.v1', []);
+  const [persistedResults, setPersistedResults] = useSessionStorage<SynthesisResult[]>('kokoro:history.v1', []);
   const [error, setError] = useState<string | null>(null);
   const [extraCategories, setExtraCategories] = useState<string[]>([]);
   const [savingChatttsId, setSavingChatttsId] = useState<string | null>(null);
@@ -110,11 +130,14 @@ function App() {
   const [isFavoritesManagerOpen, setFavoritesManagerOpen] = useState(false);
   const [shouldReopenFavoritesManager, setShouldReopenFavoritesManager] = useState(false);
   const [openvoiceHelpOpen, setOpenvoiceHelpOpen] = useState(false);
+  const [isAiAssistOpen, setAiAssistOpen] = useState(false);
 
   const [openvoiceStyle, setOpenvoiceStyle] = useLocalStorage('kokoro:openvoiceStyle', 'default');
   const [openvoiceVoiceStyles, setOpenvoiceVoiceStyles] = useLocalStorage<Record<string, string>>('kokoro:openvoiceVoiceStyles', {});
   const [chatttsSeed, setChatttsSeed] = useLocalStorage('kokoro:chatttsSeed', '');
   const [engineId, setEngineId] = useLocalStorage('kokoro:engine', DEFAULT_ENGINE);
+  const [uiFavorites, setUiFavorites] = useLocalStorage<string[]>('kokoro:uiVoiceFavorites', []);
+  const [previewBusy, setPreviewBusy] = useState<string[]>([]);
   const metaQuery = useQuery({ queryKey: ['meta'], queryFn: fetchMeta, staleTime: 5 * 60 * 1000 });
   const voicesQuery = useQuery({
     queryKey: ['voices', engineId],
@@ -252,6 +275,7 @@ function App() {
   const ollamaAvailable = metaQuery.data?.ollama_available ?? false;
   const kokoroReady = metaQuery.data ? metaQuery.data.has_model && metaQuery.data.has_voices : true;
   const backendReady = engineId === 'kokoro' ? engineAvailable && kokoroReady : engineAvailable;
+  const engineStatus = selectedEngine?.status ?? null;
 
   const applyOpenvoiceStyle = (style: string, options: { updateOverrides?: boolean } = {}) => {
     setOpenvoiceStyle(style);
@@ -287,24 +311,25 @@ function App() {
 
   const handleOpenvoiceVoiceStyleChange = (voiceId: string, style: string) => {
     const nextStyle = style || 'default';
-    setOpenvoiceVoiceStyles((prev) => {
-      const current = prev[voiceId];
-      if (current === nextStyle) {
-        return prev;
+    const currentStyles = openvoiceVoiceStyles;
+    const current = currentStyles[voiceId];
+    if (current === nextStyle) {
+      return;
+    }
+
+    if (nextStyle === 'default') {
+      if (!(voiceId in currentStyles)) {
+        return;
       }
-      if (nextStyle === 'default') {
-        if (!(voiceId in prev)) {
-          return prev;
-        }
-        const { [voiceId]: removedStyle, ...rest } = prev;
-        void removedStyle;
-        return rest;
-      }
-      return {
-        ...prev,
+      const { [voiceId]: _removed, ...rest } = currentStyles;
+      setOpenvoiceVoiceStyles(rest);
+    } else {
+      setOpenvoiceVoiceStyles({
+        ...currentStyles,
         [voiceId]: nextStyle,
-      };
-    });
+      });
+    }
+
     if (engineId === 'openvoice' && selectedVoices.length === 1 && selectedVoices[0] === voiceId) {
       applyOpenvoiceStyle(nextStyle, { updateOverrides: false });
       setOpenvoiceStyle(nextStyle);
@@ -448,33 +473,6 @@ function App() {
 
   const synthMutation = useMutation<SynthesisResult, unknown, SynthesisRequest & { style?: string; speaker?: string; seed?: number }>({
     mutationFn: synthesiseClip,
-    onSuccess: (result, variables) => {
-      const enriched: SynthesisResult = {
-        ...result,
-        meta: { ...(result.meta ?? {}) },
-      };
-      if (variables?.engine === 'openvoice') {
-        const voiceId = variables.voice ?? '';
-        const styleUsed = variables.style ?? openvoiceVoiceStyles[voiceId] ?? openvoiceStyle ?? 'default';
-        const meta = enriched.meta as Record<string, unknown>;
-        if (styleUsed && (!meta.style || typeof meta.style !== 'string')) {
-          meta.style = styleUsed;
-        }
-        if (variables.language && (!meta.language || typeof meta.language !== 'string')) {
-          meta.language = variables.language;
-        }
-        if (voiceId && (!meta.voice_id || typeof meta.voice_id !== 'string')) {
-          meta.voice_id = voiceId;
-        }
-        if (voiceId && styleUsed && openvoiceVoiceStyles[voiceId] !== styleUsed) {
-          setOpenvoiceVoiceStyles({
-            ...openvoiceVoiceStyles,
-            [voiceId]: styleUsed,
-          });
-        }
-      }
-      setResults((prev) => [enriched, ...prev]);
-    },
     onError: (err: unknown) => {
       setError(err instanceof Error ? err.message : 'Synthesis request failed.');
     },
@@ -743,6 +741,14 @@ function App() {
         setSaveDraft(null);
         return;
       }
+      const accent =
+        saveDraft.accent && saveDraft.accent.id && saveDraft.accent.label && saveDraft.accent.flag
+          ? {
+              id: saveDraft.accent.id,
+              label: saveDraft.accent.label,
+              flag: saveDraft.accent.flag,
+            }
+          : null;
 
       const nextFavorite: KokoroFavorite = {
         id: generateFavoriteId(),
@@ -751,7 +757,7 @@ function App() {
         label: trimmedLabel || saveDraft.voiceLabel,
         notes: trimmedNotes,
         locale: saveDraft.locale ?? null,
-        accent: saveDraft.accent ?? null,
+        accent,
         createdAt: new Date().toISOString(),
       };
       setKokoroFavorites([...kokoroFavorites, nextFavorite]);
@@ -800,6 +806,17 @@ function App() {
     isChatttsDraft && saveDraft && savingChatttsId === saveDraft.resultId && chatttsPresetMutation.isPending,
   );
 
+  // Restore persisted history once; then persist on change
+  useEffect(() => {
+    if (persistedResults.length && results.length === 0) {
+      setResults(persistedResults);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    setPersistedResults(results);
+  }, [results, setPersistedResults]);
+
   const handleSynthesize = async () => {
     setError(null);
     const script = text.trim();
@@ -821,9 +838,20 @@ function App() {
 
     let pendingOpenvoiceStyles: Record<string, string> | null = null;
     let openvoiceStylesChanged = false;
+    const generateQueueId = () => `q-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+    const setStatus = (id: string, status: QueueItem['status'], patch: Partial<QueueItem> = {}) => {
+      setQueue((prev) => prev.map((it) => (it.id === id ? { ...it, status, ...patch } : it)));
+    };
 
     for (const voice of selectedVoices) {
       try {
+        const qid = generateQueueId();
+        const voiceLabel = voiceById.get(voice)?.label ?? voice;
+        setQueue((prev) => [
+          ...prev,
+          { id: qid, label: `Synthesis · ${voiceLabel}`, engine: engineId, status: 'pending', progress: 0, startedAt: new Date().toISOString() },
+        ]);
+        setResultsDrawerOpen(true);
         const payload: SynthesisRequest & { style?: string; speaker?: string; seed?: number } = {
           text: script,
           voice,
@@ -848,9 +876,6 @@ function App() {
           }
         }
         if (engineId === 'chattts') {
-          delete (payload as Record<string, unknown>).speaker;
-          delete (payload as Record<string, unknown>).seed;
-
           if (voiceType === 'preset') {
             if (typeof rawMeta.speaker === 'string' && rawMeta.speaker.trim()) {
               payload.speaker = rawMeta.speaker.trim();
@@ -870,9 +895,36 @@ function App() {
             }
           }
         }
-        await synthMutation.mutateAsync(payload);
+        setStatus(qid, 'rendering');
+        // optimistic progress while request runs
+        let running = true;
+        const tick = () => {
+          setQueue((prev) => prev.map((it) => (it.id === qid && it.status === 'rendering' ? { ...it, progress: Math.min(90, (it.progress ?? 0) + 5) } : it)));
+          if (running) timeout = window.setTimeout(tick, 350);
+        };
+        let timeout = window.setTimeout(tick, 350);
+        const result = await synthMutation.mutateAsync(payload);
+        running = false;
+        window.clearTimeout(timeout);
+
+        // enrich and store
+        const enriched: SynthesisResult = { ...result, meta: { ...(result.meta ?? {}) } };
+        if (payload.engine === 'openvoice') {
+          const voiceId = payload.voice ?? '';
+          const styleUsed = (payload as any).style ?? openvoiceVoiceStyles[voiceId] ?? openvoiceStyle ?? 'default';
+          const meta = enriched.meta as Record<string, unknown>;
+          if (styleUsed && (!meta.style || typeof meta.style !== 'string')) meta.style = styleUsed;
+          if (payload.language && (!meta.language || typeof meta.language !== 'string')) meta.language = payload.language;
+          if (voiceId && (!meta.voice_id || typeof meta.voice_id !== 'string')) meta.voice_id = voiceId;
+          if (voiceId && styleUsed && openvoiceVoiceStyles[voiceId] !== styleUsed) {
+            setOpenvoiceVoiceStyles({ ...openvoiceVoiceStyles, [voiceId]: styleUsed });
+          }
+        }
+        setResults((prev) => [enriched, ...prev]);
+        setStatus(qid, 'done', { progress: 100, finishedAt: new Date().toISOString() });
       } catch (err) {
         console.error(err);
+        setQueue((prev) => prev.map((it) => (it.id === qid ? { ...it, status: 'error', error: err instanceof Error ? err.message : 'Error' } : it)));
         break;
       }
     }
@@ -902,6 +954,12 @@ function App() {
     }
 
     const overridesByVoice: Record<string, Record<string, unknown>> = {};
+    const auditionQueueId = `q-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+    setQueue((prev) => [
+      ...prev,
+      { id: auditionQueueId, label: `Audition · ${selectedVoices.length} voices`, engine: engineId, status: 'pending', progress: 0, startedAt: new Date().toISOString() },
+    ]);
+    setResultsDrawerOpen(true);
     selectedVoices.forEach((voiceId) => {
       const override: Record<string, unknown> = {};
       const voiceMeta = voiceById.get(voiceId);
@@ -941,7 +999,7 @@ function App() {
       Object.entries(overridesByVoice).filter(([, value]) => Object.keys(value).length > 0),
     );
 
-    const announcerConfig = announcerEnabled
+    const announcerConfig: AuditionAnnouncerConfig | undefined = announcerEnabled
       ? {
           enabled: true,
           voice: announcerVoice ?? undefined,
@@ -958,6 +1016,14 @@ function App() {
     }
 
     try {
+      setQueue((prev) => prev.map((it) => (it.id === auditionQueueId ? { ...it, status: 'rendering' } : it)));
+      // optimistic progress for audition
+      let running = true;
+      const tick = () => {
+        setQueue((prev) => prev.map((it) => (it.id === auditionQueueId && it.status === 'rendering' ? { ...it, progress: Math.min(90, (it.progress ?? 0) + 5) } : it)));
+        if (running) t = window.setTimeout(tick, 350);
+      };
+      let t = window.setTimeout(tick, 350);
       await auditionMutation.mutateAsync({
         text: script,
         voices: selectedVoices,
@@ -969,9 +1035,13 @@ function App() {
         engine: engineId,
         voiceOverrides: voiceOverridesPayload,
       });
+      running = false;
+      window.clearTimeout(t);
     } catch (err) {
       console.error(err);
+      setQueue((prev) => prev.map((it) => (it.id === auditionQueueId ? { ...it, status: 'error', error: String(err) } : it)));
     }
+    setQueue((prev) => prev.map((it) => (it.id === auditionQueueId ? { ...it, status: 'done', progress: 100, finishedAt: new Date().toISOString() } : it)));
   };
 
   const handleRemoveResult = (id: string) => {
@@ -997,6 +1067,29 @@ function App() {
           <p>{ollamaAvailable ? 'Ollama connected' : 'Ollama offline'}</p>
         </div>
       </header>
+
+      <TopContextBar
+        engineLabel={selectedEngine?.label ?? engineId}
+        engineStatus={engineStatus}
+        engineReady={backendReady}
+        voices={voices}
+        selectedVoiceIds={selectedVoices}
+        results={results}
+        queueRunning={queue.filter((q) => q.status === 'pending' || q.status === 'rendering').length}
+        queueTotal={queue.length}
+        ollamaAvailable={ollamaAvailable}
+        isResultsOpen={isResultsDrawerOpen}
+        canGenerate={canSynthesize}
+        onQuickGenerate={handleSynthesize}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onToggleResults={() => setResultsDrawerOpen((v) => !v)}
+        onShowVoicePalette={() => {
+          const el = document.getElementById('voice-selector-anchor');
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }}
+      />
 
       {error ? <div className="app__banner app__banner--error">{error}</div> : null}
       {!engineAvailable ? (
@@ -1040,7 +1133,10 @@ function App() {
             categories={categories}
             selectedCategory={randomCategory}
             onCategoryChange={setRandomCategory}
+            onAiAssistClick={() => setAiAssistOpen(true)}
+            aiAssistAvailable={ollamaAvailable}
           />
+          <div id="settings-anchor"></div>
           <SynthesisControls
             engineId={engineId}
             engines={engineList.map((engine) => ({
@@ -1095,7 +1191,7 @@ function App() {
             isAuditionLoading={auditionMutation.isPending}
           />
         </div>
-        <div className="app__column">
+        <div className="app__column" id="voice-selector-anchor">
           <VoiceSelector
             engineLabel={selectedEngine?.label ?? engineId ?? 'Engine'}
             engineAvailable={engineAvailable}
@@ -1121,6 +1217,58 @@ function App() {
             styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
             onVoiceStyleChange={engineId === 'openvoice' ? handleOpenvoiceVoiceStyleChange : undefined}
             onOpenvoiceInstructions={engineId === 'openvoice' ? () => setOpenvoiceHelpOpen(true) : undefined}
+            favorites={uiFavorites}
+            onToggleFavorite={(voiceId) => {
+              setUiFavorites((prev) => (prev.includes(voiceId) ? prev.filter((v) => v !== voiceId) : [...prev, voiceId]));
+            }}
+            onGeneratePreview={engineId === 'kokoro' ? async (voiceId) => {
+              try {
+                setPreviewBusy((prev) => (prev.includes(voiceId) ? prev : [...prev, voiceId]));
+                await createVoicePreview({ engine: 'kokoro', voiceId, language });
+                // Refresh voices to pick up preview_url
+                voicesQuery.refetch();
+              } catch (err) {
+                setError(err instanceof Error ? err.message : 'Failed to generate preview.');
+              } finally {
+                setPreviewBusy((prev) => prev.filter((id) => id !== voiceId));
+              }
+            } : undefined}
+            previewBusyIds={previewBusy}
+            onBulkGeneratePreview={engineId === 'kokoro' ? async (voiceIds) => {
+              const ids = Array.from(new Set(voiceIds));
+              if (!ids.length) return;
+              const enqueue = (id: string, label: string) =>
+                setQueue((prev) => [
+                  ...prev,
+                  { id: `pv-${id}-${Date.now()}`, label: `Preview · ${label}`, engine: 'kokoro', status: 'pending', progress: 0, startedAt: new Date().toISOString() },
+                ]);
+              const voiceLabel = (id: string) => voices.find((v) => v.id === id)?.label ?? id;
+              try {
+                // filter out ids already in progress or already queued
+                const activeLabels = new Set(queue.map((q) => q.label));
+                const toRun = ids.filter((id) => !previewBusy.includes(id) && !activeLabels.has(`Preview · ${voiceLabel(id)}`));
+                if (!toRun.length) return;
+                setPreviewBusy((prev) => Array.from(new Set([...prev, ...toRun])));
+                setResultsDrawerOpen(true);
+                for (const id of toRun) {
+                  enqueue(id, voiceLabel(id));
+                }
+                for (const id of toRun) {
+                  const label = voiceLabel(id);
+                  // mark rendering
+                  setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` && q.status === 'pending' ? { ...q, status: 'rendering' } : q));
+                  try {
+                    await createVoicePreview({ engine: 'kokoro', voiceId: id, language });
+                    setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` && (q.status === 'rendering' || q.status === 'pending') ? { ...q, status: 'done', progress: 100, finishedAt: new Date().toISOString() } : q));
+                  } catch (err) {
+                    setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` ? { ...q, status: 'error', error: String(err) } : q));
+                  }
+                }
+                voicesQuery.refetch();
+              } finally {
+                setPreviewBusy((prev) => prev.filter((id) => !ids.includes(id)));
+              }
+            } : undefined}
           />
           <AudioResultList
             items={results}
@@ -1133,6 +1281,31 @@ function App() {
           />
         </div>
       </main>
+      <ResultsDrawer
+        open={isResultsDrawerOpen}
+        onToggle={() => setResultsDrawerOpen((v) => !v)}
+        items={results}
+        queue={queue}
+        autoPlay={Boolean(autoPlay)}
+        onRemove={handleRemoveResult}
+        onCancelQueue={(id) => setQueue((prev) => prev.map((it) => (it.id === id ? { ...it, status: 'canceled' } : it)))}
+        onClearHistory={() => setResults([])}
+        onClearQueue={() => setQueue([])}
+        onSaveChattts={engineId === 'chattts' ? handleSaveChatttsPresetFromResult : undefined}
+        savingChatttsId={engineId === 'chattts' ? savingChatttsId : null}
+        onSaveKokoroFavorite={handleSaveKokoroFavoriteFromResult}
+        kokoroFavoritesByVoice={kokoroFavoritesByVoice}
+      />
+      <SettingsPopover
+        open={isSettingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        speed={Number(speed)}
+        onSpeedChange={(value) => setSpeed(Number(value))}
+        trimSilence={Boolean(trimSilence)}
+        onTrimSilenceChange={(value) => setTrimSilence(Boolean(value))}
+        autoPlay={Boolean(autoPlay)}
+        onAutoPlayChange={(value) => setAutoPlay(Boolean(value))}
+      />
       <FavoritesManagerDialog
         isOpen={isFavoritesManagerOpen}
         favorites={kokoroFavorites}
@@ -1141,6 +1314,22 @@ function App() {
         onRename={handleRenameFavorite}
         onDelete={handleDeleteFavorite}
       />
+      <InfoDialog
+        isOpen={isAiAssistOpen}
+        title="AI Assist"
+        onClose={() => setAiAssistOpen(false)}
+      >
+        {ollamaAvailable ? (
+          <div className="dialog-stack">
+            <p>Use AI Assist to rewrite the current script. Choose a tone in the sidebar, preview changes, then accept to replace your text.</p>
+            <p className="dialog-hint">Tip: adjust the prompt presets in <code>.env</code> to tailor rewrites to your workflow.</p>
+          </div>
+        ) : (
+          <div className="dialog-stack">
+            <p>Connect an Ollama instance to enable AI-assisted rewrites. Set <code>OLLAMA_URL</code> and <code>OLLAMA_MODEL</code> in your <code>.env</code>, then relaunch.</p>
+          </div>
+        )}
+      </InfoDialog>
       <PresetDialog
         isOpen={Boolean(saveDraft)}
         title={presetDialogTitle}

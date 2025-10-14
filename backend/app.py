@@ -33,6 +33,8 @@ except ImportError as exc:  # pragma: no cover
 APP_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = Path(os.environ.get("KOKORO_OUT", APP_ROOT / "out")).resolve()
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+PREVIEW_DIR = OUTPUT_DIR / "voice_previews"
+PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
 
 FRONTEND_DIST = Path(os.environ.get("FRONTEND_DIST", APP_ROOT / "frontend" / "dist")).resolve()
 
@@ -217,6 +219,15 @@ def load_voice_profiles() -> List[VoiceProfile]:
 
 
 def serialise_voice_profile(voice: VoiceProfile) -> Dict[str, Any]:
+    # Attach preview_url if a cached preview exists
+    engine = "kokoro"
+    preview_language = (voice.locale or "en-us").lower()
+    preview_path = _preview_path(engine, voice.id, preview_language)
+    raw: Dict[str, Any] = {}
+    if preview_path.exists():
+        relative = preview_path.relative_to(OUTPUT_DIR)
+        raw["preview_url"] = f"/audio/{relative.as_posix()}"
+
     return {
         "id": voice.id,
         "label": voice.label,
@@ -229,6 +240,7 @@ def serialise_voice_profile(voice: VoiceProfile) -> Dict[str, Any]:
             "label": voice.accent_label,
             "flag": voice.accent_flag,
         },
+        "raw": raw,
     }
 
 
@@ -286,6 +298,69 @@ def build_kokoro_voice_payload() -> Dict[str, Any]:
         "groups": accent_groups,
         "count": len(voices),
     }
+
+
+# ---------------------------------------------------------------------------
+# Preview generation (Phase 3)
+# ---------------------------------------------------------------------------
+
+def _preview_key(engine: str, voice_id: str, language: str) -> str:
+    version = "v1"
+    return f"{voice_id}-{language}-{version}"
+
+
+def _preview_path(engine: str, voice_id: str, language: str) -> Path:
+    key = _preview_key(engine, voice_id, language)
+    return PREVIEW_DIR / engine / f"{key}.wav"
+
+
+def _ensure_parent(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _default_preview_text(language: Optional[str]) -> str:
+    # Keep short, neutral content; fall back to English
+    lang = (language or "en-us").lower()
+    mapping = {
+        "en-us": "Welcome to the Kokoro Playground. This is a short preview.",
+        "en-gb": "Welcome to the Kokoro Playground. This is a short preview.",
+        "ja-jp": "ココロ・プレイグラウンドへようこそ。これは短いプレビューです。",
+    }
+    return mapping.get(lang, mapping["en-us"])
+
+
+def _fade_and_trim(audio: np.ndarray, sr: int, *, max_seconds: float = 5.0) -> np.ndarray:
+    target_len = min(len(audio), int(sr * max_seconds))
+    if target_len <= 0:
+        return audio
+    clipped = audio[:target_len].astype(np.float32)
+    # Fade out last 50ms
+    fade = int(sr * 0.05)
+    if fade > 0 and len(clipped) > fade:
+        window = np.linspace(1.0, 0.0, fade, dtype=np.float32)
+        clipped[-fade:] *= window
+    # Normalize gently
+    peak = float(np.max(np.abs(clipped))) if clipped.size else 0.0
+    if peak > 0:
+        clipped = (clipped / peak) * 0.95
+    return clipped
+
+
+def _get_or_create_kokoro_preview(voice_id: str, language: str, *, force: bool = False) -> Path:
+    path = _preview_path("kokoro", voice_id, language)
+    if path.exists() and not force:
+        return path
+    tts = get_tts()
+    text = _default_preview_text(language)
+    audio, sr = tts.create(text, voice=voice_id, speed=1.0, lang=language, trim=True)
+    audio = np.squeeze(audio).astype(np.float32)
+    processed = _fade_and_trim(audio, sr, max_seconds=5.0)
+    _ensure_parent(path)
+    sf.write(path, processed, sr)
+    return path
+
+
+## preview route defined later (after api blueprint is declared)
 
 
 def _slugify_voice_id(name: str) -> str:
@@ -1492,6 +1567,38 @@ def voices_grouped_endpoint():
     if not groups and engine["id"] != "kokoro":
         response["message"] = "Grouped voice metadata not yet implemented for this engine."
     return jsonify(response)
+
+
+@api.route("/voices/preview", methods=["POST"])
+def create_voice_preview_endpoint():
+    """Generate or return a cached short preview clip for a voice.
+
+    Request JSON: { engine: string, voiceId: string, language?: string, force?: boolean }
+    Returns: { preview_url: string }
+    """
+    payload = parse_json_request()
+    engine_id = str(payload.get("engine") or "kokoro").lower()
+    voice_id = str(payload.get("voiceId") or payload.get("voice") or "").strip()
+    if not voice_id:
+        raise PlaygroundError("Field 'voiceId' is required.", status=400)
+    language = str(payload.get("language") or "en-us").lower()
+    force = bool(payload.get("force"))
+
+    engine, available = resolve_engine(engine_id)
+    if not available:
+        raise PlaygroundError(f"TTS engine '{engine_id}' is not available.", status=503)
+
+    if engine["id"] != "kokoro":
+        raise PlaygroundError("Preview generation is currently supported for Kokoro only.", status=400)
+
+    path = _get_or_create_kokoro_preview(voice_id, language, force=force)
+    rel = path.relative_to(OUTPUT_DIR)
+    return jsonify({
+        "engine": engine["id"],
+        "voice": voice_id,
+        "language": language,
+        "preview_url": f"/audio/{rel.as_posix()}",
+    })
 
 
 @api.route("/chattts/presets", methods=["POST"])
