@@ -138,7 +138,7 @@ function App() {
   const [engineId, setEngineId] = useLocalStorage('kokoro:engine', DEFAULT_ENGINE);
   const [uiFavorites, setUiFavorites] = useLocalStorage<string[]>('kokoro:uiVoiceFavorites', []);
   const [previewBusy, setPreviewBusy] = useState<string[]>([]);
-  const [activePanel, setActivePanel] = useLocalStorage<'script' | 'voices' | 'controls' | 'results'>('kokoro:activePanel', 'script');
+  const [activePanel, setActivePanel] = useLocalStorage<'script' | 'voices' | 'controls' | 'results'>('kokoro:activePanel', 'controls');
   const metaQuery = useQuery({ queryKey: ['meta'], queryFn: fetchMeta, staleTime: 5 * 60 * 1000 });
   const voicesQuery = useQuery({
     queryKey: ['voices', engineId],

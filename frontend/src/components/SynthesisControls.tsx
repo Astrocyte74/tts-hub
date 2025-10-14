@@ -79,7 +79,7 @@ export function SynthesisControls({
   return (
     <section className="panel">
       <header className="panel__header">
-        <h2 className="panel__title">Settings</h2>
+        <h2 className="panel__title">Text‑to‑Speech Engine (TTS Engine)</h2>
       </header>
       <div className="field">
         <span className="field__label">TTS Engine</span>
