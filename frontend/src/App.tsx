@@ -1075,6 +1075,8 @@ function App() {
         voices={voices}
         selectedVoiceIds={selectedVoices}
         results={results}
+        queueRunning={queue.filter((q) => q.status === 'pending' || q.status === 'rendering').length}
+        queueTotal={queue.length}
         ollamaAvailable={ollamaAvailable}
         isResultsOpen={isResultsDrawerOpen}
         canGenerate={canSynthesize}

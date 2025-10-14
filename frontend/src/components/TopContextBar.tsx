@@ -7,6 +7,8 @@ interface TopContextBarProps {
   voices: VoiceProfile[];
   selectedVoiceIds: string[];
   results: SynthesisResult[];
+  queueRunning?: number;
+  queueTotal?: number;
   ollamaAvailable?: boolean;
   isResultsOpen?: boolean;
   canGenerate?: boolean;
@@ -41,6 +43,8 @@ export function TopContextBar({
   voices,
   selectedVoiceIds,
   results,
+  queueRunning = 0,
+  queueTotal = 0,
   ollamaAvailable = false,
   isResultsOpen = false,
   canGenerate = true,
@@ -54,6 +58,7 @@ export function TopContextBar({
   const clipsCount = results.length;
   const statusLabel = engineReady ? 'Ready' : engineStatus || 'Not ready';
   const queueLabel = clipsCount === 1 ? '1 clip' : `${clipsCount} clips`;
+  const hasRunning = queueRunning > 0;
 
   return (
     <header className="topbar" role="banner" aria-label="Session context">
@@ -87,6 +92,11 @@ export function TopContextBar({
         >
           <span className="topbar__chip-label">Clips</span>
           <span className="topbar__chip-value">{queueLabel}</span>
+          {queueTotal > 0 ? (
+            <span className="topbar__badge" title={`${queueTotal} in queue`} aria-label={`${queueTotal} in queue`}>
+              {hasRunning ? `${queueRunning}/${queueTotal}` : `${queueTotal}`}
+            </span>
+          ) : null}
         </button>
         <span className={`topbar__status ${engineReady ? 'topbar__status--ok' : 'topbar__status--warn'}`} role="status">
           <span className="topbar__status-dot" aria-hidden />
