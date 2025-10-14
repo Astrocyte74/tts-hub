@@ -285,8 +285,9 @@ export function VoiceSelector({
   return (
     <section className="panel">
       <header className="panel__header">
-        <div>
+        <div className="panel__heading">
           <h2 className="panel__title">Voices</h2>
+          <span className="panel__crumb" aria-label="Step 3: Voice">3 VOICE</span>
           <p className="panel__subtitle">
             {engineLabel} · {voices.length} available
           </p>
