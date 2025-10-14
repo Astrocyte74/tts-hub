@@ -206,24 +206,24 @@ export function VoiceSelector({
 
   // Hover preview (best-effort) — attempts to find a preview URL in raw data
   const findPreviewUrl = (voice: VoiceProfile): string | null => {
-    const raw = voice.raw as Record<string, unknown>;
-    const candidates = [
-      'sample_url',
-      'sample',
-      'preview_url',
-      'preview',
-      'audio_url',
-      'audio',
-      'demo_url',
-      'demo',
-    ];
-    for (const key of candidates) {
-      const v = raw && typeof raw[key] === 'string' ? String(raw[key]) : '';
-      if (v) {
-        if (/^https?:\/\//i.test(v) || v.startsWith('/')) return v;
-        return `/audio/${v}`;
+    const candidates = ['sample_url','sample','preview_url','preview','audio_url','audio','demo_url','demo'];
+    const tryObject = (obj: unknown): string | null => {
+      if (!obj || typeof obj !== 'object') return null;
+      const rec = obj as Record<string, unknown>;
+      for (const key of candidates) {
+        const v = typeof rec[key] === 'string' ? String(rec[key]) : '';
+        if (v) return (/^https?:\/\//i.test(v) || v.startsWith('/')) ? v : `/audio/${v}`;
       }
-    }
+      return null;
+    };
+    // 1) raw at top-level (e.g., openvoice payloads)
+    const raw = voice.raw as Record<string, unknown>;
+    const direct = tryObject(raw);
+    if (direct) return direct;
+    // 2) nested raw field (e.g., kokoro server attaches preview under raw.preview_url)
+    const nested = raw && typeof raw['raw'] === 'object' ? (raw['raw'] as Record<string, unknown>) : null;
+    const nestedHit = tryObject(nested);
+    if (nestedHit) return nestedHit;
     return null;
   };
 
