@@ -455,6 +455,27 @@ function App() {
     }
   }, [categories, randomCategory, setRandomCategory]);
 
+  // Queue housekeeping: prune finished items after a short delay so Queue stays focused
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setQueue((prev) => {
+        const now = Date.now();
+        return prev.filter((it) => {
+          if ((it.status === 'pending') || (it.status === 'rendering')) return true;
+          if (it.status === 'done' && it.finishedAt) {
+            const finished = new Date(it.finishedAt).getTime();
+            // Keep around for 10s, then prune
+            return now - finished < 10_000;
+          }
+          // Retain errors for visibility
+          if (it.status === 'error') return true;
+          return false;
+        });
+      });
+    }, 4_000);
+    return () => window.clearInterval(interval);
+  }, [setQueue]);
+
   useEffect(() => {
     if (!voices.length || !selectedVoices.length) {
       return;
