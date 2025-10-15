@@ -283,6 +283,11 @@ function App() {
         engine: String(p['engine'] ?? ''),
         voiceId: String(p['voiceId'] ?? ''),
         notes: typeof p['notes'] === 'string' ? (p['notes'] as string) : undefined,
+        language: typeof p['language'] === 'string' ? (p['language'] as string) : undefined,
+        speed: typeof p['speed'] === 'number' ? (p['speed'] as number) : undefined,
+        trimSilence: typeof p['trimSilence'] === 'boolean' ? (p['trimSilence'] as boolean) : undefined,
+        style: typeof p['style'] === 'string' ? (p['style'] as string) : undefined,
+        seed: typeof p['seed'] === 'number' ? (p['seed'] as number) : undefined,
       }))
       .filter((p) => p.id && p.label && p.engine && p.voiceId)
       .slice(0, 5);

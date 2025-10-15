@@ -30,7 +30,18 @@ interface TopContextBarProps {
   quickFavorites?: { id: string; label: string }[];
   quickRecents?: { id: string; label: string }[];
   onQuickSelectVoice?: (id: string) => void;
-  quickProfiles?: { id: string; label: string; engine: string; voiceId: string; notes?: string }[];
+  quickProfiles?: {
+    id: string;
+    label: string;
+    engine: string;
+    voiceId: string;
+    notes?: string;
+    language?: string;
+    speed?: number;
+    trimSilence?: boolean;
+    style?: string; // openvoice only
+    seed?: number;  // chattts only
+  }[];
   onQuickSelectProfile?: (profile: { id: string; engine: string; voiceId: string }) => void;
   onEditFavorite?: (id: string) => void;
   onDeleteFavorite?: (id: string) => void;
@@ -253,11 +264,37 @@ export function TopContextBar({
                       <button
                         className="popover__button"
                         type="button"
-                        title={(p.notes && p.notes.trim()) ? p.notes : `${p.engine} · ${p.voiceId}`}
+                        title={(() => {
+                          const chips: string[] = [];
+                          if (p.language) chips.push(p.language);
+                          if (typeof p.speed === 'number') chips.push(`${p.speed.toFixed(2)}×`);
+                          if (p.trimSilence) chips.push('trim');
+                          if (p.engine === 'openvoice' && p.style) chips.push(`style:${p.style}`);
+                          if (p.engine === 'chattts' && typeof p.seed === 'number') chips.push(`seed:${p.seed}`);
+                          const meta = chips.length ? ` · ${chips.join(' · ')}` : '';
+                          const base = `${p.engine} · ${p.voiceId}`;
+                          const note = (p.notes && p.notes.trim()) ? ` — ${p.notes.trim()}` : '';
+                          return `${base}${meta}${note}`;
+                        })()}
                         onClick={() => { onQuickSelectProfile && onQuickSelectProfile({ id: p.id, engine: p.engine, voiceId: p.voiceId }); setVoiceMenuOpen(false); }}
                       >
                         {p.label}
                       </button>
+                      {(() => {
+                        const chips: string[] = [];
+                        if (p.language) chips.push(p.language);
+                        if (typeof p.speed === 'number') chips.push(`${p.speed.toFixed(2)}×`);
+                        if (p.trimSilence) chips.push('trim');
+                        if (p.engine === 'openvoice' && p.style) chips.push(p.style);
+                        if (p.engine === 'chattts' && typeof p.seed === 'number') chips.push(`seed ${p.seed}`);
+                        return chips.length ? (
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }} aria-hidden>
+                            {chips.map((c, idx) => (
+                              <span key={`${p.id}-chip-${idx}`} className="facet-chip facet-chip--mini">{c}</span>
+                            ))}
+                          </div>
+                        ) : null;
+                      })()}
                       <div style={{ display: 'flex', gap: 6 }}>
                         {onEditFavorite ? (
                           <button className="popover__button" type="button" title="Edit favorite" onClick={(e) => { e.stopPropagation(); onEditFavorite(p.id); setVoiceMenuOpen(false); }}>✎</button>
