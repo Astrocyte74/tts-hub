@@ -33,13 +33,14 @@ This document orients future agents working on the CodexB branch so you can ship
 
 TopContextBar
 - Props: `activePanel: 'script'|'controls'|'voices'|'results'`, `onChangePanel(panel)`, `onEngineClick()`, `isGenerating`, `onQuickGenerate()`, `quickFavorites`, `quickRecents`, `onQuickSelectVoice(id)`, `onOpenSettings()`, `onToggleResults()`.
-- Behavior: CTA is always rendered (disabled until ready). Engine popover removed; the Engine chip navigates to Controls. Voice chip shows a caret when quick menu (Favorites/Recent) is available; selection returns to Script.
+- Quick select: Voice chip caret opens a popover with Favorites entries (Edit ✎ / Delete 🗑 / Manage). Internal click handling keeps the popover open while interacting with buttons.
 
 VoiceSelector
 - Prop: `enableHoverPreview?: boolean` (default: true). When false, disables both hover and focus previews; explicit Preview button still works.
+- Favorites: compact, collapsible list (persisted) with Preview/Edit/Unstar. Shows param summary (language · speed× · trim) and notes preview tooltip.
 
 SettingsPopover
-- Props include `hoverPreview` + `onHoverPreviewChange`, `autoOpenClips` + `onAutoOpenClipsChange`, plus existing `trimSilence`/`autoPlay`/`speed` controls.
+- Props include `hoverPreview` + `onHoverPreviewChange`, `autoOpenClips` + `onAutoOpenClipsChange`, plus existing `trimSilence`/`autoPlay`/`speed` controls. (Import/Export moved to Favorites Manager.)
 
 ResultsDrawer
 - Tabs: Queue shows only active items (pending/rendering) with live count; Clips shows completed items.
@@ -50,11 +51,10 @@ Mode-first Workflow
 - Segments order/labels: Script → Engine → Voice → Clips. Script is first segment; Engine second; Voice third. “History” is renamed to “Clips”.
 
 ## Data & State
-- API access via `src/api/client.ts`. `VITE_API_BASE_URL` and `VITE_API_PREFIX` govern API origin/prefix.
+- API access via `src/api/client.ts`. `VITE_API_BASE_URL` and `VITE_API_PREFIX` govern API origin/prefix. Favorites persist via `/favorites`; `/synthesise` accepts `favoriteId`/`favoriteSlug`.
 - Async state: React Query (`useQuery`/`useMutation`).
-- Persistence: `useLocalStorage` for settings, `useSessionStorage` for queue/history.
+- Persistence: `useLocalStorage` for settings (e.g., `kokoro:favoritesCollapsed`), `useSessionStorage` for queue/history.
 - Settings keys: `kokoro:hoverPreview` (default true), `kokoro:autoOpenClips` (default true), `kokoro:activePanel` (initial `'controls'`).
-- Scope: localStorage per browser profile.
 - Queue items are `{ id, label, engine, status, progress?, startedAt?, finishedAt?, error? }`.
 
 ## Preview Generation (Phase 3)

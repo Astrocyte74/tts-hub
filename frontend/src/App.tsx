@@ -323,6 +323,45 @@ function App() {
     };
   }, [editingFavoriteId, profilesQuery.data]);
 
+  const favoritesNotesByVoiceMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    const list = (profilesQuery.data ?? []) as Record<string, unknown>[];
+    list.forEach((p) => {
+      if (String(p['engine'] ?? '') !== engineId) return;
+      const vid = String(p['voiceId'] ?? '');
+      const n = typeof p['notes'] === 'string' ? (p['notes'] as string) : '';
+      if (vid && n) map[vid] = n;
+    });
+    return map;
+  }, [profilesQuery.data, engineId]);
+
+  const favoritesMetaByVoiceMap = useMemo(() => {
+    const map: Record<string, { language?: string; speed?: number; trimSilence?: boolean }> = {};
+    const list = (profilesQuery.data ?? []) as Record<string, unknown>[];
+    list.forEach((p) => {
+      if (String(p['engine'] ?? '') !== engineId) return;
+      const vid = String(p['voiceId'] ?? '');
+      if (!vid) return;
+      map[vid] = {
+        language: typeof p['language'] === 'string' ? (p['language'] as string) : undefined,
+        speed: typeof p['speed'] === 'number' ? (p['speed'] as number) : undefined,
+        trimSilence: typeof p['trimSilence'] === 'boolean' ? (p['trimSilence'] as boolean) : undefined,
+      };
+    });
+    return map;
+  }, [profilesQuery.data, engineId]);
+
+  const favoritesForManager = useMemo(() => {
+    const list = (profilesQuery.data ?? []) as Record<string, unknown>[];
+    return list.map((p) => ({
+      id: String(p['id']),
+      label: String(p['label'] ?? ''),
+      engine: String(p['engine'] ?? ''),
+      voiceId: String(p['voiceId'] ?? ''),
+      notes: typeof p['notes'] === 'string' ? (p['notes'] as string) : undefined,
+    }));
+  }, [profilesQuery.data]);
+
   // Defer definition until after backendReady is computed below
   // star/unstar handles saving favorites
 
@@ -1466,32 +1505,8 @@ function App() {
               onVoiceStyleChange={engineId === 'openvoice' ? handleOpenvoiceVoiceStyleChange : undefined}
             onOpenvoiceInstructions={engineId === 'openvoice' ? () => setOpenvoiceHelpOpen(true) : undefined}
             favorites={starredVoiceIds}
-            favoritesNotesByVoice={useMemo(() => {
-              const map: Record<string, string> = {};
-              const list = (profilesQuery.data ?? []) as Record<string, unknown>[];
-              list.forEach((p) => {
-                if (String(p['engine'] ?? '') !== engineId) return;
-                const vid = String(p['voiceId'] ?? '');
-                const n = typeof p['notes'] === 'string' ? (p['notes'] as string) : '';
-                if (vid && n) map[vid] = n;
-              });
-              return map;
-            }, [profilesQuery.data, engineId])}
-            favoritesMetaByVoice={useMemo(() => {
-              const map: Record<string, { language?: string; speed?: number; trimSilence?: boolean }> = {};
-              const list = (profilesQuery.data ?? []) as Record<string, unknown>[];
-              list.forEach((p) => {
-                if (String(p['engine'] ?? '') !== engineId) return;
-                const vid = String(p['voiceId'] ?? '');
-                if (!vid) return;
-                map[vid] = {
-                  language: typeof p['language'] === 'string' ? (p['language'] as string) : undefined,
-                  speed: typeof p['speed'] === 'number' ? (p['speed'] as number) : undefined,
-                  trimSilence: typeof p['trimSilence'] === 'boolean' ? (p['trimSilence'] as boolean) : undefined,
-                };
-              });
-              return map;
-            }, [profilesQuery.data, engineId])}
+            favoritesNotesByVoice={favoritesNotesByVoiceMap}
+            favoritesMetaByVoice={favoritesMetaByVoiceMap}
             onToggleFavorite={async (voiceId) => {
               setError(null);
               try {
@@ -1622,10 +1637,7 @@ function App() {
       />
       <FavoritesManagerDialog
         isOpen={isFavoritesManagerOpen}
-        favorites={useMemo(() => {
-          const list = (profilesQuery.data ?? []) as Record<string, unknown>[];
-          return list.map((p) => ({ id: String(p['id']), label: String(p['label'] ?? ''), engine: String(p['engine'] ?? ''), voiceId: String(p['voiceId'] ?? ''), notes: typeof p['notes'] === 'string' ? (p['notes'] as string) : undefined }));
-        }, [profilesQuery.data])}
+        favorites={favoritesForManager}
         onClose={() => setFavoritesManagerOpen(false)}
         onEdit={(id) => setEditingFavoriteId(id)}
         onDelete={async (id) => { try { await deleteFavorite(id); profilesQuery.refetch(); } catch (err) { setError(err instanceof Error ? err.message : 'Delete failed'); } }}
