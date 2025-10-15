@@ -358,6 +358,27 @@ export async function importProfiles(payload: Record<string, unknown>): Promise<
   return postJson<{ imported: number; mode: string }>('favorites/import', payload);
 }
 
+export async function updateFavorite(id: string, patch: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetch(buildUrl(`favorites/${encodeURIComponent(id)}`), {
+    method: 'PATCH',
+    headers: jsonHeaders,
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`PATCH favorites/${id} failed (${res.status}): ${text}`);
+  }
+  return res.json() as Promise<Record<string, unknown>>;
+}
+
+export async function deleteFavorite(id: string): Promise<void> {
+  const res = await fetch(buildUrl(`favorites/${encodeURIComponent(id)}`), { method: 'DELETE' });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`DELETE favorites/${id} failed (${res.status}): ${text}`);
+  }
+}
+
 function synthesiseResultFromResponse(
   response: SynthesisResponseShape,
   fallbackVoice: string,

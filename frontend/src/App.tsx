@@ -4,6 +4,7 @@ import './App.css';
 import { VoiceSelector } from './components/VoiceSelector';
 import { TextWorkbench } from './components/TextWorkbench';
 import { SynthesisControls } from './components/SynthesisControls';
+import { EditFavoriteDialog } from './components/EditFavoriteDialog';
 import { AnnouncerControls } from './components/AnnouncerControls';
 import { SynthesisActions } from './components/SynthesisActions';
 import { AudioResultList } from './components/AudioResultList';
@@ -30,6 +31,8 @@ import {
   listProfiles,
   exportProfiles,
   importProfiles,
+  updateFavorite,
+  deleteFavorite,
 } from './api/client';
 import type {
   KokoroFavorite,
@@ -279,10 +282,46 @@ function App() {
         label: String(p['label'] ?? ''),
         engine: String(p['engine'] ?? ''),
         voiceId: String(p['voiceId'] ?? ''),
+        notes: typeof p['notes'] === 'string' ? (p['notes'] as string) : undefined,
       }))
       .filter((p) => p.id && p.label && p.engine && p.voiceId)
       .slice(0, 5);
   }, [profilesQuery.data]);
+
+  const starredVoiceIds = useMemo(() => {
+    const list = (profilesQuery.data ?? []) as Record<string, unknown>[];
+    return list.filter((p) => String(p['engine'] ?? '') === engineId).map((p) => String(p['voiceId'] ?? '')).filter(Boolean);
+  }, [profilesQuery.data, engineId]);
+
+  const getFavoriteByVoice = (voiceId: string): { id: string } | null => {
+    const list = (profilesQuery.data ?? []) as Record<string, unknown>[];
+    for (const p of list) {
+      if (String(p['engine'] ?? '') === engineId && String(p['voiceId'] ?? '') === voiceId) {
+        return { id: String(p['id']) };
+      }
+    }
+    return null;
+  };
+
+  const [editingFavoriteId, setEditingFavoriteId] = useState<string | null>(null);
+  const editingFavorite = useMemo(() => {
+    if (!editingFavoriteId) return null;
+    const list = (profilesQuery.data ?? []) as Record<string, unknown>[];
+    const p = list.find((x) => String(x['id']) === editingFavoriteId);
+    if (!p) return null;
+    return {
+      id: String(p['id']),
+      label: String(p['label'] ?? ''),
+      engine: String(p['engine'] ?? ''),
+      voiceId: String(p['voiceId'] ?? ''),
+      language: typeof p['language'] === 'string' ? (p['language'] as string) : undefined,
+      speed: typeof p['speed'] === 'number' ? (p['speed'] as number) : undefined,
+      trimSilence: typeof p['trimSilence'] === 'boolean' ? (p['trimSilence'] as boolean) : undefined,
+      style: typeof p['style'] === 'string' ? (p['style'] as string) : undefined,
+      seed: typeof p['seed'] === 'number' ? (p['seed'] as number) : undefined,
+      notes: typeof p['notes'] === 'string' ? (p['notes'] as string) : undefined,
+    };
+  }, [editingFavoriteId, profilesQuery.data]);
 
   // Defer definition until after backendReady is computed below
   let canSaveProfile = false as boolean;
@@ -1316,6 +1355,7 @@ function App() {
           }
           setActivePanel('script');
         }}
+        onEditFavorite={(id) => setEditingFavoriteId(id)}
         engines={engineList.map((engine) => ({ id: engine.id, label: engine.label, available: engine.available, status: engine.status }))}
         onEngineChange={(id) => setEngineId(id)}
         activePanel={activePanel}
@@ -1453,9 +1493,36 @@ function App() {
               styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
               onVoiceStyleChange={engineId === 'openvoice' ? handleOpenvoiceVoiceStyleChange : undefined}
             onOpenvoiceInstructions={engineId === 'openvoice' ? () => setOpenvoiceHelpOpen(true) : undefined}
-            favorites={uiFavorites}
-            onToggleFavorite={(voiceId) => {
-              setUiFavorites((prev) => (prev.includes(voiceId) ? prev.filter((v) => v !== voiceId) : [...prev, voiceId]));
+            favorites={starredVoiceIds}
+            onToggleFavorite={async (voiceId) => {
+              setError(null);
+              try {
+                const existing = getFavoriteByVoice(voiceId);
+                if (existing) {
+                  await deleteFavorite(existing.id);
+                } else {
+                  const voiceLabel = voiceById.get(voiceId)?.label ?? voiceId;
+                  const payload: Record<string, unknown> = {
+                    label: `Favorite · ${voiceLabel}`,
+                    engine: engineId,
+                    voiceId,
+                    language: normaliseLanguage(language),
+                    speed: Number(speed),
+                    trimSilence: Boolean(trimSilence),
+                    tags: ['star'],
+                    meta: { source: 'star' },
+                  };
+                  if (engineId === 'openvoice') payload['style'] = openvoiceVoiceStyles[voiceId] ?? openvoiceStyle ?? 'default';
+                  if (engineId === 'chattts' && chatttsSeed && chatttsSeed.trim()) {
+                    const parsed = Number(chatttsSeed.trim());
+                    if (!Number.isNaN(parsed) && Number.isFinite(parsed)) payload['seed'] = Math.floor(parsed);
+                  }
+                  await createProfile(payload);
+                }
+                profilesQuery.refetch();
+              } catch (err) {
+                setError(err instanceof Error ? err.message : 'Failed to update favorite.');
+              }
             }}
             onGeneratePreview={engineId === 'kokoro' ? async (voiceId) => {
                 try {
@@ -1573,6 +1640,19 @@ function App() {
             profilesQuery.refetch();
           } catch (err) {
             console.error('Import profiles failed', err);
+          }
+        }}
+      />
+      <EditFavoriteDialog
+        isOpen={Boolean(editingFavorite)}
+        onClose={() => setEditingFavoriteId(null)}
+        favorite={editingFavorite}
+        onSave={async (patch) => {
+          try {
+            await updateFavorite(patch.id, patch as any);
+            profilesQuery.refetch();
+          } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to save favorite');
           }
         }}
       />

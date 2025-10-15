@@ -32,8 +32,9 @@ interface TopContextBarProps {
   quickFavorites?: { id: string; label: string }[];
   quickRecents?: { id: string; label: string }[];
   onQuickSelectVoice?: (id: string) => void;
-  quickProfiles?: { id: string; label: string; engine: string; voiceId: string }[];
+  quickProfiles?: { id: string; label: string; engine: string; voiceId: string; notes?: string }[];
   onQuickSelectProfile?: (profile: { id: string; engine: string; voiceId: string }) => void;
+  onEditFavorite?: (id: string) => void;
 }
 
 function formatVoiceSummary(voices: VoiceProfile[], selectedVoiceIds: string[]) {
@@ -83,6 +84,7 @@ export function TopContextBar({
   onQuickSelectVoice,
   quickProfiles = [],
   onQuickSelectProfile,
+  onEditFavorite,
 }: TopContextBarProps) {
   const voiceSummary = formatVoiceSummary(voices, selectedVoiceIds);
   const clipsCount = results.length;
@@ -252,15 +254,19 @@ export function TopContextBar({
                 <div>
                   <strong>Favorites</strong>
                   {quickProfiles.map((p) => (
-                    <button
-                      key={`prof-${p.id}`}
-                      className="popover__button"
-                      type="button"
-                      title={`${p.engine} · ${p.voiceId}`}
-                      onClick={() => { onQuickSelectProfile && onQuickSelectProfile({ id: p.id, engine: p.engine, voiceId: p.voiceId }); setVoiceMenuOpen(false); }}
-                    >
-                      {p.label}
-                    </button>
+                    <div key={`prof-${p.id}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <button
+                        className="popover__button"
+                        type="button"
+                        title={(p.notes && p.notes.trim()) ? p.notes : `${p.engine} · ${p.voiceId}`}
+                        onClick={() => { onQuickSelectProfile && onQuickSelectProfile({ id: p.id, engine: p.engine, voiceId: p.voiceId }); setVoiceMenuOpen(false); }}
+                      >
+                        {p.label}
+                      </button>
+                      {onEditFavorite ? (
+                        <button className="popover__button" type="button" title="Edit favorite" onClick={() => { onEditFavorite(p.id); setVoiceMenuOpen(false); }}>✎</button>
+                      ) : null}
+                    </div>
                   ))}
                 </div>
               ) : null}
