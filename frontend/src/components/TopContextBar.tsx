@@ -35,6 +35,8 @@ interface TopContextBarProps {
   quickProfiles?: { id: string; label: string; engine: string; voiceId: string; notes?: string }[];
   onQuickSelectProfile?: (profile: { id: string; engine: string; voiceId: string }) => void;
   onEditFavorite?: (id: string) => void;
+  onDeleteFavorite?: (id: string) => void;
+  onOpenFavoritesManager?: () => void;
 }
 
 function formatVoiceSummary(voices: VoiceProfile[], selectedVoiceIds: string[]) {
@@ -85,6 +87,8 @@ export function TopContextBar({
   quickProfiles = [],
   onQuickSelectProfile,
   onEditFavorite,
+  onDeleteFavorite,
+  onOpenFavoritesManager,
 }: TopContextBarProps) {
   const voiceSummary = formatVoiceSummary(voices, selectedVoiceIds);
   const clipsCount = results.length;
@@ -263,11 +267,21 @@ export function TopContextBar({
                       >
                         {p.label}
                       </button>
-                      {onEditFavorite ? (
-                        <button className="popover__button" type="button" title="Edit favorite" onClick={() => { onEditFavorite(p.id); setVoiceMenuOpen(false); }}>✎</button>
-                      ) : null}
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {onEditFavorite ? (
+                          <button className="popover__button" type="button" title="Edit favorite" onClick={(e) => { e.stopPropagation(); onEditFavorite(p.id); setVoiceMenuOpen(false); }}>✎</button>
+                        ) : null}
+                        {onDeleteFavorite ? (
+                          <button className="popover__button" type="button" title="Delete favorite" onClick={(e) => { e.stopPropagation(); onDeleteFavorite(p.id); setVoiceMenuOpen(false); }}>🗑</button>
+                        ) : null}
+                      </div>
                     </div>
                   ))}
+                  {onOpenFavoritesManager ? (
+                    <div style={{ marginTop: 8 }}>
+                      <button className="popover__button" type="button" onClick={() => { onOpenFavoritesManager(); setVoiceMenuOpen(false); }}>Manage Favorites…</button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               {quickFavorites.length > 0 ? (

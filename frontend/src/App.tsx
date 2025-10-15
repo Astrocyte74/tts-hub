@@ -1356,6 +1356,8 @@ function App() {
           setActivePanel('script');
         }}
         onEditFavorite={(id) => setEditingFavoriteId(id)}
+        onDeleteFavorite={async (id) => { try { await deleteFavorite(id); profilesQuery.refetch(); } catch (err) { setError(err instanceof Error ? err.message : 'Delete failed'); } }}
+        onOpenFavoritesManager={() => setFavoritesManagerOpen(true)}
         engines={engineList.map((engine) => ({ id: engine.id, label: engine.label, available: engine.available, status: engine.status }))}
         onEngineChange={(id) => setEngineId(id)}
         activePanel={activePanel}
@@ -1657,6 +1659,31 @@ function App() {
             console.error('Import profiles failed', err);
           }
         }}
+      />
+      <FavoritesManagerDialog
+        isOpen={isFavoritesManagerOpen}
+        favorites={useMemo(() => {
+          const list = (profilesQuery.data ?? []) as Record<string, unknown>[];
+          return list.map((p) => ({ id: String(p['id']), label: String(p['label'] ?? ''), engine: String(p['engine'] ?? ''), voiceId: String(p['voiceId'] ?? ''), notes: typeof p['notes'] === 'string' ? (p['notes'] as string) : undefined }));
+        }, [profilesQuery.data])}
+        onClose={() => setFavoritesManagerOpen(false)}
+        onEdit={(id) => setEditingFavoriteId(id)}
+        onDelete={async (id) => { try { await deleteFavorite(id); profilesQuery.refetch(); } catch (err) { setError(err instanceof Error ? err.message : 'Delete failed'); } }}
+        onExport={async () => {
+          try {
+            const data = await exportProfiles();
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'kokoro-favorites.json';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+          } catch {}
+        }}
+        onImport={async (data) => { try { await importProfiles({ ...(data as any), mode: 'merge' }); profilesQuery.refetch(); } catch {} }}
       />
       <EditFavoriteDialog
         isOpen={Boolean(editingFavorite)}
