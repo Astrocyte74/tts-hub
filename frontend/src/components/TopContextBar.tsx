@@ -264,7 +264,7 @@ export function TopContextBar({
                 <div>
                   <strong>Favorites</strong>
                   {quickProfiles.map((p) => (
-                    <div key={`prof-${p.id}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <div key={`prof-${p.id}`} className="popover__item">
                       <button
                         className="popover__button"
                         type="button"

@@ -1206,7 +1206,10 @@ textarea:focus-visible {
 .popover__content { display: flex; flex-direction: column; gap: 10px; }
 .popover__row { display: block; }
 .popover__footer { display: flex; justify-content: flex-end; margin-top: 8px; }
-.popover__button { border: 1px solid rgba(148,163,184,.35); background: rgba(30,41,59,.7); color: #e2e8f0; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+.popover__button { border: 1px solid rgba(148,163,184,.35); background: rgba(30,41,59,.7); color: #e2e8f0; border-radius: 8px; padding: 8px 12px; cursor: pointer; transition: background .15s ease, border-color .15s ease, transform .12s ease; }
+.popover__button:hover { background: rgba(59,130,246,.22); border-color: rgba(148,163,184,.55); transform: translateY(-1px); }
+.popover__item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px; border-radius: 10px; transition: background .15s ease; }
+.popover__item:hover { background: rgba(148,163,184,.12); }
 
 .result-card {
   display: flex;
