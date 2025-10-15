@@ -13,8 +13,6 @@ interface SettingsPopoverProps {
   onAutoOpenClipsChange?: (value: boolean) => void;
   recentCount?: number;
   onClearRecents?: () => void;
-  onExportProfiles?: () => void;
-  onImportProfiles?: (data: unknown) => void;
 }
 
 export function SettingsPopover({
@@ -32,8 +30,6 @@ export function SettingsPopover({
   onAutoOpenClipsChange,
   recentCount = 0,
   onClearRecents,
-  onExportProfiles,
-  onImportProfiles,
 }: SettingsPopoverProps) {
   if (!open) return null;
   return (
@@ -91,38 +87,7 @@ export function SettingsPopover({
               </div>
             </div>
           ) : null}
-          {(onExportProfiles || onImportProfiles) ? (
-            <div className="popover__row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <span>Profiles</span>
-              <div>
-                {onExportProfiles ? (
-                  <button className="popover__button" type="button" onClick={onExportProfiles}>
-                    Export
-                  </button>
-                ) : null}
-                {onImportProfiles ? (
-                  <>
-                    <input id="profiles-import" type="file" accept="application/json" style={{ display: 'none' }} onChange={async (e) => {
-                      const file = e.target.files && e.target.files[0];
-                      if (!file) return;
-                      try {
-                        const text = await file.text();
-                        const data = JSON.parse(text);
-                        onImportProfiles(data);
-                      } catch (_err) {
-                        // ignore parse errors, surface elsewhere if needed
-                      } finally {
-                        (e.target as HTMLInputElement).value = '';
-                      }
-                    }} />
-                    <button className="popover__button" type="button" onClick={() => document.getElementById('profiles-import')?.click()}>
-                      Import
-                    </button>
-                  </>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
+          
           <div className="popover__row">
             <label className="field">
               <span className="field__label">

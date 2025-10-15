@@ -324,35 +324,7 @@ function App() {
   }, [editingFavoriteId, profilesQuery.data]);
 
   // Defer definition until after backendReady is computed below
-  let canSaveProfile = false as boolean;
-  const handleSaveProfileQuick = async () => {
-    try {
-      if (!canSaveProfile) return;
-      const voiceId = selectedVoices[0];
-      const voiceLabel = voiceById.get(voiceId)?.label ?? voiceId;
-      const base: Record<string, unknown> = {
-        label: `Profile · ${voiceLabel}`,
-        engine: engineId,
-        voiceId,
-        language: normaliseLanguage(language),
-        speed: Number(speed),
-        trimSilence: Boolean(trimSilence),
-        tags: ['ui'],
-        meta: { source: 'topbar' },
-      };
-      if (engineId === 'openvoice') {
-        base['style'] = openvoiceVoiceStyles[voiceId] ?? openvoiceStyle ?? 'default';
-      }
-      if (engineId === 'chattts' && chatttsSeed && chatttsSeed.trim()) {
-        const parsed = Number(chatttsSeed.trim());
-        if (!Number.isNaN(parsed) && Number.isFinite(parsed)) base['seed'] = Math.floor(parsed);
-      }
-      await createProfile(base);
-      profilesQuery.refetch();
-    } catch (err) {
-      console.error('Save profile failed', err);
-    }
-  };
+  // star/unstar handles saving favorites
 
   useEffect(() => {
     if (engineId !== 'kokoro') {
@@ -397,7 +369,7 @@ function App() {
   const ollamaAvailable = metaQuery.data?.ollama_available ?? false;
   const kokoroReady = metaQuery.data ? metaQuery.data.has_model && metaQuery.data.has_voices : true;
   const backendReady = engineId === 'kokoro' ? engineAvailable && kokoroReady : engineAvailable;
-  canSaveProfile = useMemo(() => backendReady && selectedVoices.length === 1 && Boolean(text.trim()), [backendReady, selectedVoices.length, text]);
+  // removed quick save enablement
   const engineStatus = selectedEngine?.status ?? null;
 
   const applyOpenvoiceStyle = (style: string, options: { updateOverrides?: boolean } = {}) => {
@@ -1321,8 +1293,6 @@ function App() {
         canGenerate={canSynthesize}
         isGenerating={synthMutation.isPending}
         onQuickGenerate={handleSynthesize}
-        onSaveProfile={handleSaveProfileQuick}
-        canSaveProfile={canSaveProfile}
         onOpenSettings={() => setSettingsOpen(true)}
         onEngineClick={() => {
           setActivePanel('controls');
@@ -1634,31 +1604,6 @@ function App() {
         onAutoOpenClipsChange={(value) => setAutoOpenClips(Boolean(value))}
         recentCount={voiceRecents.length}
         onClearRecents={() => setVoiceRecents([])}
-        onExportProfiles={async () => {
-          try {
-            const data = await exportProfiles();
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'kokoro-profiles.json';
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
-          } catch (err) {
-            console.error('Export profiles failed', err);
-          }
-        }}
-        onImportProfiles={async (data) => {
-          try {
-            const payload = (data && typeof data === 'object') ? (data as Record<string, unknown>) : { profiles: [] };
-            await importProfiles({ ...payload, mode: 'merge' });
-            profilesQuery.refetch();
-          } catch (err) {
-            console.error('Import profiles failed', err);
-          }
-        }}
       />
       <FavoritesManagerDialog
         isOpen={isFavoritesManagerOpen}

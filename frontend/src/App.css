@@ -584,6 +584,10 @@
   cursor: pointer;
   transition: all 0.2s ease;
 }
+.modal__button:focus, .popover__button:focus {
+  outline: 2px solid rgba(59,130,246,.7);
+  outline-offset: 2px;
+}
 
 .modal__button--ghost {
   background: transparent;

@@ -79,7 +79,7 @@ export function FavoritesManagerDialog({ isOpen, favorites, onClose, onEdit, onD
               </div>
               <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
                 <button className="modal__button" onClick={() => onEdit(f.id)}>Edit</button>
-                <button className="modal__button modal__button--danger" onClick={() => onDelete(f.id)}>Delete</button>
+                <button className="modal__button modal__button--danger" onClick={() => { if (confirm(`Delete “${f.label}”?`)) onDelete(f.id); }}>Delete</button>
               </div>
             </div>
           ))}
@@ -91,4 +91,3 @@ export function FavoritesManagerDialog({ isOpen, favorites, onClose, onEdit, onD
     </div>
   );
 }
-
