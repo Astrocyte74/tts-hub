@@ -6,6 +6,7 @@ interface EditFavoriteDialogProps {
   onSave: (patch: {
     id: string;
     label: string;
+    tags?: string[];
     notes?: string;
     language?: string;
     speed?: number;
@@ -18,6 +19,7 @@ interface EditFavoriteDialogProps {
     label: string;
     engine: string;
     voiceId: string;
+    tags?: string[];
     language?: string;
     speed?: number;
     trimSilence?: boolean;
@@ -30,6 +32,7 @@ interface EditFavoriteDialogProps {
 export function EditFavoriteDialog({ isOpen, onClose, onSave, favorite }: EditFavoriteDialogProps) {
   const [label, setLabel] = useState('');
   const [notes, setNotes] = useState('');
+  const [tagsText, setTagsText] = useState('');
   const [language, setLanguage] = useState('');
   const [speed, setSpeed] = useState(1);
   const [trim, setTrim] = useState(true);
@@ -41,6 +44,7 @@ export function EditFavoriteDialog({ isOpen, onClose, onSave, favorite }: EditFa
     if (!isOpen || !favorite) return;
     setLabel(favorite.label || '');
     setNotes(favorite.notes || '');
+    setTagsText((favorite.tags || []).join(', '));
     setLanguage((favorite.language ?? 'en-us'));
     setSpeed(typeof favorite.speed === 'number' ? favorite.speed : 1);
     setTrim(favorite.trimSilence ?? true);
@@ -59,6 +63,10 @@ export function EditFavoriteDialog({ isOpen, onClose, onSave, favorite }: EditFa
         id: favorite.id,
         label: label.trim(),
         notes: notes.trim() || undefined,
+        tags: tagsText
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
         language: language.trim() || undefined,
         speed: Number(speed),
         trimSilence: Boolean(trim),
@@ -125,4 +133,3 @@ export function EditFavoriteDialog({ isOpen, onClose, onSave, favorite }: EditFa
     </div>
   );
 }
-

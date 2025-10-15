@@ -314,6 +314,7 @@ function App() {
       label: String(p['label'] ?? ''),
       engine: String(p['engine'] ?? ''),
       voiceId: String(p['voiceId'] ?? ''),
+      tags: Array.isArray(p['tags']) ? (p['tags'] as unknown[]).map((t) => String(t)).filter(Boolean) : [],
       language: typeof p['language'] === 'string' ? (p['language'] as string) : undefined,
       speed: typeof p['speed'] === 'number' ? (p['speed'] as number) : undefined,
       trimSilence: typeof p['trimSilence'] === 'boolean' ? (p['trimSilence'] as boolean) : undefined,
@@ -358,6 +359,7 @@ function App() {
       label: String(p['label'] ?? ''),
       engine: String(p['engine'] ?? ''),
       voiceId: String(p['voiceId'] ?? ''),
+      tags: Array.isArray(p['tags']) ? (p['tags'] as unknown[]).map((t) => String(t)).filter(Boolean) : [],
       notes: typeof p['notes'] === 'string' ? (p['notes'] as string) : undefined,
     }));
   }, [profilesQuery.data]);
