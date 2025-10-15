@@ -63,3 +63,27 @@ Notes
 - `/synthesise` aliases: request may include `favoriteId`/`favoriteSlug` (and legacy `profileId`/`profileSlug`) to resolve engine/voice/params; body supplies `text`.
 - All errors return JSON via `PlaygroundError` with `{ error, status }`.
 - In dev, set `VITE_API_BASE_URL` so the SPA on 5175 fetches `/audio/...` from the backend on 7860.
+
+Examples
+
+```
+# List + filter
+GET /api/favorites
+GET /api/favorites?engine=kokoro&tag=star
+
+# Create
+POST /api/favorites
+{ "label":"Promo Calm", "engine":"kokoro", "voiceId":"hf_alpha", "language":"en-us", "speed":1, "trimSilence":true, "tags":["promo"], "notes":"calm" }
+
+# Read/Update/Delete
+GET    /api/favorites/{id}
+PATCH  /api/favorites/{id}
+DELETE /api/favorites/{id}
+
+# Export/Import
+GET  /api/favorites/export
+POST /api/favorites/import { profiles[], mode?: 'merge'|'replace' }
+
+# Synthesize by favorite
+POST /api/synthesise { "text": "Hello", "favoriteSlug": "promo-calm" }
+```

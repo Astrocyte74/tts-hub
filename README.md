@@ -207,3 +207,94 @@ Enjoy the upgraded Kokoro Playground! Contributions via issues or pull requests 
   - Quick select (caret on the Voice chip) shows Favorites first with Edit/Delete/Manage actions.
   - Favorites section in Voices is collapsible and now uses a compact row layout with a quick param summary and notes preview.
   - Scripts can synthesize by Favorite: `POST /api/synthesise { text, favoriteSlug }` (aliases `favoriteId`, and existing `profileId/profileSlug` still work).
+
+### Favorites API (for other apps)
+
+The Favorites store is accessible over HTTP so scripts and other apps can read, write, and use presets.
+
+- Base URL: `http://127.0.0.1:7860/api` (configure host/port via env; see launcher)
+- Storage: `~/.kokoro/favorites.json` (override with `FAVORITES_STORE_PATH`)
+- Auth (optional): set `FAVORITES_API_KEY` to require `Authorization: Bearer <key>`
+
+Quick cURL
+
+```
+# List favorites
+curl -s http://127.0.0.1:7860/api/favorites | jq .
+
+# Filter by engine and tag
+curl -s "http://127.0.0.1:7860/api/favorites?engine=kokoro&tag=star" | jq .
+
+# Create a favorite
+curl -s -X POST -H 'Content-Type: application/json' \
+  http://127.0.0.1:7860/api/favorites \
+  -d '{
+    "label":"Promo Calm",
+    "engine":"kokoro",
+    "voiceId":"hf_alpha",
+    "language":"en-us","speed":1.0,"trimSilence":true,
+    "tags":["promo"],"notes":"calm read"
+  }' | jq .
+
+# Export / Import (merge)
+curl -s http://127.0.0.1:7860/api/favorites/export > favorites.json
+curl -s -X POST -H 'Content-Type: application/json' \
+  http://127.0.0.1:7860/api/favorites/import \
+  -d @favorites.json | jq .
+
+# Synthesize by favoriteSlug
+curl -s -X POST -H 'Content-Type: application/json' \
+  http://127.0.0.1:7860/api/synthesise \
+  -d '{"text":"Hello","favoriteSlug":"promo-calm"}' | jq .
+```
+
+JavaScript (fetch)
+
+```
+const API = 'http://127.0.0.1:7860/api';
+const headers = { 'Content-Type': 'application/json' };
+// If FAVORITES_API_KEY is set on the server:
+// headers.Authorization = `Bearer ${process.env.FAVORITES_API_KEY}`;
+
+export async function listFavorites(engine, tag) {
+  const qs = new URLSearchParams();
+  if (engine) qs.set('engine', engine);
+  if (tag) qs.set('tag', tag);
+  const res = await fetch(`${API}/favorites?${qs}`, { headers });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function synthesiseByFavoriteSlug(text, favoriteSlug) {
+  const res = await fetch(`${API}/synthesise`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ text, favoriteSlug }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+```
+
+Python (requests)
+
+```
+import os, requests
+API = 'http://127.0.0.1:7860/api'
+HEADERS = {'Content-Type': 'application/json'}
+if os.getenv('FAVORITES_API_KEY'):
+    HEADERS['Authorization'] = f"Bearer {os.getenv('FAVORITES_API_KEY')}"
+
+def list_favorites(engine=None, tag=None):
+    params = {}
+    if engine: params['engine'] = engine
+    if tag: params['tag'] = tag
+    r = requests.get(f"{API}/favorites", headers=HEADERS, params=params)
+    r.raise_for_status()
+    return r.json()
+
+def synth_by_favorite_slug(text, slug):
+    r = requests.post(f"{API}/synthesise", headers=HEADERS, json={'text': text, 'favoriteSlug': slug})
+    r.raise_for_status()
+    return r.json()
+```
