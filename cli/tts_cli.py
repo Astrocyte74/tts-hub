@@ -246,9 +246,176 @@ def cmd_import(args: argparse.Namespace) -> None:
     print(json.dumps(res, indent=2))
 
 
+def _input(prompt: str) -> str:
+    try:
+        return input(prompt)
+    except EOFError:
+        return ""
+
+
+def _prompt_choice(title: str, options: List[str], *, allow_back: bool = True) -> Optional[int]:
+    print(title)
+    for i, opt in enumerate(options, start=1):
+        print(f"  {i}. {opt}")
+    if allow_back:
+        print("  0. Back")
+    raw = _input("Select: ").strip()
+    if allow_back and raw in {"", "0"}:
+        return None
+    try:
+        idx = int(raw)
+    except Exception:
+        return None
+    if 1 <= idx <= len(options):
+        return idx - 1
+    return None
+
+
+def _pick_engine_and_tag() -> (Optional[str], Optional[str]):
+    res = list_favorites()
+    profiles = res.get("profiles", [])
+    engines = sorted({str(p.get("engine")) for p in profiles if p.get("engine")})
+    tags = sorted({t for p in profiles for t in (p.get("tags") or []) if t})
+    # Engine
+    eng = None
+    if engines:
+        idx = _prompt_choice("Engines", ["all"] + engines)
+        if idx is not None and idx > 0:
+            eng = engines[idx - 1]
+    # Tag
+    tag = None
+    if tags:
+        idx = _prompt_choice("Tags", ["all"] + tags)
+        if idx is not None and idx > 0:
+            tag = tags[idx - 1]
+    return eng, tag
+
+
+def _menu_list() -> None:
+    eng, tag = _pick_engine_and_tag()
+    res = list_favorites(engine=eng, tag=tag)
+    profiles = res.get("profiles", [])
+    if not profiles:
+        print("No favorites match.")
+        return
+    for i, p in enumerate(profiles, start=1):
+        label = p.get("label") or p.get("slug") or p.get("id")
+        engine = p.get("engine")
+        voice = p.get("voiceId")
+        tags = ",".join(p.get("tags") or [])
+        print(f"{i:2d}. {label}  [{engine} · {voice}]  tags={tags}")
+
+
+def _menu_choose() -> None:
+    eng, tag = _pick_engine_and_tag()
+    payload = list_favorites(engine=eng, tag=tag)
+    profiles = payload.get("profiles", [])
+    if not profiles:
+        print("No favorites match.")
+        return
+    profiles.sort(key=lambda p: str(p.get("label") or p.get("slug") or p.get("id")))
+    for i, p in enumerate(profiles, start=1):
+        label = p.get("label") or p.get("slug") or p.get("id")
+        engine = p.get("engine")
+        voice = p.get("voiceId")
+        tags = ",".join(p.get("tags") or [])
+        print(f"{i:2d}. {label}  [{engine} · {voice}]  tags={tags}")
+    try:
+        idx = int(_input("Select favorite #: ").strip())
+    except Exception:
+        print("Cancelled.")
+        return
+    if not (1 <= idx <= len(profiles)):
+        print("Out of range.")
+        return
+    chosen = profiles[idx - 1]
+    text = _input("Enter text to synthesise: ").strip()
+    if not text:
+        print("No text provided.")
+        return
+    res = synthesise_by_favorite(text, slug=chosen.get("slug"))
+    url = (
+        res.get("url")
+        or res.get("audio_url")
+        or res.get("path")
+        or res.get("clip")
+        or res.get("filename")
+        or res.get("file")
+    )
+    if not url:
+        print(json.dumps(res, indent=2))
+        print("No audio URL/path found in response.")
+        return
+    resolved = _resolve_audio_url(str(url))
+    print(f"Audio: {resolved}")
+    dn = _input("Download? [y/N]: ").strip().lower()
+    if dn == "y":
+        target = _input("Save as (path or folder/): ").strip() or "out/"
+        if target.endswith("/") or target.endswith(os.sep):
+            filename = os.path.basename(str(res.get("filename") or str(url).split("/")[-1]))
+            target = os.path.join(target, filename)
+        saved = download_audio(resolved, target)
+        print(f"Saved: {saved}")
+        if _input("Play now? [y/N]: ").strip().lower() == "y":
+            maybe_play(saved)
+
+
+def _menu_settings() -> None:
+    global API_BASE, API_KEY
+    print(f"API base: {API_BASE}")
+    print(f"API key:  {'<set>' if API_KEY else '<none>'}")
+    new_base = _input("New API base (blank to keep): ").strip()
+    if new_base:
+        API_BASE = new_base.rstrip("/")
+    new_key = _input("New API key (blank keep, '-' to clear): ").strip()
+    if new_key == "-":
+        API_KEY = None
+    elif new_key:
+        API_KEY = new_key
+    print("Settings updated.")
+
+
+def cmd_menu(args: argparse.Namespace) -> None:
+    while True:
+        print("\nFavorites CLI — Menu")
+        print("  1. List favorites")
+        print("  2. Choose favorite and synthesise")
+        print("  3. Export favorites")
+        print("  4. Import favorites")
+        print("  5. Settings (API base/key)")
+        print("  0. Exit")
+        choice = _input("Select: ").strip()
+        if choice in {"", "0"}:
+            return
+        if choice == "1":
+            _menu_list()
+        elif choice == "2":
+            _menu_choose()
+        elif choice == "3":
+            path = _input("Write export to (favorites.json): ").strip() or "favorites.json"
+            data = export_favorites()
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            print(f"Wrote {path}")
+        elif choice == "4":
+            path = _input("Import file path: ").strip()
+            if not path:
+                print("Cancelled.")
+                continue
+            mode = _input("Mode [merge/replace] (merge): ").strip().lower() or "merge"
+            with open(path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            res = import_favorites(payload, mode=mode)
+            print(json.dumps(res, indent=2))
+        elif choice == "5":
+            _menu_settings()
+        else:
+            print("Unknown choice.")
+
+
 def main(argv: Optional[List[str]] = None) -> None:
     p = argparse.ArgumentParser(description="Favorites CLI for Kokoro Playground")
-    sub = p.add_subparsers(dest="cmd", required=True)
+    sub = p.add_subparsers(dest="cmd", required=False)
 
     p_list = sub.add_parser("list", help="List favorites")
     p_list.add_argument("--engine", help="Filter by engine id", default=None)
@@ -282,10 +449,15 @@ def main(argv: Optional[List[str]] = None) -> None:
     p_imp.add_argument("--mode", choices=["merge", "replace"], default="merge")
     p_imp.set_defaults(func=cmd_import)
 
+    p_menu = sub.add_parser("menu", help="Interactive menu mode")
+    p_menu.set_defaults(func=cmd_menu)
+
     args = p.parse_args(argv)
+    if not getattr(args, "cmd", None):
+        # default to menu if no subcommand provided
+        return cmd_menu(argparse.Namespace())
     args.func(args)
 
 
 if __name__ == "__main__":
     main()
-

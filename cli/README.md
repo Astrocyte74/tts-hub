@@ -12,6 +12,10 @@ Environment
 
 Usage
 ```
+# Menu mode (recommended)
+python3 cli/tts_cli.py menu
+
+# List favorites
 python3 cli/tts_cli.py list [--engine kokoro] [--tag star] [--json]
 
 python3 cli/tts_cli.py synth --slug favorite--af-heart --text "Hello from CLI"
@@ -29,4 +33,3 @@ python3 cli/tts_cli.py import favorites.json --mode merge
 Notes
 - When using `--download`, the CLI resolves relative `/audio/...` links against `TTSHUB_API_BASE` and saves the WAV locally.
 - `--play` attempts to play WAV/MP3 using `afplay` (macOS). If unavailable, it will print the saved path.
-
