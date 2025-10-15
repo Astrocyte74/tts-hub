@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { IconBrand, IconCaretDown, IconCog, IconCpu, IconDocument, IconMic, IconWave } from '../icons';
+import { IconBrand, IconCaretDown, IconCog, IconCpu, IconDocument, IconMic, IconWave, IconPlay } from '../icons';
 import type { SynthesisResult, VoiceProfile } from '../types';
 
 interface TopContextBarProps {
