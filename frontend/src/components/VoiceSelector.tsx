@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 import clsx from 'clsx';
 import type { VoiceGroup, VoiceProfile } from '../types';
 
@@ -123,8 +124,8 @@ export function VoiceSelector({
   onBulkGeneratePreview,
   enableHoverPreview = true,
 }: VoiceSelectorProps) {
-  // Collapsible favorites
-  const [favoritesCollapsed, setFavoritesCollapsed] = useState(false);
+  // Collapsible favorites (persisted)
+  const [favoritesCollapsed, setFavoritesCollapsed] = useLocalStorage('kokoro:favoritesCollapsed', false);
   const [query, setQuery] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';

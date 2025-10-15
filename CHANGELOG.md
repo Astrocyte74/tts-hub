@@ -50,3 +50,17 @@ Breaking changes
 Upgrade notes
 - Ensure `.env` (or `.env.local`) points to your backend if you run UI-only; set `VITE_API_BASE_URL=http://127.0.0.1:7860`.
 - The output directory `out/` and subfolder `out/voice_previews/` are ignored by Git.
+## [Favorites as presets] – 2025-10-15
+
+Highlights
+- Favorites unified as presets usable from UI and scripts; notes supported and preserved in import/export.
+- Star/Unstar writes to `/api/favorites` with engine + voice + params (language/speed/trim; style/seed per engine).
+- Quick select (Voice caret) shows Favorites first with Edit/Delete/Manage; reliable interactions and hover/focus polish.
+- Favorites section (Voices) is collapsible and uses a compact list with param summary and notes preview; actions on the right.
+- Favorites Manager dialog added for list/filter/edit/delete/import/export. Import/Export moved here.
+
+API
+- `/api/synthesise` accepts `favoriteId`/`favoriteSlug` (existing `profileId`/`profileSlug` still accepted as aliases).
+
+Notes
+- Removed top‑bar “Save favorite”; starring is the single save gesture.

@@ -201,3 +201,9 @@ PROJECT_OVERVIEW.md              Architectural overview
 - Launch via script (dev & prod) to confirm `/api/meta` and UI respond with grouped voices and announcer controls.
 
 Enjoy the upgraded Kokoro Playground! Contributions via issues or pull requests are welcome.
+- Favorites as presets (UI + API)
+  - Star a voice to save a Favorite with engine + voice + params (language, speed, trim; style for OpenVoice; seed for ChatTTS).
+  - Favorites include optional notes for human context; import/export preserves notes.
+  - Quick select (caret on the Voice chip) shows Favorites first with Edit/Delete/Manage actions.
+  - Favorites section in Voices is collapsible and now uses a compact row layout with a quick param summary and notes preview.
+  - Scripts can synthesize by Favorite: `POST /api/synthesise { text, favoriteSlug }` (aliases `favoriteId`, and existing `profileId/profileSlug` still work).

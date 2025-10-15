@@ -43,22 +43,23 @@ Base URL: `${VITE_API_BASE_URL}/${VITE_API_PREFIX}` (defaults to same‑origin +
 ## GET /audio/openvoice/<path>
 - Serves OpenVoice reference files from `openvoice/resources/` for inline previews.
 
-## Favorites (Profiles)
+## Favorites
 
-Profiles are engine‑agnostic favorites (label + engine + voice + optional params) stored locally and usable across apps/scripts.
+Favorites are engine‑agnostic presets (label + engine + voice + optional params) saved locally and callable from scripts.
 
 - GET `/favorites` → `{ profiles[], count }` (filter with `?engine=<id>` and/or `?tag=<name>`)
-- POST `/favorites` → create a favorite. Body minimal fields: `{ label, engine, voiceId, slug?, language?, speed?, trimSilence?, style?, seed?, serverUrl?, tags?, notes?, meta? }`.
-- GET `/favorites/:id` → one profile
-- PATCH `/favorites/:id` → update allowed fields (same as create)
+- POST `/favorites` → create a favorite. Body: `{ label, engine, voiceId, slug?, language?, speed?, trimSilence?, style?, seed?, serverUrl?, tags?, notes?, meta? }`.
+- GET `/favorites/:id` → single favorite
+- PATCH `/favorites/:id` → update any of the fields above
 - DELETE `/favorites/:id`
 - GET `/favorites/export` → `{ schemaVersion, profiles[] }`
 - POST `/favorites/import` → `{ imported, mode }` with body `{ profiles[], mode?: 'merge'|'replace' }`
 
-Auth: If `FAVORITES_API_KEY` is set, favorites routes require header `Authorization: Bearer <key>`.
+Auth: If `FAVORITES_API_KEY` is set, Favorites routes require header `Authorization: Bearer <key>`.
 
 Storage: Defaults to `~/.kokoro/favorites.json` (override with `FAVORITES_STORE_PATH`).
 
 Notes
-- All errors should return JSON via `PlaygroundError` with `{ error, status }`.
+- `/synthesise` aliases: request may include `favoriteId`/`favoriteSlug` (and legacy `profileId`/`profileSlug`) to resolve engine/voice/params; body supplies `text`.
+- All errors return JSON via `PlaygroundError` with `{ error, status }`.
 - In dev, set `VITE_API_BASE_URL` so the SPA on 5175 fetches `/audio/...` from the backend on 7860.
