@@ -97,21 +97,27 @@ export function TopContextBar({
   const hasRunning = queueRunning > 0;
   const noVoiceSelected = selectedVoiceIds.length === 0;
   const voiceBtnRef = useRef<HTMLButtonElement | null>(null);
+  const popoverPanelRef = useRef<HTMLDivElement | null>(null);
   const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!voiceMenuOpen) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setVoiceMenuOpen(false);
     const onClick = (e: MouseEvent) => {
-      const el = voiceBtnRef.current;
-      if (!el) return;
-      if (e.target instanceof Node && !el.contains(e.target)) setVoiceMenuOpen(false);
+      const btn = voiceBtnRef.current;
+      const panel = popoverPanelRef.current;
+      const target = e.target as Node | null;
+      if (!target) return;
+      if ((btn && btn.contains(target)) || (panel && panel.contains(target))) {
+        return; // clicks inside the button or popover should not close
+      }
+      setVoiceMenuOpen(false);
     };
     window.addEventListener('keydown', onKey);
-    window.addEventListener('click', onClick, { capture: true });
+    window.addEventListener('click', onClick); // not capture, so inner handlers can run
     return () => {
       window.removeEventListener('keydown', onKey);
-      window.removeEventListener('click', onClick, { capture: true } as any);
+      window.removeEventListener('click', onClick);
     };
   }, [voiceMenuOpen]);
 
@@ -251,7 +257,7 @@ export function TopContextBar({
       {voiceMenuOpen && (quickProfiles.length > 0 || quickFavorites.length > 0 || quickRecents.length > 0) ? (
         <div className="popover" role="dialog" aria-label="Quick voices">
           <div className="popover__backdrop" />
-          <div className="popover__panel" style={{ position: 'absolute', top: 56, right: 160, width: 300 }}>
+          <div ref={popoverPanelRef} className="popover__panel" style={{ position: 'absolute', top: 56, right: 160, width: 300 }}>
             <div className="popover__header"><h3 className="popover__title">Quick select</h3></div>
             <div className="popover__content">
               {quickProfiles.length > 0 ? (
