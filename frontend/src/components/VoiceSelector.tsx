@@ -20,6 +20,8 @@ interface VoiceSelectorProps {
   onOpenvoiceInstructions?: () => void;
   favorites?: string[];
   onToggleFavorite?: (voiceId: string) => void;
+  onEditFavoriteVoice?: (voiceId: string) => void;
+  favoritesNotesByVoice?: Record<string, string>;
   onGeneratePreview?: (voiceId: string) => void;
   previewBusyIds?: string[];
   onBulkGeneratePreview?: (voiceIds: string[]) => void;
@@ -112,6 +114,8 @@ export function VoiceSelector({
   onOpenvoiceInstructions,
   favorites = [],
   onToggleFavorite,
+  onEditFavoriteVoice,
+  favoritesNotesByVoice,
   onGeneratePreview,
   previewBusyIds = [],
   onBulkGeneratePreview,
@@ -389,6 +393,7 @@ export function VoiceSelector({
                 const isSelected = selected.includes(voice.id);
                 const isFav = favoriteSet.has(voice.id);
                 const hasPreview = Boolean(findPreviewUrl(voice));
+                const note = favoritesNotesByVoice ? favoritesNotesByVoice[voice.id] : undefined;
                 return (
                   <div key={`fav-${voice.id}`} className={clsx('voice-card', { 'voice-card--selected': isSelected, 'voice-card--disabled': disabled })}>
                     <button
@@ -400,6 +405,7 @@ export function VoiceSelector({
                       onBlur={enableHoverPreview ? stopPreview : undefined}
                       onClick={() => onToggle(voice.id)}
                       disabled={disabled}
+                      title={note && note.trim() ? note : undefined}
                     >
                       <span className="voice-card__label">{voice.label}</span>
                       <span className="voice-card__meta">
@@ -413,6 +419,11 @@ export function VoiceSelector({
                         {voice.gender ? <span>{voice.gender}</span> : null}
                       </span>
                     </button>
+                    {onEditFavoriteVoice ? (
+                      <button type="button" className="chip-button" onClick={() => onEditFavoriteVoice(voice.id)} title="Edit favorite">
+                        Edit
+                      </button>
+                    ) : null}
                     {hasPreview ? (
                       <button type="button" className="chip-button" aria-label="Play preview" onClick={() => playPreview(voice)}>
                         Preview

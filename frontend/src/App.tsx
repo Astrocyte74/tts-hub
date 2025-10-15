@@ -1494,6 +1494,17 @@ function App() {
               onVoiceStyleChange={engineId === 'openvoice' ? handleOpenvoiceVoiceStyleChange : undefined}
             onOpenvoiceInstructions={engineId === 'openvoice' ? () => setOpenvoiceHelpOpen(true) : undefined}
             favorites={starredVoiceIds}
+            favoritesNotesByVoice={useMemo(() => {
+              const map: Record<string, string> = {};
+              const list = (profilesQuery.data ?? []) as Record<string, unknown>[];
+              list.forEach((p) => {
+                if (String(p['engine'] ?? '') !== engineId) return;
+                const vid = String(p['voiceId'] ?? '');
+                const n = typeof p['notes'] === 'string' ? (p['notes'] as string) : '';
+                if (vid && n) map[vid] = n;
+              });
+              return map;
+            }, [profilesQuery.data, engineId])}
             onToggleFavorite={async (voiceId) => {
               setError(null);
               try {
@@ -1536,6 +1547,10 @@ function App() {
               }
             } : undefined}
             previewBusyIds={previewBusy}
+            onEditFavoriteVoice={(voiceId) => {
+              const fav = getFavoriteByVoice(voiceId);
+              if (fav) setEditingFavoriteId(fav.id);
+            }}
             onBulkGeneratePreview={engineId === 'kokoro' ? async (voiceIds) => {
                 const ids = Array.from(new Set(voiceIds));
                 if (!ids.length) return;
