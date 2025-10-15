@@ -27,6 +27,10 @@ import shutil
 API_BASE = os.environ.get("TTSHUB_API_BASE", "http://127.0.0.1:7860/api").rstrip("/")
 API_KEY = os.environ.get("TTSHUB_API_KEY")
 
+# Menu‑level sticky filters (persist for the process)
+MENU_ENGINE: Optional[str] = None
+MENU_TAG: Optional[str] = None
+
 
 def _headers() -> Dict[str, str]:
     h = {"Content-Type": "application/json"}
@@ -271,32 +275,42 @@ def _prompt_choice(title: str, options: List[str], *, allow_back: bool = True) -
     return None
 
 
-def _pick_engine_and_tag() -> (Optional[str], Optional[str]):
+def _set_filters() -> None:
+    """Configure sticky engine/tag filters used by list/choose."""
+    global MENU_ENGINE, MENU_TAG
     res = list_favorites()
     profiles = res.get("profiles", [])
     engines = sorted({str(p.get("engine")) for p in profiles if p.get("engine")})
     tags = sorted({t for p in profiles for t in (p.get("tags") or []) if t})
     # Engine
-    eng = None
     if engines:
-        idx = _prompt_choice("Engines", ["all"] + engines)
-        if idx is not None and idx > 0:
-            eng = engines[idx - 1]
+        current = MENU_ENGINE or "all"
+        print(f"Engines (current: {current})")
+        idx = _prompt_choice("Select engine", ["all"] + engines)
+        if idx is None:
+            pass
+        elif idx == 0:
+            MENU_ENGINE = None
+        else:
+            MENU_ENGINE = engines[idx - 1]
     # Tag
-    tag = None
     if tags:
-        idx = _prompt_choice("Tags", ["all"] + tags)
-        if idx is not None and idx > 0:
-            tag = tags[idx - 1]
-    return eng, tag
+        current = MENU_TAG or "all"
+        print(f"Tags (current: {current})")
+        idx = _prompt_choice("Select tag", ["all"] + tags)
+        if idx is None:
+            pass
+        elif idx == 0:
+            MENU_TAG = None
+        else:
+            MENU_TAG = tags[idx - 1]
 
 
 def _menu_list() -> None:
-    eng, tag = _pick_engine_and_tag()
-    res = list_favorites(engine=eng, tag=tag)
+    res = list_favorites(engine=MENU_ENGINE, tag=MENU_TAG)
     profiles = res.get("profiles", [])
     if not profiles:
-        print("No favorites match.")
+        print("No favorites match current filters. Use 'Change filters' to adjust.")
         return
     for i, p in enumerate(profiles, start=1):
         label = p.get("label") or p.get("slug") or p.get("id")
@@ -307,11 +321,10 @@ def _menu_list() -> None:
 
 
 def _menu_choose() -> None:
-    eng, tag = _pick_engine_and_tag()
-    payload = list_favorites(engine=eng, tag=tag)
+    payload = list_favorites(engine=MENU_ENGINE, tag=MENU_TAG)
     profiles = payload.get("profiles", [])
     if not profiles:
-        print("No favorites match.")
+        print("No favorites match current filters. Use 'Change filters' to adjust.")
         return
     profiles.sort(key=lambda p: str(p.get("label") or p.get("slug") or p.get("id")))
     for i, p in enumerate(profiles, start=1):
@@ -377,12 +390,16 @@ def _menu_settings() -> None:
 
 def cmd_menu(args: argparse.Namespace) -> None:
     while True:
+        engine_label = MENU_ENGINE or "all"
+        tag_label = MENU_TAG or "all"
         print("\nFavorites CLI — Menu")
+        print(f"  Filters → engine: {engine_label} · tag: {tag_label}")
         print("  1. List favorites")
         print("  2. Choose favorite and synthesise")
-        print("  3. Export favorites")
-        print("  4. Import favorites")
-        print("  5. Settings (API base/key)")
+        print("  3. Change filters")
+        print("  4. Export favorites")
+        print("  5. Import favorites")
+        print("  6. Settings (API base/key)")
         print("  0. Exit")
         choice = _input("Select: ").strip()
         if choice in {"", "0"}:
@@ -392,12 +409,14 @@ def cmd_menu(args: argparse.Namespace) -> None:
         elif choice == "2":
             _menu_choose()
         elif choice == "3":
+            _set_filters()
+        elif choice == "4":
             path = _input("Write export to (favorites.json): ").strip() or "favorites.json"
             data = export_favorites()
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
             print(f"Wrote {path}")
-        elif choice == "4":
+        elif choice == "5":
             path = _input("Import file path: ").strip()
             if not path:
                 print("Cancelled.")
@@ -407,7 +426,7 @@ def cmd_menu(args: argparse.Namespace) -> None:
                 payload = json.load(f)
             res = import_favorites(payload, mode=mode)
             print(json.dumps(res, indent=2))
-        elif choice == "5":
+        elif choice == "6":
             _menu_settings()
         else:
             print("Unknown choice.")

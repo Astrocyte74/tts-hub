@@ -13,6 +13,7 @@ Environment
 Usage
 ```
 # Menu mode (recommended)
+# Sticky filters are shown in the header and can be changed via option 3.
 python3 cli/tts_cli.py menu
 
 # List favorites
