@@ -101,6 +101,14 @@ export function EditFavoriteDialog({ isOpen, onClose, onSave, favorite }: EditFa
             <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Add context (e.g., tone, use case)"></textarea>
           </label>
           <label className="modal__field">
+            <span>Tags</span>
+            <input
+              value={tagsText}
+              onChange={(e) => setTagsText(e.target.value)}
+              placeholder="comma-separated (e.g., promo, ad)"
+            />
+          </label>
+          <label className="modal__field">
             <span>Language</span>
             <input value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="en-us" />
           </label>
