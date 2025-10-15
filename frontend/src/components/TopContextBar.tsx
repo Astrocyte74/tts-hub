@@ -223,7 +223,7 @@ export function TopContextBar({
           title={canSaveProfile ? 'Save profile' : 'Select a single voice to save profile'}
         >
           <IconBookmark />
-          <span className="topbar__button-label">Save profile</span>
+          <span className="topbar__button-label">Save favorite</span>
         </button>
         <button type="button" className="topbar__button" onClick={onOpenSettings} aria-label="Open settings" title="Settings (S)">
           <IconCog />
@@ -246,11 +246,11 @@ export function TopContextBar({
         <div className="popover" role="dialog" aria-label="Quick voices">
           <div className="popover__backdrop" />
           <div className="popover__panel" style={{ position: 'absolute', top: 56, right: 160, width: 300 }}>
-            <div className="popover__header"><h3 className="popover__title">Quick voices</h3></div>
+            <div className="popover__header"><h3 className="popover__title">Quick select</h3></div>
             <div className="popover__content">
               {quickProfiles.length > 0 ? (
                 <div>
-                  <strong>Profiles</strong>
+                  <strong>Favorites</strong>
                   {quickProfiles.map((p) => (
                     <button
                       key={`prof-${p.id}`}

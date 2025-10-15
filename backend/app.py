@@ -1941,8 +1941,8 @@ ENGINE_REGISTRY: Dict[str, Dict[str, Any]] = {
 def synthesise_endpoint():
     raw_payload = parse_json_request()
     # Optional: resolve profileId/profileSlug from the Favorites store
-    profile_id = raw_payload.get("profileId") or raw_payload.get("profile_id")
-    profile_slug = raw_payload.get("profileSlug") or raw_payload.get("profile_slug")
+    profile_id = raw_payload.get("profileId") or raw_payload.get("profile_id") or raw_payload.get("favoriteId") or raw_payload.get("favorite_id")
+    profile_slug = raw_payload.get("profileSlug") or raw_payload.get("profile_slug") or raw_payload.get("favoriteSlug") or raw_payload.get("favorite_slug")
     profile = None
     if profile_id:
         profile = _favorites_store.get(str(profile_id))

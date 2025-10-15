@@ -27,6 +27,7 @@ class Profile:
     seed: Optional[int] = None          # ChatTTS
     serverUrl: Optional[str] = None     # XTTS
     tags: Optional[List[str]] = None
+    notes: Optional[str] = None
     meta: Optional[Dict[str, Any]] = None
     createdAt: Optional[str] = None
     updatedAt: Optional[str] = None
@@ -134,6 +135,7 @@ class FavoritesStore:
                 "seed": payload.get("seed"),
                 "serverUrl": payload.get("serverUrl"),
                 "tags": payload.get("tags") or [],
+                "notes": (payload.get("notes") or payload.get("description")),
                 "meta": payload.get("meta") or {},
                 "createdAt": now,
                 "updatedAt": now,
@@ -163,6 +165,7 @@ class FavoritesStore:
                 "seed",
                 "serverUrl",
                 "tags",
+                "notes",
                 "meta",
             ]:
                 if key in patch:
@@ -222,4 +225,3 @@ class FavoritesStore:
                 count += 1
             self._save_profiles(profiles)
             return count
-
