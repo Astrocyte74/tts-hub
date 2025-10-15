@@ -1672,14 +1672,7 @@ function App() {
           }
         }}
       />
-      <FavoritesManagerDialog
-        isOpen={isFavoritesManagerOpen}
-        favorites={kokoroFavorites}
-        voices={voices}
-        onClose={handleCloseFavoritesManager}
-        onRename={handleRenameFavorite}
-        onDelete={handleDeleteFavorite}
-      />
+      {/* Legacy local-favorites manager removed in favor of server-backed manager */}
       <InfoDialog
         isOpen={isAiAssistOpen}
         title="AI Assist"
