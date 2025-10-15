@@ -87,6 +87,7 @@ export function SettingsPopover({
               </div>
             </div>
           ) : null}
+          
           <div className="popover__row">
             <label className="field">
               <span className="field__label">

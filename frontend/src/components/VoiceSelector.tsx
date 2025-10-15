@@ -20,6 +20,9 @@ interface VoiceSelectorProps {
   onOpenvoiceInstructions?: () => void;
   favorites?: string[];
   onToggleFavorite?: (voiceId: string) => void;
+  onEditFavoriteVoice?: (voiceId: string) => void;
+  favoritesNotesByVoice?: Record<string, string>;
+  favoritesMetaByVoice?: Record<string, { language?: string; speed?: number; trimSilence?: boolean }>;
   onGeneratePreview?: (voiceId: string) => void;
   previewBusyIds?: string[];
   onBulkGeneratePreview?: (voiceIds: string[]) => void;
@@ -112,11 +115,16 @@ export function VoiceSelector({
   onOpenvoiceInstructions,
   favorites = [],
   onToggleFavorite,
+  onEditFavoriteVoice,
+  favoritesNotesByVoice,
+  favoritesMetaByVoice,
   onGeneratePreview,
   previewBusyIds = [],
   onBulkGeneratePreview,
   enableHoverPreview = true,
 }: VoiceSelectorProps) {
+  // Collapsible favorites
+  const [favoritesCollapsed, setFavoritesCollapsed] = useState(false);
   const [query, setQuery] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
@@ -383,60 +391,66 @@ export function VoiceSelector({
         ) : null}
         {!isLoading && engineAvailable && favoritesInScope.length ? (
           <div className="voice-grid__group">
-            <p className="voice-grid__group-title">Favorites</p>
-            <div className="voice-grid__items">
+            <p className="voice-grid__group-title">
+              <button type="button" className="facet-chip" onClick={() => setFavoritesCollapsed(!favoritesCollapsed)} title={favoritesCollapsed ? 'Expand favorites' : 'Collapse favorites'}>
+                {favoritesCollapsed ? '▸' : '▾'} Favorites ({favoritesInScope.length})
+              </button>
+            </p>
+            {!favoritesCollapsed ? (
+            <div className="fav-list">
               {favoritesInScope.map((voice) => {
                 const isSelected = selected.includes(voice.id);
-                const isFav = favoriteSet.has(voice.id);
+                const note = favoritesNotesByVoice ? favoritesNotesByVoice[voice.id] : undefined;
                 const hasPreview = Boolean(findPreviewUrl(voice));
+                const meta = favoritesMetaByVoice ? favoritesMetaByVoice[voice.id] : undefined;
+                const summary = (() => {
+                  if (!meta) return null;
+                  const bits: string[] = [];
+                  if (meta.language) bits.push(meta.language);
+                  if (typeof meta.speed === 'number') bits.push(`${meta.speed.toFixed(2)}×`);
+                  if (meta.trimSilence) bits.push('trim');
+                  return bits.length ? bits.join(' · ') : null;
+                })();
                 return (
-                  <div key={`fav-${voice.id}`} className={clsx('voice-card', { 'voice-card--selected': isSelected, 'voice-card--disabled': disabled })}>
+                  <div key={`fav-${voice.id}`} className={clsx('fav-row', { 'is-selected': isSelected })}>
                     <button
                       type="button"
-                      className="voice-card__toggle"
+                      className="fav-row__main"
+                      title={note && note.trim() ? note : undefined}
+                      onClick={() => onToggle(voice.id)}
                       onMouseEnter={enableHoverPreview ? () => playPreview(voice) : undefined}
                       onMouseLeave={enableHoverPreview ? stopPreview : undefined}
-                      onFocus={enableHoverPreview ? () => playPreview(voice) : undefined}
-                      onBlur={enableHoverPreview ? stopPreview : undefined}
-                      onClick={() => onToggle(voice.id)}
                       disabled={disabled}
                     >
-                      <span className="voice-card__label">{voice.label}</span>
-                      <span className="voice-card__meta">
+                      <span className="fav-row__title">{voice.label}</span>
+                      <span className="fav-row__meta">
                         {voice.accent ? (
-                          <span className="voice-card__meta-pill" title={voice.accent.label}>
-                            <span aria-hidden="true">{voice.accent.flag}</span>
-                            <span className="voice-card__meta-pill-text">{voice.accent.label}</span>
+                          <span className="fav-row__pill" title={voice.accent.label}>
+                            <span aria-hidden>{voice.accent.flag}</span>
+                            <span className="fav-row__pill-text">{voice.accent.label}</span>
                           </span>
                         ) : null}
                         {voice.locale ? <span>{voice.locale}</span> : null}
-                        {voice.gender ? <span>{voice.gender}</span> : null}
+                        {summary ? <span>{summary}</span> : null}
+                        {note ? <span className="fav-row__note" title={note}>{note}</span> : null}
                       </span>
                     </button>
-                    {hasPreview ? (
-                      <button type="button" className="chip-button" aria-label="Play preview" onClick={() => playPreview(voice)}>
-                        Preview
-                      </button>
-                    ) : null}
-                    {(!findPreviewUrl(voice) && onGeneratePreview) ? (
-                      <button
-                        type="button"
-                        className="chip-button"
-                        disabled={previewBusyIds.includes(voice.id)}
-                        onClick={() => onGeneratePreview(voice.id)}
-                      >
-                        {previewBusyIds.includes(voice.id) ? 'Generating…' : 'Generate preview'}
-                      </button>
-                    ) : null}
-                    {onToggleFavorite ? (
-                      <button type="button" className={clsx('fav-btn', { 'is-active': isFav })} aria-label={isFav ? 'Unfavorite' : 'Favorite'} aria-pressed={isFav} onClick={() => onToggleFavorite(voice.id)}>
-                        {isFav ? '★' : '☆'}
-                      </button>
-                    ) : null}
+                    <div className="fav-row__actions">
+                      {hasPreview ? (
+                        <button type="button" className="chip-button" aria-label="Preview" onClick={() => playPreview(voice)}>▶︎</button>
+                      ) : null}
+                      {onEditFavoriteVoice ? (
+                        <button type="button" className="chip-button" aria-label="Edit" onClick={() => onEditFavoriteVoice(voice.id)}>✎</button>
+                      ) : null}
+                      {onToggleFavorite ? (
+                        <button type="button" className="chip-button" aria-label="Unfavorite" onClick={() => onToggleFavorite(voice.id)}>✕</button>
+                      ) : null}
+                    </div>
                   </div>
                 );
               })}
             </div>
+            ) : null}
           </div>
         ) : null}
         {!isLoading && engineAvailable

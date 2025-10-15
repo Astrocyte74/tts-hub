@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { IconBrand, IconCaretDown, IconCog, IconCpu, IconDocument, IconMic, IconPlay, IconWave } from '../icons';
+import { IconBrand, IconCaretDown, IconCog, IconCpu, IconDocument, IconMic, IconWave, IconPlay } from '../icons';
 import type { SynthesisResult, VoiceProfile } from '../types';
 
 interface TopContextBarProps {
@@ -30,6 +30,11 @@ interface TopContextBarProps {
   quickFavorites?: { id: string; label: string }[];
   quickRecents?: { id: string; label: string }[];
   onQuickSelectVoice?: (id: string) => void;
+  quickProfiles?: { id: string; label: string; engine: string; voiceId: string; notes?: string }[];
+  onQuickSelectProfile?: (profile: { id: string; engine: string; voiceId: string }) => void;
+  onEditFavorite?: (id: string) => void;
+  onDeleteFavorite?: (id: string) => void;
+  onOpenFavoritesManager?: () => void;
 }
 
 function formatVoiceSummary(voices: VoiceProfile[], selectedVoiceIds: string[]) {
@@ -75,6 +80,11 @@ export function TopContextBar({
   quickFavorites = [],
   quickRecents = [],
   onQuickSelectVoice,
+  quickProfiles = [],
+  onQuickSelectProfile,
+  onEditFavorite,
+  onDeleteFavorite,
+  onOpenFavoritesManager,
 }: TopContextBarProps) {
   const voiceSummary = formatVoiceSummary(voices, selectedVoiceIds);
   const clipsCount = results.length;
@@ -83,21 +93,27 @@ export function TopContextBar({
   const hasRunning = queueRunning > 0;
   const noVoiceSelected = selectedVoiceIds.length === 0;
   const voiceBtnRef = useRef<HTMLButtonElement | null>(null);
+  const popoverPanelRef = useRef<HTMLDivElement | null>(null);
   const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!voiceMenuOpen) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setVoiceMenuOpen(false);
     const onClick = (e: MouseEvent) => {
-      const el = voiceBtnRef.current;
-      if (!el) return;
-      if (e.target instanceof Node && !el.contains(e.target)) setVoiceMenuOpen(false);
+      const btn = voiceBtnRef.current;
+      const panel = popoverPanelRef.current;
+      const target = e.target as Node | null;
+      if (!target) return;
+      if ((btn && btn.contains(target)) || (panel && panel.contains(target))) {
+        return; // clicks inside the button or popover should not close
+      }
+      setVoiceMenuOpen(false);
     };
     window.addEventListener('keydown', onKey);
-    window.addEventListener('click', onClick, { capture: true });
+    window.addEventListener('click', onClick); // not capture, so inner handlers can run
     return () => {
       window.removeEventListener('keydown', onKey);
-      window.removeEventListener('click', onClick, { capture: true } as any);
+      window.removeEventListener('click', onClick);
     };
   }, [voiceMenuOpen]);
 
@@ -166,7 +182,7 @@ export function TopContextBar({
           <span className="topbar__chip-icon" aria-hidden><IconMic /></span>
           <span className="topbar__chip-label">Voice</span>
           <span className="topbar__chip-value">{voiceSummary}</span>
-          {(quickFavorites.length > 0 || quickRecents.length > 0) ? (
+          {(quickProfiles.length > 0 || quickFavorites.length > 0 || quickRecents.length > 0) ? (
             <span
               className="topbar__badge"
               title="Quick voices"
@@ -223,12 +239,42 @@ export function TopContextBar({
         </button>
       </div>
 
-      {voiceMenuOpen && (quickFavorites.length > 0 || quickRecents.length > 0) ? (
+      {voiceMenuOpen && (quickProfiles.length > 0 || quickFavorites.length > 0 || quickRecents.length > 0) ? (
         <div className="popover" role="dialog" aria-label="Quick voices">
           <div className="popover__backdrop" />
-          <div className="popover__panel" style={{ position: 'absolute', top: 56, right: 160, width: 300 }}>
-            <div className="popover__header"><h3 className="popover__title">Quick voices</h3></div>
+          <div ref={popoverPanelRef} className="popover__panel" style={{ position: 'absolute', top: 56, right: 160, width: 300 }}>
+            <div className="popover__header"><h3 className="popover__title">Quick select</h3></div>
             <div className="popover__content">
+              {quickProfiles.length > 0 ? (
+                <div>
+                  <strong>Favorites</strong>
+                  {quickProfiles.map((p) => (
+                    <div key={`prof-${p.id}`} className="popover__item">
+                      <button
+                        className="popover__button"
+                        type="button"
+                        title={(p.notes && p.notes.trim()) ? p.notes : `${p.engine} · ${p.voiceId}`}
+                        onClick={() => { onQuickSelectProfile && onQuickSelectProfile({ id: p.id, engine: p.engine, voiceId: p.voiceId }); setVoiceMenuOpen(false); }}
+                      >
+                        {p.label}
+                      </button>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {onEditFavorite ? (
+                          <button className="popover__button" type="button" title="Edit favorite" onClick={(e) => { e.stopPropagation(); onEditFavorite(p.id); setVoiceMenuOpen(false); }}>✎</button>
+                        ) : null}
+                        {onDeleteFavorite ? (
+                          <button className="popover__button" type="button" title="Delete favorite" onClick={(e) => { e.stopPropagation(); onDeleteFavorite(p.id); setVoiceMenuOpen(false); }}>🗑</button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                  {onOpenFavoritesManager ? (
+                    <div style={{ marginTop: 8 }}>
+                      <button className="popover__button" type="button" onClick={() => { onOpenFavoritesManager(); setVoiceMenuOpen(false); }}>Manage Favorites…</button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               {quickFavorites.length > 0 ? (
                 <div>
                   <strong>Favorites</strong>

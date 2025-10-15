@@ -18,7 +18,7 @@ import numpy as np
 import soundfile as sf
 from flask import Blueprint, Flask, abort, jsonify, make_response, request, send_from_directory
 from flask_cors import CORS
-from .favorites_store import FavoritesStore
+from favorites_store import FavoritesStore
 
 try:
     from kokoro_onnx import Kokoro
@@ -1941,8 +1941,8 @@ ENGINE_REGISTRY: Dict[str, Dict[str, Any]] = {
 def synthesise_endpoint():
     raw_payload = parse_json_request()
     # Optional: resolve profileId/profileSlug from the Favorites store
-    profile_id = raw_payload.get("profileId") or raw_payload.get("profile_id")
-    profile_slug = raw_payload.get("profileSlug") or raw_payload.get("profile_slug")
+    profile_id = raw_payload.get("profileId") or raw_payload.get("profile_id") or raw_payload.get("favoriteId") or raw_payload.get("favorite_id")
+    profile_slug = raw_payload.get("profileSlug") or raw_payload.get("profile_slug") or raw_payload.get("favoriteSlug") or raw_payload.get("favorite_slug")
     profile = None
     if profile_id:
         profile = _favorites_store.get(str(profile_id))
