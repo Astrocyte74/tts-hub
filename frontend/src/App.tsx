@@ -1477,6 +1477,21 @@ function App() {
               });
               return map;
             }, [profilesQuery.data, engineId])}
+            favoritesMetaByVoice={useMemo(() => {
+              const map: Record<string, { language?: string; speed?: number; trimSilence?: boolean }> = {};
+              const list = (profilesQuery.data ?? []) as Record<string, unknown>[];
+              list.forEach((p) => {
+                if (String(p['engine'] ?? '') !== engineId) return;
+                const vid = String(p['voiceId'] ?? '');
+                if (!vid) return;
+                map[vid] = {
+                  language: typeof p['language'] === 'string' ? (p['language'] as string) : undefined,
+                  speed: typeof p['speed'] === 'number' ? (p['speed'] as number) : undefined,
+                  trimSilence: typeof p['trimSilence'] === 'boolean' ? (p['trimSilence'] as boolean) : undefined,
+                };
+              });
+              return map;
+            }, [profilesQuery.data, engineId])}
             onToggleFavorite={async (voiceId) => {
               setError(null);
               try {

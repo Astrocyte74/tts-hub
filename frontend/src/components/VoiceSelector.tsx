@@ -22,6 +22,7 @@ interface VoiceSelectorProps {
   onToggleFavorite?: (voiceId: string) => void;
   onEditFavoriteVoice?: (voiceId: string) => void;
   favoritesNotesByVoice?: Record<string, string>;
+  favoritesMetaByVoice?: Record<string, { language?: string; speed?: number; trimSilence?: boolean }>;
   onGeneratePreview?: (voiceId: string) => void;
   previewBusyIds?: string[];
   onBulkGeneratePreview?: (voiceIds: string[]) => void;
@@ -116,11 +117,14 @@ export function VoiceSelector({
   onToggleFavorite,
   onEditFavoriteVoice,
   favoritesNotesByVoice,
+  favoritesMetaByVoice,
   onGeneratePreview,
   previewBusyIds = [],
   onBulkGeneratePreview,
   enableHoverPreview = true,
 }: VoiceSelectorProps) {
+  // Collapsible favorites
+  const [favoritesCollapsed, setFavoritesCollapsed] = useState(false);
   const [query, setQuery] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
@@ -387,12 +391,26 @@ export function VoiceSelector({
         ) : null}
         {!isLoading && engineAvailable && favoritesInScope.length ? (
           <div className="voice-grid__group">
-            <p className="voice-grid__group-title">Favorites</p>
+            <p className="voice-grid__group-title">
+              <button type="button" className="facet-chip" onClick={() => setFavoritesCollapsed(!favoritesCollapsed)} title={favoritesCollapsed ? 'Expand favorites' : 'Collapse favorites'}>
+                {favoritesCollapsed ? '▸' : '▾'} Favorites ({favoritesInScope.length})
+              </button>
+            </p>
+            {!favoritesCollapsed ? (
             <div className="fav-list">
               {favoritesInScope.map((voice) => {
                 const isSelected = selected.includes(voice.id);
                 const note = favoritesNotesByVoice ? favoritesNotesByVoice[voice.id] : undefined;
                 const hasPreview = Boolean(findPreviewUrl(voice));
+                const meta = favoritesMetaByVoice ? favoritesMetaByVoice[voice.id] : undefined;
+                const summary = (() => {
+                  if (!meta) return null;
+                  const bits: string[] = [];
+                  if (meta.language) bits.push(meta.language);
+                  if (typeof meta.speed === 'number') bits.push(`${meta.speed.toFixed(2)}×`);
+                  if (meta.trimSilence) bits.push('trim');
+                  return bits.length ? bits.join(' · ') : null;
+                })();
                 return (
                   <div key={`fav-${voice.id}`} className={clsx('fav-row', { 'is-selected': isSelected })}>
                     <button
@@ -413,6 +431,7 @@ export function VoiceSelector({
                           </span>
                         ) : null}
                         {voice.locale ? <span>{voice.locale}</span> : null}
+                        {summary ? <span>{summary}</span> : null}
                         {note ? <span className="fav-row__note" title={note}>{note}</span> : null}
                       </span>
                     </button>
@@ -431,6 +450,7 @@ export function VoiceSelector({
                 );
               })}
             </div>
+            ) : null}
           </div>
         ) : null}
         {!isLoading && engineAvailable
