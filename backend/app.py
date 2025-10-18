@@ -1724,6 +1724,8 @@ def ollama_generate_proxy():
     try:
         if stream:
             def _proxy():
+                # Send an initial event so clients see liveness quickly
+                yield 'data: {"status":"starting"}\n\n'
                 with requests.post(url, json=body, stream=True, timeout=None) as r:
                     r.raise_for_status()
                     for line in r.iter_lines(decode_unicode=True):
@@ -1754,6 +1756,7 @@ def ollama_chat_proxy():
     try:
         if stream:
             def _proxy():
+                yield 'data: {"status":"starting"}\n\n'
                 with requests.post(url, json=body, stream=True, timeout=None) as r:
                     r.raise_for_status()
                     for line in r.iter_lines(decode_unicode=True):
@@ -1795,6 +1798,7 @@ def ollama_pull_proxy():
     try:
         if stream:
             def _proxy():
+                yield 'data: {"status":"starting"}\n\n'
                 with requests.post(url, json=upstream, stream=True, timeout=None) as r:
                     r.raise_for_status()
                     for line in r.iter_lines(decode_unicode=True):
@@ -1862,11 +1866,29 @@ def ollama_delete_proxy():
     if not model:
         raise PlaygroundError("Provide ?model=name or body {model:name}", status=400)
     url = f"{_ollama_base()}/api/delete"
+    import requests
     try:
         # Ollama expects DELETE /api/delete with JSON body { name }
-        res = requests.delete(url, json={"name": model}, timeout=20)
+        res = requests.delete(url, json={"name": model}, timeout=30)
         res.raise_for_status()
         return jsonify(res.json())
+    except requests.HTTPError as http_exc:  # pragma: no cover
+        code = getattr(http_exc.response, 'status_code', None)
+        # Fallback: some Ollama versions may not expose /api/delete; try CLI when allowed
+        allow_cli = (os.environ.get('OLLAMA_ALLOW_CLI', '1').lower() in {'1','true','yes','on'})
+        if code in (404, 405) and allow_cli:
+            try:
+                import shutil, subprocess
+                bin_path = shutil.which('ollama')
+                if not bin_path:
+                    raise RuntimeError('ollama binary not found on PATH')
+                proc = subprocess.run([bin_path, 'rm', model], capture_output=True, text=True, timeout=60)
+                if proc.returncode == 0:
+                    return jsonify({"status": "deleted", "source": "cli"})
+                raise RuntimeError(proc.stderr or 'ollama rm failed')
+            except Exception as exc:
+                raise PlaygroundError(f"Ollama /delete fallback failed: {exc}", status=503)
+        raise PlaygroundError(f"Ollama /delete failed: {http_exc}", status=503)
     except Exception as exc:  # pragma: no cover
         raise PlaygroundError(f"Ollama /delete failed: {exc}", status=503)
 
