@@ -75,3 +75,6 @@ Troubleshooting
 Notes
 - In dev mode, the UI (Vite) binds to `VITE_HOST` and calls the API at `PUBLIC_HOST` (if set) to ensure remote peers can reach it.
 - XTTS server remains local; the backend proxies/coordinates with it. You typically do not need to expose XTTS over WG.
+- Ollama proxy: the hub also forwards Ollama on the same base URL so peers don’t need an extra port.
+  - `GET /api/ollama/tags`, `POST /api/ollama/generate|/chat` (SSE optional), `POST /api/ollama/pull` (SSE progress), `GET /api/ollama/ps`, `GET|POST /api/ollama/show`, `GET|POST /api/ollama/delete`.
+  - Set `OLLAMA_URL` on the hub (defaults to `http://127.0.0.1:11434`).

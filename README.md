@@ -104,6 +104,34 @@ If you use WireGuard (or similar), the launcher can auto-detect your VPN IP and 
 
 ---
 
+### Ollama Proxy (LLM over the hub)
+
+The hub exposes your local Ollama to peers (NAS, bots) via the same API base on port 7860. Set `OLLAMA_URL` (default `http://127.0.0.1:11434`).
+
+Endpoints (non‑stream and SSE):
+- `GET /api/ollama/tags` — list installed models
+- `POST /api/ollama/generate` — body `{ model, prompt, stream?: boolean }`
+- `POST /api/ollama/chat` — body `{ model, messages[], stream?: boolean }`
+- `POST /api/ollama/pull` — body `{ model, stream?: boolean }` (SSE progress by default)
+- `GET /api/ollama/ps` — runtime status
+- `GET|POST /api/ollama/show` — model details (`?model=name`)
+- `GET|POST /api/ollama/delete` — remove a model (`?model=name`); falls back to CLI when needed
+
+Notes
+- Streaming mode returns Server‑Sent Events (`text/event-stream`) and emits an immediate `{"status":"starting"}` event for liveness.
+- Delete normalizes missing models to 200: `{"status":"deleted","note":"already missing"}`.
+- See `API_ROUTES.md` for payload shapes.
+
+Quick tests (peer)
+```
+export TTSHUB_API_BASE=http://<WG_IP_OF_MAC>:7860/api
+curl -sS "$TTSHUB_API_BASE/ollama/tags" | jq
+curl -N -sS -X POST "$TTSHUB_API_BASE/ollama/pull" -H 'Content-Type: application/json' -d '{"model":"tinyllama:latest","stream":true}'
+curl -sS -X POST "$TTSHUB_API_BASE/ollama/generate" -H 'Content-Type: application/json' -d '{"model":"phi3:latest","prompt":"Say hello","stream":false}' | jq
+```
+
+---
+
 ### Built-in API Panel
 
 At the bottom of the UI there’s a collapsible “API & CLI” section. It shows:
