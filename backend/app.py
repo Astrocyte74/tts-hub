@@ -1863,7 +1863,8 @@ def ollama_delete_proxy():
         raise PlaygroundError("Provide ?model=name or body {model:name}", status=400)
     url = f"{_ollama_base()}/api/delete"
     try:
-        res = requests.post(url, json={"name": model}, timeout=20)
+        # Ollama expects DELETE /api/delete with JSON body { name }
+        res = requests.delete(url, json={"name": model}, timeout=20)
         res.raise_for_status()
         return jsonify(res.json())
     except Exception as exc:  # pragma: no cover
