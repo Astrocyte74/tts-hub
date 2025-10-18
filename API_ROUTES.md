@@ -23,6 +23,10 @@ Base URL: `${VITE_API_BASE_URL}/${VITE_API_PREFIX}` (defaults to same‑origin +
     - `genders[]` — `{ id: 'female'|'male'|'unknown', label, count }`
     - `locales[]` — `{ id: 'en-us'|'en-gb'|..., label, count }` (misc bucket when unknown)
     - `accents[]` — same buckets as `accentGroups`
+    - `accentFamilies` — normalized, gender-aware buckets with merged counts:
+      - `any[]` — counts for families like `us`, `uk`, `other` regardless of gender
+      - `female[]` — counts for the same families restricted to female voices
+      - `male[]` — counts restricted to male voices
 
 ## GET /random_text?category=<name>
 - Returns test text: `{ text, source, category, categories[] }`.
