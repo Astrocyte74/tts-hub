@@ -77,7 +77,10 @@ Mode-first Workflow
 4) A11y
    - Use `role=list`/`listitem` for lists; label interactive elements (`aria-label`, `aria-pressed`).
 5) Docs
-   - Update `DESIGN.md` and `README.md` sections relevant to the change.
+- Update `DESIGN.md` and `README.md` sections relevant to the change.
+
+WireGuard mode (launcher)
+- The launcher supports a WireGuard‑aware mode to expose the API/UI to VPN peers while keeping localhost working. See `docs/WIREGUARD_MODE.md` for usage (`WG_MODE`, `PUBLIC_HOST`).
 
 ## Coding Conventions
 - Prefer small, pure helpers in components; avoid global singletons except for shared audio element.

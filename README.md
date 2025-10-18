@@ -95,6 +95,26 @@ For additional frontend-specific variables see `frontend/.env.example`.
 
 ---
 
+### WireGuard Mode
+
+If you use WireGuard (or similar), the launcher can auto-detect your VPN IP and print peer‑reachable URLs. It can bind to all interfaces (LAN + VPN) or VPN‑only.
+
+- Quick start: `WG_MODE=auto ./Start\ Kokoro\ Playground\ (XTTS\ Server).command`
+- Details: see `docs/WIREGUARD_MODE.md`.
+
+---
+
+### Built-in API Panel
+
+At the bottom of the UI there’s a collapsible “API & CLI” section. It shows:
+- Current API base used by the UI
+- Copyable URLs for Local, LAN, and WireGuard (when detected)
+- Quick curl examples and the Python CLI reminder
+
+This updates automatically based on the launcher’s network hints and backend `/api/meta` response.
+
+---
+
 ## API Endpoints
 
 | Endpoint | Method | Description |

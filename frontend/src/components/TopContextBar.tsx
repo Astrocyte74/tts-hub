@@ -30,22 +30,12 @@ interface TopContextBarProps {
   quickFavorites?: { id: string; label: string }[];
   quickRecents?: { id: string; label: string }[];
   onQuickSelectVoice?: (id: string) => void;
-  quickProfiles?: {
-    id: string;
-    label: string;
-    engine: string;
-    voiceId: string;
-    notes?: string;
-    language?: string;
-    speed?: number;
-    trimSilence?: boolean;
-    style?: string; // openvoice only
-    seed?: number;  // chattts only
-  }[];
+  quickProfiles?: { id: string; label: string; engine: string; voiceId: string; notes?: string }[];
   onQuickSelectProfile?: (profile: { id: string; engine: string; voiceId: string }) => void;
   onEditFavorite?: (id: string) => void;
   onDeleteFavorite?: (id: string) => void;
   onOpenFavoritesManager?: () => void;
+  onOpenApiStatus?: () => void;
 }
 
 function formatVoiceSummary(voices: VoiceProfile[], selectedVoiceIds: string[]) {
@@ -96,6 +86,7 @@ export function TopContextBar({
   onEditFavorite,
   onDeleteFavorite,
   onOpenFavoritesManager,
+  onOpenApiStatus,
 }: TopContextBarProps) {
   const voiceSummary = formatVoiceSummary(voices, selectedVoiceIds);
   const clipsCount = results.length;
@@ -233,6 +224,19 @@ export function TopContextBar({
       </div>
 
       <div className="topbar__right">
+        <button
+          type="button"
+          className="topbar__button"
+          onClick={() => {
+            if (onOpenApiStatus) {
+              onOpenApiStatus();
+            }
+          }}
+          aria-label="Show API status"
+          title="API & CLI"
+        >
+          <span className="topbar__button-label">API</span>
+        </button>
         <button type="button" className="topbar__button" onClick={onOpenSettings} aria-label="Open settings" title="Settings (S)">
           <IconCog />
         </button>
@@ -253,53 +257,32 @@ export function TopContextBar({
       {voiceMenuOpen && (quickProfiles.length > 0 || quickFavorites.length > 0 || quickRecents.length > 0) ? (
         <div className="popover" role="dialog" aria-label="Quick voices">
           <div className="popover__backdrop" />
-          <div ref={popoverPanelRef} className="popover__panel" style={{ position: 'absolute', top: 56, right: 160, width: 360 }}>
+          <div ref={popoverPanelRef} className="popover__panel" style={{ position: 'absolute', top: 56, right: 160, width: 300 }}>
             <div className="popover__header"><h3 className="popover__title">Quick select</h3></div>
             <div className="popover__content">
               {quickProfiles.length > 0 ? (
                 <div>
                   <strong>Favorites</strong>
-                  {quickProfiles.map((p) => {
-                    const chipList: string[] = [];
-                    const lang = (p.language || '').toLowerCase();
-                    if (p.language && lang !== 'en-us') chipList.push(p.language);
-                    if (typeof p.speed === 'number' && Math.abs(p.speed - 1) >= 0.01) chipList.push(`${p.speed.toFixed(2)}×`);
-                    if (p.trimSilence === false) chipList.push('no‑trim');
-                    if (p.engine === 'openvoice' && p.style && p.style !== 'default') chipList.push(p.style);
-                    if (p.engine === 'chattts' && typeof p.seed === 'number') chipList.push(`seed ${p.seed}`);
-                    const chipSummary = chipList.length ? ` · ${chipList.join(' · ')}` : '';
-                    const titleBase = `${p.engine} · ${p.voiceId}`;
-                    const titleNote = p.notes && p.notes.trim() ? ` — ${p.notes.trim()}` : '';
-                    const title = `${titleBase}${chipSummary}${titleNote}`;
-                    return (
-                      <div key={`prof-${p.id}`} className="popover__item" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <button
-                          className="popover__button"
-                          style={{ flex: '1 1 auto', textAlign: 'left' }}
-                          type="button"
-                          title={title}
-                          onClick={() => { onQuickSelectProfile && onQuickSelectProfile({ id: p.id, engine: p.engine, voiceId: p.voiceId }); setVoiceMenuOpen(false); }}
-                        >
-                          {p.label}
-                        </button>
-                        {chipList.length ? (
-                          <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap' }} aria-hidden>
-                            {chipList.map((c, idx) => (
-                              <span key={`${p.id}-chip-${idx}`} className="facet-chip facet-chip--mini">{c}</span>
-                            ))}
-                          </div>
+                  {quickProfiles.map((p) => (
+                    <div key={`prof-${p.id}`} className="popover__item">
+                      <button
+                        className="popover__button"
+                        type="button"
+                        title={(p.notes && p.notes.trim()) ? p.notes : `${p.engine} · ${p.voiceId}`}
+                        onClick={() => { onQuickSelectProfile && onQuickSelectProfile({ id: p.id, engine: p.engine, voiceId: p.voiceId }); setVoiceMenuOpen(false); }}
+                      >
+                        {p.label}
+                      </button>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {onEditFavorite ? (
+                          <button className="popover__button" type="button" title="Edit favorite" onClick={(e) => { e.stopPropagation(); onEditFavorite(p.id); setVoiceMenuOpen(false); }}>✎</button>
                         ) : null}
-                        <div style={{ display: 'flex', gap: 6, marginLeft: 4 }}>
-                          {onEditFavorite ? (
-                            <button className="popover__button" type="button" title="Edit favorite" onClick={(e) => { e.stopPropagation(); onEditFavorite(p.id); setVoiceMenuOpen(false); }}>✎</button>
-                          ) : null}
-                          {onDeleteFavorite ? (
-                            <button className="popover__button" type="button" title="Delete favorite" onClick={(e) => { e.stopPropagation(); onDeleteFavorite(p.id); setVoiceMenuOpen(false); }}>🗑</button>
-                          ) : null}
-                        </div>
+                        {onDeleteFavorite ? (
+                          <button className="popover__button" type="button" title="Delete favorite" onClick={(e) => { e.stopPropagation(); onDeleteFavorite(p.id); setVoiceMenuOpen(false); }}>🗑</button>
+                        ) : null}
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                   {onOpenFavoritesManager ? (
                     <div style={{ marginTop: 8 }}>
                       <button className="popover__button" type="button" onClick={() => { onOpenFavoritesManager(); setVoiceMenuOpen(false); }}>Manage Favorites…</button>
