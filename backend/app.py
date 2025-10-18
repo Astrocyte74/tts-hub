@@ -338,46 +338,7 @@ def build_kokoro_voice_payload() -> Dict[str, Any]:
         },
     }
 
-@api.route("/voices_catalog", methods=["GET"])
-def voices_catalog_endpoint():
-    engine_id = request.args.get("engine")
-    engine, available = resolve_engine(engine_id, allow_unavailable=True)
-
-    payload_factory = engine.get("fetch_voices")
-    voice_payload = payload_factory() if callable(payload_factory) else {"engine": engine["id"], "available": available, "voices": [], "accentGroups": [], "count": 0}
-
-    engines_meta = [serialise_engine_meta(e) for e in ENGINE_REGISTRY.values()]
-
-    # Ensure filters exist even if engine doesn't provide them
-    filters = voice_payload.get("filters") or {}
-    if not filters:
-        voices = voice_payload.get("voices", [])
-        from collections import Counter
-        genders = Counter((v.get("gender") or "unknown") for v in voices if isinstance(v, dict))
-        locales = Counter((v.get("locale") or "misc") for v in voices if isinstance(v, dict))
-        filters = {
-            "genders": [
-                {"id": k, "label": ("Female" if k=="female" else "Male" if k=="male" else "Unknown"), "count": c}
-                for k, c in sorted(genders.items())
-            ],
-            "locales": [
-                {"id": k, "label": (k.upper() if k != "misc" else "Miscellaneous"), "count": c}
-                for k, c in sorted(locales.items())
-            ],
-            "accents": voice_payload.get("accentGroups") or voice_payload.get("groups") or [],
-        }
-
-    response = {
-        "engine": engine["id"],
-        "available": available and bool(voice_payload.get("available", True)),
-        "voices": voice_payload.get("voices", []),
-        "count": voice_payload.get("count", len(voice_payload.get("voices", []))),
-        "filters": {
-            **filters,
-            "engines": engines_meta,
-        },
-    }
-    return jsonify(response)
+## voices_catalog endpoint moved below after blueprint declaration
 
 
 # ---------------------------------------------------------------------------
@@ -1674,6 +1635,48 @@ def voices_grouped_endpoint():
     return jsonify(response)
 
 
+@api.route("/voices_catalog", methods=["GET"])
+def voices_catalog_endpoint():
+    engine_id = request.args.get("engine")
+    engine, available = resolve_engine(engine_id, allow_unavailable=True)
+
+    payload_factory = engine.get("fetch_voices")
+    voice_payload = payload_factory() if callable(payload_factory) else {"engine": engine["id"], "available": available, "voices": [], "accentGroups": [], "count": 0}
+
+    engines_meta = [serialise_engine_meta(e) for e in ENGINE_REGISTRY.values()]
+
+    # Ensure filters exist even if engine doesn't provide them
+    filters = voice_payload.get("filters") or {}
+    if not filters:
+        voices = voice_payload.get("voices", [])
+        from collections import Counter
+        genders = Counter((v.get("gender") or "unknown") for v in voices if isinstance(v, dict))
+        locales = Counter((v.get("locale") or "misc") for v in voices if isinstance(v, dict))
+        filters = {
+            "genders": [
+                {"id": k, "label": ("Female" if k == "female" else "Male" if k == "male" else "Unknown"), "count": c}
+                for k, c in sorted(genders.items())
+            ],
+            "locales": [
+                {"id": k, "label": (k.upper() if k != "misc" else "Miscellaneous"), "count": c}
+                for k, c in sorted(locales.items())
+            ],
+            "accents": voice_payload.get("accentGroups") or voice_payload.get("groups") or [],
+        }
+
+    response = {
+        "engine": engine["id"],
+        "available": available and bool(voice_payload.get("available", True)),
+        "voices": voice_payload.get("voices", []),
+        "count": voice_payload.get("count", len(voice_payload.get("voices", []))),
+        "filters": {
+            **filters,
+            "engines": engines_meta,
+        },
+    }
+    return jsonify(response)
+
+
 @api.route("/voices/preview", methods=["POST"])
 def create_voice_preview_endpoint():
     """Generate or return a cached short preview clip for a voice.
@@ -2293,6 +2296,7 @@ _legacy_routes = [
     ("/meta", meta_endpoint, ["GET"]),
     ("/voices", voices_endpoint, ["GET"]),
     ("/voices_grouped", voices_grouped_endpoint, ["GET"]),
+    ("/voices_catalog", voices_catalog_endpoint, ["GET"]),
     ("/random_text", random_text_endpoint, ["GET"]),
     ("/ollama_models", ollama_models_endpoint, ["GET"]),
     ("/synthesise", synthesise_endpoint, ["POST"]),
