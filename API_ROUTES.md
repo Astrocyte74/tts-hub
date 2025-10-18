@@ -58,6 +58,9 @@ Base URL: `${VITE_API_BASE_URL}/${VITE_API_PREFIX}` (defaults to same‑origin +
 ## GET|POST /ollama/show
 - Proxy to `/api/show` for model details. Use `?model=name` or body `{ model: name }`.
 
+## GET|POST /ollama/delete
+- Proxy to `/api/delete` to remove a model from the local store. Use `?model=name` or body `{ model: name }`.
+
 ## POST /synthesise (alias: /synthesize)
 - Body: `{ text, voice, speed, language, trimSilence, engine? }` plus engine‑specific overrides (`style`, `speaker`, `seed`).
 - Also supports favorites: pass `favoriteId` or `favoriteSlug` (aliases: `profileId`/`profileSlug`) to resolve engine/voice/options from the Favorites store; the request body supplies the `text`.

@@ -1845,6 +1845,31 @@ def ollama_show_proxy():
         raise PlaygroundError(f"Ollama /show failed: {exc}", status=503)
 
 
+@api.route("/ollama/delete", methods=["POST", "GET"])
+def ollama_delete_proxy():
+    """Delete a model from the local Ollama store.
+
+    GET:  /ollama/delete?model=name or ?name=name
+    POST: { model: name } or { name: name }
+    """
+    import requests
+
+    if request.method == "GET":
+        model = request.args.get("model") or request.args.get("name")
+    else:
+        data = parse_json_request()
+        model = data.get("model") or data.get("name")
+    if not model:
+        raise PlaygroundError("Provide ?model=name or body {model:name}", status=400)
+    url = f"{_ollama_base()}/api/delete"
+    try:
+        res = requests.post(url, json={"name": model}, timeout=20)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"Ollama /delete failed: {exc}", status=503)
+
+
 @api.route("/voices_catalog", methods=["GET"])
 def voices_catalog_endpoint():
     engine_id = request.args.get("engine")
@@ -2519,6 +2544,7 @@ _legacy_routes = [
     ("/ollama/pull", ollama_pull_proxy, ["POST"]),
     ("/ollama/ps", ollama_ps_proxy, ["GET"]),
     ("/ollama/show", ollama_show_proxy, ["GET", "POST"]),
+    ("/ollama/delete", ollama_delete_proxy, ["GET", "POST"]),
     ("/random_text", random_text_endpoint, ["GET"]),
     ("/ollama_models", ollama_models_endpoint, ["GET"]),
     ("/synthesise", synthesise_endpoint, ["POST"]),
