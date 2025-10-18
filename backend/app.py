@@ -1878,14 +1878,27 @@ def ollama_delete_proxy():
         allow_cli = (os.environ.get('OLLAMA_ALLOW_CLI', '1').lower() in {'1','true','yes','on'})
         if code in (404, 405) and allow_cli:
             try:
-                import shutil, subprocess
+                import shutil, subprocess, re
                 bin_path = shutil.which('ollama')
                 if not bin_path:
                     raise RuntimeError('ollama binary not found on PATH')
-                proc = subprocess.run([bin_path, 'rm', model], capture_output=True, text=True, timeout=60)
+                proc = subprocess.run([bin_path, 'rm', model], capture_output=True, text=True, timeout=120)
+                def _strip(s: str) -> str:
+                    return re.sub(r'\x1B\[[0-?]*[ -/]*[@-~]', '', s or '').strip()
+                out, err = _strip(proc.stdout), _strip(proc.stderr)
                 if proc.returncode == 0:
-                    return jsonify({"status": "deleted", "source": "cli"})
-                raise RuntimeError(proc.stderr or 'ollama rm failed')
+                    note = None
+                    if 'not found' in (out + ' ' + err).lower() or 'no such model' in (out + ' ' + err).lower() or 'does not exist' in (out + ' ' + err).lower():
+                        note = 'already missing'
+                    payload = {"status": "deleted", "source": "cli"}
+                    if note:
+                        payload["note"] = note
+                    return jsonify(payload)
+                # Non-zero: treat specific missing cases as success as well
+                combined = (out + ' ' + err).lower()
+                if 'not found' in combined or 'no such model' in combined or 'does not exist' in combined:
+                    return jsonify({"status": "deleted", "source": "cli", "note": "already missing"})
+                raise RuntimeError(err or out or 'ollama rm failed')
             except Exception as exc:
                 raise PlaygroundError(f"Ollama /delete fallback failed: {exc}", status=503)
         raise PlaygroundError(f"Ollama /delete failed: {http_exc}", status=503)
