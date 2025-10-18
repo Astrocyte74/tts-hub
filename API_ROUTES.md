@@ -34,6 +34,15 @@ Base URL: `${VITE_API_BASE_URL}/${VITE_API_PREFIX}` (defaults to same‑origin +
 ## GET /ollama_models
 - Returns `{ models[], source, url, error? }`.
 
+## GET /ollama/tags
+- Proxy to Ollama `/api/tags`. Returns the raw tags payload.
+
+## POST /ollama/generate
+- Proxy to Ollama `/api/ggenerate`. Body is forwarded as JSON; `stream` defaults to `false` for a single JSON result.
+
+## POST /ollama/chat
+- Proxy to Ollama `/api/chat`. Body is forwarded as JSON; `stream` defaults to `false`.
+
 ## POST /synthesise (alias: /synthesize)
 - Body: `{ text, voice, speed, language, trimSilence, engine? }` plus engine‑specific overrides (`style`, `speaker`, `seed`).
 - Also supports favorites: pass `favoriteId` or `favoriteSlug` (aliases: `profileId`/`profileSlug`) to resolve engine/voice/options from the Favorites store; the request body supplies the `text`.
