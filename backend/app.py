@@ -45,6 +45,9 @@ VOICES_PATH = Path(os.environ.get("KOKORO_VOICES", str(APP_ROOT / "models" / "vo
 BACKEND_HOST = os.environ.get("BACKEND_HOST", os.environ.get("HOST", "127.0.0.1"))
 BACKEND_PORT = int(os.environ.get("BACKEND_PORT", os.environ.get("PORT", "7860")))
 API_PREFIX = os.environ.get("API_PREFIX", os.environ.get("VITE_API_PREFIX", "api")).strip("/")
+# Optional launcher-provided hints for client status displays
+PUBLIC_HOST = os.environ.get("PUBLIC_HOST")
+LAN_IP = os.environ.get("LAN_IP")
 FAVORITES_STORE_PATH = Path(
     os.environ.get("FAVORITES_STORE_PATH", str(Path.home() / ".kokoro" / "favorites.json"))
 ).expanduser()
@@ -1495,21 +1498,37 @@ def meta_endpoint():
     accent_groups = kokoro_voice_payload["accentGroups"]
     engines_meta = [serialise_engine_meta(engine) for engine in ENGINE_REGISTRY.values()]
 
-    return jsonify(
-        {
-            "api_prefix": API_PREFIX,
-            "port": BACKEND_PORT,
-            "has_model": has_model,
-            "has_voices": has_voices,
-            "random_categories": RANDOM_CATEGORIES,
-            "accent_groups": accent_groups,
-            "voice_count": kokoro_voice_payload["count"],
-            "frontend_bundle": {"path": str(FRONTEND_DIST), "available": bundle_index.is_file()},
-            "ollama_available": bool(ollama_info.get("models")),
-            "engines": engines_meta,
-            "default_engine": DEFAULT_TTS_ENGINE,
-        }
-    )
+    # Helpful URL hints for peers (frontends may show these in a footer)
+    def _url(host: str | None) -> str | None:
+        if not host:
+            return None
+        prefix = f"/{API_PREFIX}" if API_PREFIX else ""
+        return f"http://{host}:{BACKEND_PORT}{prefix}"
+
+    payload = {
+        "api_prefix": API_PREFIX,
+        "port": BACKEND_PORT,
+        "has_model": has_model,
+        "has_voices": has_voices,
+        "random_categories": RANDOM_CATEGORIES,
+        "accent_groups": accent_groups,
+        "voice_count": kokoro_voice_payload["count"],
+        "frontend_bundle": {"path": str(FRONTEND_DIST), "available": bundle_index.is_file()},
+        "ollama_available": bool(ollama_info.get("models")),
+        "engines": engines_meta,
+        "default_engine": DEFAULT_TTS_ENGINE,
+        # Hints added for UI status
+        "bind_host": BACKEND_HOST,
+        "public_host": PUBLIC_HOST,
+        "lan_ip": LAN_IP,
+        "urls": {
+            "local": _url("127.0.0.1"),
+            "bind": _url(BACKEND_HOST),
+            "lan": _url(LAN_IP) if LAN_IP else None,
+            "wg": _url(PUBLIC_HOST) if PUBLIC_HOST else None,
+        },
+    }
+    return jsonify(payload)
 
 
 @api.route("/voices", methods=["GET"])

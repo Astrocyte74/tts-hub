@@ -45,6 +45,15 @@ OPENVOICE_VENV="${OPENVOICE_VENV:-$OPENVOICE_ROOT/.venv}"
 CHATTT_ROOT="${CHATTT_ROOT:-$TTS_HUB_ROOT/chattts}"
 CHATTT_VENV="${CHATTT_VENV:-$CHATTT_ROOT/.venv}"
 
+# WireGuard integration (optional)
+# WG_MODE: off | auto | bind-wg | bind-all
+#  - auto: detect WG IP; bind to 0.0.0.0 and advertise WG IP as public host
+#  - bind-wg: bind only to WG IP (VPN-only)
+#  - bind-all: bind 0.0.0.0 (LAN + VPN)
+WG_MODE="${WG_MODE:-auto}"
+# You may explicitly set PUBLIC_HOST to override what peers should use to reach this host.
+PUBLIC_HOST="${PUBLIC_HOST:-}"
+
 log() {
   printf '[Kokoro SPA] %s\n' "$*"
 }
@@ -80,6 +89,30 @@ pick_free_port() {
     p=$((p+1)); i=$((i+1))
   done
   echo "$p"
+}
+
+# Try to detect a WireGuard/utun IPv4 address (macOS WireGuard typically uses utunX)
+detect_wireguard_ip() {
+  # Prefer wg* interfaces if present, else utun*/tun*
+  if command -v ifconfig >/dev/null 2>&1; then
+    # Scan wg*, utun*, tun* blocks for the first 'inet' address
+    ifconfig 2>/dev/null \
+      | sed -n '/^wg[0-9]/,/^$/p; /^utun[0-9]/,/^$/p; /^tun[0-9]/,/^$/p' \
+      | awk '$1 == "inet" {print $2; exit}'
+  fi
+}
+
+# Try to detect a primary LAN IPv4 address (useful for status hints)
+detect_lan_ip() {
+  # macOS: prefer Wi‑Fi en0, then Ethernet en1
+  if command -v ipconfig >/dev/null 2>&1; then
+    ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true
+    return
+  fi
+  # Fallback: parse ifconfig for en* devices
+  if command -v ifconfig >/dev/null 2>&1; then
+    ifconfig 2>/dev/null | sed -n '/^en[0-9]/,/^$/p' | awk '$1 == "inet" && $2 !~ /^127\./ {print $2; exit}'
+  fi
 }
 
 MODE_LOWER=$(printf '%s' "$MODE" | tr '[:upper:]' '[:lower:]')
@@ -314,6 +347,9 @@ export KOKORO_MODEL="${KOKORO_MODEL:-$MODEL_PATH_DEFAULT}"
 export KOKORO_VOICES="${KOKORO_VOICES:-$VOICES_PATH_DEFAULT}"
 export KOKORO_OUT="${KOKORO_OUT:-$ROOT_DIR/out}"
 export API_PREFIX="$BACKEND_API_PREFIX"
+# Export host hints for backend meta endpoint
+export PUBLIC_HOST
+export LAN_IP
 export XTTS_ROOT
 export XTTS_SERVICE_DIR
 export XTTS_PYTHON="${XTTS_PYTHON:-$XTTS_VENV/bin/python}"
@@ -381,10 +417,33 @@ else
   log "XTTS server script not found – falling back to CLI mode."
 fi
 
+# Host/port for Flask backend
 BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 BACKEND_PORT="${BACKEND_PORT:-7860}"
 
 log "Launcher mode: ${MODE_LOWER}"
+
+# WireGuard-aware host selection
+if [[ "$WG_MODE" != "off" && -z "$PUBLIC_HOST" ]]; then
+  WG_IP="$(detect_wireguard_ip || true)"
+  if [[ -n "$WG_IP" ]]; then
+    PUBLIC_HOST="$WG_IP"
+    case "$(printf '%s' "$WG_MODE" | tr '[:upper:]' '[:lower:]')" in
+      bind-wg)
+        BACKEND_HOST="$WG_IP"   # bind only on WG IP
+        : "${VITE_HOST:=0.0.0.0}" # dev server binds all; public URL uses PUBLIC_HOST
+        ;;
+      auto|bind-all|*)
+        BACKEND_HOST="0.0.0.0"  # bind all interfaces (LAN + WG)
+        : "${VITE_HOST:=0.0.0.0}"
+        ;;
+    esac
+    log "WireGuard IP detected: $WG_IP (WG_MODE=$WG_MODE)"
+  fi
+fi
+
+# Detect LAN IP for status hints (does not affect binding)
+LAN_IP="${LAN_IP:-$(detect_lan_ip || true)}"
 
 if [[ "$MODE_LOWER" == "prod" ]]; then
   if [[ "$HAS_NPM" -eq 1 ]]; then
@@ -423,13 +482,21 @@ else
   BACKEND_MODE="reused"
 fi
 
-if [[ "$MODE_LOWER" == "prod" ]]; then
+  if [[ "$MODE_LOWER" == "prod" ]]; then
   log "Production mode active. Serving built assets via Flask."
   if should_skip_backend; then
     log "Cannot run UI-only in prod; backend is required. Start backend in another session or run dev mode."
     exit 1
   else
-    open_in_browser "http://$BACKEND_HOST:$BACKEND_PORT"
+    # Prefer PUBLIC_HOST for URLs shown to peers (avoid 0.0.0.0)
+    OPEN_HOST="${PUBLIC_HOST:-$BACKEND_HOST}"
+    # Helpful status URLs
+    log "URLs → Local: http://127.0.0.1:$BACKEND_PORT  LAN: ${LAN_IP:+http://$LAN_IP:$BACKEND_PORT }WG: ${PUBLIC_HOST:+http://$PUBLIC_HOST:$BACKEND_PORT }"
+    log "API  → http://127.0.0.1:$BACKEND_PORT/$BACKEND_API_PREFIX  ${LAN_IP:+http://$LAN_IP:$BACKEND_PORT/$BACKEND_API_PREFIX }${PUBLIC_HOST:+http://$PUBLIC_HOST:$BACKEND_PORT/$BACKEND_API_PREFIX }"
+    if [[ -n "$PUBLIC_HOST" ]]; then
+      log "Tip: From Docker on a peer — docker run --rm --network host -e TTSHUB_API_BASE=http://$PUBLIC_HOST:$BACKEND_PORT/$BACKEND_API_PREFIX curlimages/curl:8.10.1 curl -sS \"\$TTSHUB_API_BASE/meta\""
+    fi
+    open_in_browser "http://$OPEN_HOST:$BACKEND_PORT"
     wait "$BACKEND_PID"
     exit $?
   fi
@@ -449,11 +516,19 @@ log "Status summary: backend=$BACKEND_MODE, xtts=$XTTS_MODE, ui=$DEV_HOST:$DEV_P
 log "Starting Vite dev server on $DEV_URL"
 
 cd "$FRONTEND_DIR"
-VITE_API_BASE_URL="http://$BACKEND_HOST:$BACKEND_PORT" \
+# Use PUBLIC_HOST for the API base when available (ensures remote peers can reach it)
+VITE_API_BASE_URL="http://${PUBLIC_HOST:-$BACKEND_HOST}:$BACKEND_PORT" \
 VITE_API_PREFIX="${VITE_API_PREFIX:-$BACKEND_API_PREFIX}" \
 npm run dev -- --host "$DEV_HOST" --port "$DEV_PORT" &
 FRONTEND_PID=$!
 
-open_in_browser "$DEV_URL"
+# Open a more useful URL for peers when PUBLIC_HOST is known
+OPEN_DEV_HOST="${PUBLIC_HOST:-$DEV_HOST}"
+log "URLs → UI:  http://127.0.0.1:$DEV_PORT  ${LAN_IP:+http://$LAN_IP:$DEV_PORT }${PUBLIC_HOST:+http://$OPEN_DEV_HOST:$DEV_PORT (WG) }"
+log "API: http://127.0.0.1:$BACKEND_PORT/$BACKEND_API_PREFIX  ${LAN_IP:+http://$LAN_IP:$BACKEND_PORT/$BACKEND_API_PREFIX }${PUBLIC_HOST:+http://$PUBLIC_HOST:$BACKEND_PORT/$BACKEND_API_PREFIX }"
+if [[ -n "$PUBLIC_HOST" ]]; then
+  log "Tip: From Docker on a peer — docker run --rm --network host -e TTSHUB_API_BASE=http://$PUBLIC_HOST:$BACKEND_PORT/$BACKEND_API_PREFIX curlimages/curl:8.10.1 curl -sS \"\$TTSHUB_API_BASE/meta\""
+fi
+open_in_browser "http://$OPEN_DEV_HOST:$DEV_PORT"
 
 wait "$FRONTEND_PID"

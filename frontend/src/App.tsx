@@ -13,6 +13,7 @@ import { ResultsDrawer } from './components/ResultsDrawer';
 import { SettingsPopover } from './components/SettingsPopover';
 import { PresetDialog } from './components/PresetDialog';
 import { InfoDialog } from './components/InfoDialog';
+import { ApiStatusFooter } from './components/ApiStatusFooter';
 import { FavoritesManagerDialog } from './components/FavoritesManagerDialog';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSessionStorage } from './hooks/useSessionStorage';
@@ -283,11 +284,6 @@ function App() {
         engine: String(p['engine'] ?? ''),
         voiceId: String(p['voiceId'] ?? ''),
         notes: typeof p['notes'] === 'string' ? (p['notes'] as string) : undefined,
-        language: typeof p['language'] === 'string' ? (p['language'] as string) : undefined,
-        speed: typeof p['speed'] === 'number' ? (p['speed'] as number) : undefined,
-        trimSilence: typeof p['trimSilence'] === 'boolean' ? (p['trimSilence'] as boolean) : undefined,
-        style: typeof p['style'] === 'string' ? (p['style'] as string) : undefined,
-        seed: typeof p['seed'] === 'number' ? (p['seed'] as number) : undefined,
       }))
       .filter((p) => p.id && p.label && p.engine && p.voiceId)
       .slice(0, 5);
@@ -319,7 +315,6 @@ function App() {
       label: String(p['label'] ?? ''),
       engine: String(p['engine'] ?? ''),
       voiceId: String(p['voiceId'] ?? ''),
-      tags: Array.isArray(p['tags']) ? (p['tags'] as unknown[]).map((t) => String(t)).filter(Boolean) : [],
       language: typeof p['language'] === 'string' ? (p['language'] as string) : undefined,
       speed: typeof p['speed'] === 'number' ? (p['speed'] as number) : undefined,
       trimSilence: typeof p['trimSilence'] === 'boolean' ? (p['trimSilence'] as boolean) : undefined,
@@ -364,7 +359,6 @@ function App() {
       label: String(p['label'] ?? ''),
       engine: String(p['engine'] ?? ''),
       voiceId: String(p['voiceId'] ?? ''),
-      tags: Array.isArray(p['tags']) ? (p['tags'] as unknown[]).map((t) => String(t)).filter(Boolean) : [],
       notes: typeof p['notes'] === 'string' ? (p['notes'] as string) : undefined,
     }));
   }, [profilesQuery.data]);
@@ -1354,6 +1348,12 @@ function App() {
           setActivePanel('voices');
         }}
         onAiAssistClick={() => setAiAssistOpen(true)}
+        onOpenApiStatus={() => {
+          const el = document.getElementById('api-status-footer');
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          }
+        }}
         quickFavorites={quickFavoriteVoices}
         quickRecents={quickRecentVoices}
         onQuickSelectVoice={(id) => {
@@ -1677,7 +1677,14 @@ function App() {
           }
         }}
       />
-      {/* Legacy local-favorites manager removed in favor of server-backed manager */}
+      <FavoritesManagerDialog
+        isOpen={isFavoritesManagerOpen}
+        favorites={kokoroFavorites}
+        voices={voices}
+        onClose={handleCloseFavoritesManager}
+        onRename={handleRenameFavorite}
+        onDelete={handleDeleteFavorite}
+      />
       <InfoDialog
         isOpen={isAiAssistOpen}
         title="AI Assist"
@@ -1694,6 +1701,7 @@ function App() {
           </div>
         )}
       </InfoDialog>
+      <ApiStatusFooter meta={metaQuery.data} />
       <PresetDialog
         isOpen={Boolean(saveDraft)}
         title={presetDialogTitle}

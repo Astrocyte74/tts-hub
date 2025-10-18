@@ -132,6 +132,16 @@ export interface MetaResponse {
     available: boolean;
   };
   ollama_available: boolean;
+  // Optional network hints from launcher/backend
+  bind_host?: string;
+  public_host?: string | null;
+  lan_ip?: string | null;
+  urls?: {
+    local?: string | null;
+    bind?: string | null;
+    lan?: string | null;
+    wg?: string | null;
+  };
 }
 
 export interface GlobalProfile {
