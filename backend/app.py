@@ -1491,59 +1491,7 @@ def list_ollama_models() -> Dict[str, Any]:
         return {"models": [], "source": "offline", "url": ollama_url, "error": str(exc)}
 
 
-# ---------------------------------------------------------------------------
-# Ollama proxy endpoints (optional)
-# ---------------------------------------------------------------------------
-
-def _ollama_base() -> str:
-    return os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-
-
-@api.route("/ollama/tags", methods=["GET"])
-def ollama_tags_proxy():
-    """Proxy to Ollama /api/tags for peers (non-streaming)."""
-    import requests
-
-    url = f"{_ollama_base()}/api/tags"
-    try:
-        res = requests.get(url, timeout=20)
-        res.raise_for_status()
-        payload = res.json()
-        return jsonify(payload)
-    except Exception as exc:  # pragma: no cover
-        raise PlaygroundError(f"Ollama /tags failed: {exc}", status=503)
-
-
-@api.route("/ollama/generate", methods=["POST"])
-def ollama_generate_proxy():
-    """Proxy to Ollama /api/generate (forces stream=false unless explicitly true)."""
-    import requests
-
-    body = parse_json_request()
-    body.setdefault("stream", False)
-    url = f"{_ollama_base()}/api/generate"
-    try:
-        res = requests.post(url, json=body, timeout=120)
-        res.raise_for_status()
-        return jsonify(res.json())
-    except Exception as exc:  # pragma: no cover
-        raise PlaygroundError(f"Ollama /generate failed: {exc}", status=503)
-
-
-@api.route("/ollama/chat", methods=["POST"])
-def ollama_chat_proxy():
-    """Proxy to Ollama /api/chat (forces stream=false unless explicitly true)."""
-    import requests
-
-    body = parse_json_request()
-    body.setdefault("stream", False)
-    url = f"{_ollama_base()}/api/chat"
-    try:
-        res = requests.post(url, json=body, timeout=120)
-        res.raise_for_status()
-        return jsonify(res.json())
-    except Exception as exc:  # pragma: no cover
-        raise PlaygroundError(f"Ollama /chat failed: {exc}", status=503)
+## Ollama proxy endpoints defined after blueprint (see below)
 
 
 # ---------------------------------------------------------------------------
@@ -1748,6 +1696,51 @@ def voices_grouped_endpoint():
     if not groups and engine["id"] != "kokoro":
         response["message"] = "Grouped voice metadata not yet implemented for this engine."
     return jsonify(response)
+
+
+# Ollama proxy endpoints (after blueprint creation)
+def _ollama_base() -> str:
+    return os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+
+
+@api.route("/ollama/tags", methods=["GET"])
+def ollama_tags_proxy():
+    import requests
+    url = f"{_ollama_base()}/api/tags"
+    try:
+        res = requests.get(url, timeout=20)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"Ollama /tags failed: {exc}", status=503)
+
+
+@api.route("/ollama/generate", methods=["POST"])
+def ollama_generate_proxy():
+    import requests
+    body = parse_json_request()
+    body.setdefault("stream", False)
+    url = f"{_ollama_base()}/api/generate"
+    try:
+        res = requests.post(url, json=body, timeout=120)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"Ollama /generate failed: {exc}", status=503)
+
+
+@api.route("/ollama/chat", methods=["POST"])
+def ollama_chat_proxy():
+    import requests
+    body = parse_json_request()
+    body.setdefault("stream", False)
+    url = f"{_ollama_base()}/api/chat"
+    try:
+        res = requests.post(url, json=body, timeout=120)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"Ollama /chat failed: {exc}", status=503)
 
 
 @api.route("/voices_catalog", methods=["GET"])
