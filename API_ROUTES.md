@@ -8,10 +8,21 @@ Base URL: `${VITE_API_BASE_URL}/${VITE_API_PREFIX}` (defaults to same‑origin +
 ## GET /voices?engine=<id>
 - Returns `{ engine, available, voices[], accentGroups[], count, styles?, presets?, message? }`.
 - Voice shape (engine‑agnostic fields): `id`, `label`, `locale`, `gender`, `tags[]`, `notes`, `accent{ id,label,flag }`, `raw{ ... }`.
-- Kokoro adds `raw.preview_url` when a cached preview exists.
+- Kokoro adds `raw.preview_url` when a cached preview exists. The voice objects include `engine`.
 
 ## GET /voices_grouped?engine=<id>
 - Returns grouped voice buckets: `{ id, label, flag?, voices[], count }`.
+
+## GET /voices_catalog?engine=<id>
+- Combined catalogue + filter metadata for simple clients (bots/integrations).
+- Returns:
+  - `engine`, `available`, `count`
+  - `voices[]` (same shape as `GET /voices`, with `engine` on each item)
+  - `filters`:
+    - `engines[]` — from `/meta` (id, label, available, status)
+    - `genders[]` — `{ id: 'female'|'male'|'unknown', label, count }`
+    - `locales[]` — `{ id: 'en-us'|'en-gb'|..., label, count }` (misc bucket when unknown)
+    - `accents[]` — same buckets as `accentGroups`
 
 ## GET /random_text?category=<name>
 - Returns test text: `{ text, source, category, categories[] }`.
