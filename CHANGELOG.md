@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented here.
 
+## [v0.3.0-wg-ollama] – 2025-10-18
+
+Highlights
+- Ollama over the hub (LLM proxy)
+  - New endpoints: `/api/ollama/tags`, `/generate`, `/chat`, `/pull`, `/ps`, `/show`, `/delete`
+  - Streaming (SSE) for `/generate`, `/chat`, `/pull` with immediate `{"status":"starting"}` preamble
+  - Robust delete: normalize missing models to 200 (with note) and strip ANSI sequences in CLI fallback
+  - UI: Ollama panel under the API footer for models/status/pull/generate
+- Voice catalogue filters
+  - `GET /api/voices_catalog` returns voices plus filters (genders, locales, accents, accentFamilies) and engines meta
+  - Kokoro voices include `engine` and derived `gender` fields
+- Accent label polish
+  - Compact labels: USA/UK and “Other” (flags unchanged)
+
+Notes
+- WireGuard remains the recommended access path; the hub proxies TTS and Ollama on the same base URL.
+- See README “Ollama Proxy” and `docs/WIREGUARD_MODE.md` for quick tests.
+
 ## [v0.2.0-wg] – 2025-10-18
 
 Highlights
