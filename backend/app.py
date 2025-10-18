@@ -16,7 +16,7 @@ import re
 
 import numpy as np
 import soundfile as sf
-from flask import Blueprint, Flask, abort, jsonify, make_response, request, send_from_directory
+from flask import Blueprint, Flask, Response, abort, jsonify, make_response, request, send_from_directory
 from flask_cors import CORS
 from favorites_store import FavoritesStore
 
@@ -307,10 +307,69 @@ def group_voices_by_accent(voices: List[VoiceProfile]) -> List[Dict[str, Any]]:
     return sorted(groups.values(), key=lambda item: item["label"].lower())
 
 
+def _family_id_from_accent(accent_id: Optional[str]) -> str:
+    if not accent_id:
+        return "other"
+    return accent_id.split("_", 1)[0]
+
+
+def _family_label(label: Optional[str], *, default: str = "Other") -> str:
+    if not label:
+        return default
+    # Strip gender suffix like "USA · Female"
+    base = str(label).split(" · ", 1)[0].strip()
+    return base or default
+
+
+def build_accent_families(voices: List[Any]) -> Dict[str, List[Dict[str, Any]]]:
+    """Collapse gendered accent buckets into families with per-gender counts.
+
+    Accepts either VoiceProfile objects or dicts with shape from serialise_voice_profile.
+    Returns a dict with keys: any, female, male — each a list of { id, label, flag, count }.
+    """
+    from collections import defaultdict
+
+    def get_accent(v: Any) -> Tuple[str, str, str]:
+        if isinstance(v, dict):
+            a = v.get("accent") or {}
+            return str(a.get("id") or "other"), str(a.get("label") or "Other"), str(a.get("flag") or "🌐")
+        return getattr(v, "accent_id", "other"), getattr(v, "accent_label", "Other"), getattr(v, "accent_flag", "🌐")
+
+    def get_gender(v: Any) -> Optional[str]:
+        return (v.get("gender") if isinstance(v, dict) else getattr(v, "gender", None)) or None
+
+    meta: Dict[str, Dict[str, Any]] = {}
+    counts: Dict[str, Dict[str, int]] = defaultdict(lambda: {"any": 0, "female": 0, "male": 0})
+
+    for v in voices:
+        aid, alabel, aflag = get_accent(v)
+        fam = _family_id_from_accent(aid)
+        base_label = _family_label(alabel)
+        meta.setdefault(fam, {"id": fam, "label": base_label, "flag": aflag})
+        counts[fam]["any"] += 1
+        g = get_gender(v)
+        if g == "female":
+            counts[fam]["female"] += 1
+        elif g == "male":
+            counts[fam]["male"] += 1
+
+    def to_list(key: str) -> List[Dict[str, Any]]:
+        items = []
+        for fam, m in meta.items():
+            c = counts[fam].get(key, 0)
+            if c > 0:
+                items.append({"id": fam, "label": m["label"], "flag": m["flag"], "count": c})
+        items.sort(key=lambda x: x["label"].lower())
+        return items
+
+    return {"any": to_list("any"), "female": to_list("female"), "male": to_list("male")}
+
+
 
 def build_kokoro_voice_payload() -> Dict[str, Any]:
     voices = load_voice_profiles()
     accent_groups = group_voices_by_accent(voices)
+    accent_families = build_accent_families(voices)
     # Build filter helpers (gender & locale counts)
     from collections import Counter
     genders = Counter((v.gender or "unknown") for v in voices)
@@ -335,6 +394,7 @@ def build_kokoro_voice_payload() -> Dict[str, Any]:
             "genders": gender_filters,
             "locales": locale_filters,
             "accents": accent_groups,
+            "accentFamilies": accent_families,
         },
     }
 
@@ -1431,6 +1491,9 @@ def list_ollama_models() -> Dict[str, Any]:
         return {"models": [], "source": "offline", "url": ollama_url, "error": str(exc)}
 
 
+## Ollama proxy endpoints defined after blueprint (see below)
+
+
 # ---------------------------------------------------------------------------
 # Audio helpers
 # ---------------------------------------------------------------------------
@@ -1635,6 +1698,214 @@ def voices_grouped_endpoint():
     return jsonify(response)
 
 
+# Ollama proxy endpoints (after blueprint creation)
+def _ollama_base() -> str:
+    return os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+
+
+@api.route("/ollama/tags", methods=["GET"])
+def ollama_tags_proxy():
+    import requests
+    url = f"{_ollama_base()}/api/tags"
+    try:
+        res = requests.get(url, timeout=20)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"Ollama /tags failed: {exc}", status=503)
+
+
+@api.route("/ollama/generate", methods=["POST"])
+def ollama_generate_proxy():
+    import requests
+    body = parse_json_request()
+    stream = bool(body.get("stream"))
+    url = f"{_ollama_base()}/api/generate"
+    try:
+        if stream:
+            def _proxy():
+                # Send an initial event so clients see liveness quickly
+                yield 'data: {"status":"starting"}\n\n'
+                with requests.post(url, json=body, stream=True, timeout=None) as r:
+                    r.raise_for_status()
+                    for line in r.iter_lines(decode_unicode=True):
+                        if not line:
+                            continue
+                        yield f"data: {line}\n\n"
+            headers = {
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            }
+            return Response(_proxy(), mimetype="text/event-stream", headers=headers)
+        # non-streaming
+        body.setdefault("stream", False)
+        res = requests.post(url, json=body, timeout=120)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"Ollama /generate failed: {exc}", status=503)
+
+
+@api.route("/ollama/chat", methods=["POST"])
+def ollama_chat_proxy():
+    import requests
+    body = parse_json_request()
+    stream = bool(body.get("stream"))
+    url = f"{_ollama_base()}/api/chat"
+    try:
+        if stream:
+            def _proxy():
+                yield 'data: {"status":"starting"}\n\n'
+                with requests.post(url, json=body, stream=True, timeout=None) as r:
+                    r.raise_for_status()
+                    for line in r.iter_lines(decode_unicode=True):
+                        if not line:
+                            continue
+                        yield f"data: {line}\n\n"
+            headers = {
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            }
+            return Response(_proxy(), mimetype="text/event-stream", headers=headers)
+        # non-streaming
+        body.setdefault("stream", False)
+        res = requests.post(url, json=body, timeout=120)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"Ollama /chat failed: {exc}", status=503)
+
+
+@api.route("/ollama/pull", methods=["POST"])
+def ollama_pull_proxy():
+    """Proxy to Ollama /api/pull. Supports streaming (SSE) or final JSON.
+
+    Body accepts { model: "name", stream?: bool } or { name: "name", stream?: bool }
+    """
+    import requests
+
+    body = parse_json_request()
+    name = str(body.get("model") or body.get("name") or "").strip()
+    if not name:
+        raise PlaygroundError("Field 'model' is required.", status=400)
+    upstream = {"name": name}
+    stream = bool(body.get("stream", True))
+    if not stream:
+        upstream["stream"] = False
+    url = f"{_ollama_base()}/api/pull"
+    try:
+        if stream:
+            def _proxy():
+                yield 'data: {"status":"starting"}\n\n'
+                with requests.post(url, json=upstream, stream=True, timeout=None) as r:
+                    r.raise_for_status()
+                    for line in r.iter_lines(decode_unicode=True):
+                        if not line:
+                            continue
+                        yield f"data: {line}\n\n"
+            headers = {
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            }
+            return Response(_proxy(), mimetype="text/event-stream", headers=headers)
+        res = requests.post(url, json=upstream, timeout=None)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"Ollama /pull failed: {exc}", status=503)
+
+
+@api.route("/ollama/ps", methods=["GET"])
+def ollama_ps_proxy():
+    import requests
+    url = f"{_ollama_base()}/api/ps"
+    try:
+        res = requests.get(url, timeout=10)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"Ollama /ps failed: {exc}", status=503)
+
+
+@api.route("/ollama/show", methods=["GET", "POST"])
+def ollama_show_proxy():
+    import requests
+    if request.method == "GET":
+        model = request.args.get("model") or request.args.get("name")
+    else:
+        data = parse_json_request()
+        model = data.get("model") or data.get("name")
+    if not model:
+        raise PlaygroundError("Provide ?model=name or body {model:name}", status=400)
+    url = f"{_ollama_base()}/api/show"
+    try:
+        res = requests.post(url, json={"name": model}, timeout=20)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"Ollama /show failed: {exc}", status=503)
+
+
+@api.route("/ollama/delete", methods=["POST", "GET"])
+def ollama_delete_proxy():
+    """Delete a model from the local Ollama store.
+
+    GET:  /ollama/delete?model=name or ?name=name
+    POST: { model: name } or { name: name }
+    """
+    import requests
+
+    if request.method == "GET":
+        model = request.args.get("model") or request.args.get("name")
+    else:
+        data = parse_json_request()
+        model = data.get("model") or data.get("name")
+    if not model:
+        raise PlaygroundError("Provide ?model=name or body {model:name}", status=400)
+    url = f"{_ollama_base()}/api/delete"
+    import requests
+    try:
+        # Ollama expects DELETE /api/delete with JSON body { name }
+        res = requests.delete(url, json={"name": model}, timeout=30)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except requests.HTTPError as http_exc:  # pragma: no cover
+        code = getattr(http_exc.response, 'status_code', None)
+        # Fallback: some Ollama versions may not expose /api/delete; try CLI when allowed
+        allow_cli = (os.environ.get('OLLAMA_ALLOW_CLI', '1').lower() in {'1','true','yes','on'})
+        if code in (404, 405) and allow_cli:
+            try:
+                import shutil, subprocess, re
+                bin_path = shutil.which('ollama')
+                if not bin_path:
+                    raise RuntimeError('ollama binary not found on PATH')
+                proc = subprocess.run([bin_path, 'rm', model], capture_output=True, text=True, timeout=120)
+                def _strip(s: str) -> str:
+                    return re.sub(r'\x1B\[[0-?]*[ -/]*[@-~]', '', s or '').strip()
+                out, err = _strip(proc.stdout), _strip(proc.stderr)
+                if proc.returncode == 0:
+                    note = None
+                    if 'not found' in (out + ' ' + err).lower() or 'no such model' in (out + ' ' + err).lower() or 'does not exist' in (out + ' ' + err).lower():
+                        note = 'already missing'
+                    payload = {"status": "deleted", "source": "cli"}
+                    if note:
+                        payload["note"] = note
+                    return jsonify(payload)
+                # Non-zero: treat specific missing cases as success as well
+                combined = (out + ' ' + err).lower()
+                if 'not found' in combined or 'no such model' in combined or 'does not exist' in combined:
+                    return jsonify({"status": "deleted", "source": "cli", "note": "already missing"})
+                raise RuntimeError(err or out or 'ollama rm failed')
+            except Exception as exc:
+                raise PlaygroundError(f"Ollama /delete fallback failed: {exc}", status=503)
+        raise PlaygroundError(f"Ollama /delete failed: {http_exc}", status=503)
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"Ollama /delete failed: {exc}", status=503)
+
+
 @api.route("/voices_catalog", methods=["GET"])
 def voices_catalog_endpoint():
     engine_id = request.args.get("engine")
@@ -1647,8 +1918,8 @@ def voices_catalog_endpoint():
 
     # Ensure filters exist even if engine doesn't provide them
     filters = voice_payload.get("filters") or {}
+    voices = voice_payload.get("voices", [])
     if not filters:
-        voices = voice_payload.get("voices", [])
         from collections import Counter
         genders = Counter((v.get("gender") or "unknown") for v in voices if isinstance(v, dict))
         locales = Counter((v.get("locale") or "misc") for v in voices if isinstance(v, dict))
@@ -1663,6 +1934,12 @@ def voices_catalog_endpoint():
             ],
             "accents": voice_payload.get("accentGroups") or voice_payload.get("groups") or [],
         }
+    # Add normalized accent families to filters
+    try:
+        filters = dict(filters)
+        filters["accentFamilies"] = build_accent_families(voices)
+    except Exception:
+        pass
 
     response = {
         "engine": engine["id"],
@@ -2297,6 +2574,13 @@ _legacy_routes = [
     ("/voices", voices_endpoint, ["GET"]),
     ("/voices_grouped", voices_grouped_endpoint, ["GET"]),
     ("/voices_catalog", voices_catalog_endpoint, ["GET"]),
+    ("/ollama/tags", ollama_tags_proxy, ["GET"]),
+    ("/ollama/generate", ollama_generate_proxy, ["POST"]),
+    ("/ollama/chat", ollama_chat_proxy, ["POST"]),
+    ("/ollama/pull", ollama_pull_proxy, ["POST"]),
+    ("/ollama/ps", ollama_ps_proxy, ["GET"]),
+    ("/ollama/show", ollama_show_proxy, ["GET", "POST"]),
+    ("/ollama/delete", ollama_delete_proxy, ["GET", "POST"]),
     ("/random_text", random_text_endpoint, ["GET"]),
     ("/ollama_models", ollama_models_endpoint, ["GET"]),
     ("/synthesise", synthesise_endpoint, ["POST"]),

@@ -341,6 +341,60 @@ export async function createVoicePreview(params: { engine: string; voiceId: stri
   return { preview_url: url };
 }
 
+// -------------------- Ollama proxies --------------------
+
+export async function ollamaTags(): Promise<Record<string, unknown>> {
+  return getJson<Record<string, unknown>>('ollama/tags');
+}
+
+export async function ollamaPs(): Promise<Record<string, unknown>> {
+  return getJson<Record<string, unknown>>('ollama/ps');
+}
+
+export async function ollamaShow(model: string): Promise<Record<string, unknown>> {
+  return postJson<Record<string, unknown>>('ollama/show', { model });
+}
+
+export async function ollamaGenerate(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return postJson<Record<string, unknown>>('ollama/generate', body);
+}
+
+export async function ollamaChat(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return postJson<Record<string, unknown>>('ollama/chat', body);
+}
+
+export async function ollamaPull(model: string, opts?: { stream?: boolean; onEvent?: (text: string) => void }): Promise<Record<string, unknown>> {
+  const stream = opts?.stream ?? true;
+  if (stream && typeof opts?.onEvent === 'function') {
+    const res = await fetch(buildUrl('ollama/pull'), {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ model, stream: true }),
+    });
+    if (!res.ok || !res.body) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`POST ollama/pull failed (${res.status}): ${text}`);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      // SSE lines start with 'data: '
+      chunk.split('\n').forEach((line) => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('data: ')) {
+          const payload = trimmed.slice(6);
+          opts.onEvent!(payload);
+        }
+      });
+    }
+    return { streamed: true } as any;
+  }
+  return postJson<Record<string, unknown>>('ollama/pull', { model, stream: false });
+}
+
 // Favorites (Profiles)
 export async function createProfile(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   return postJson<Record<string, unknown>>('favorites', payload);

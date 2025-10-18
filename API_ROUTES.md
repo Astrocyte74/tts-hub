@@ -23,12 +23,43 @@ Base URL: `${VITE_API_BASE_URL}/${VITE_API_PREFIX}` (defaults to same‑origin +
     - `genders[]` — `{ id: 'female'|'male'|'unknown', label, count }`
     - `locales[]` — `{ id: 'en-us'|'en-gb'|..., label, count }` (misc bucket when unknown)
     - `accents[]` — same buckets as `accentGroups`
+    - `accentFamilies` — normalized, gender-aware buckets with merged counts:
+      - `any[]` — counts for families like `us`, `uk`, `other` regardless of gender
+      - `female[]` — counts for the same families restricted to female voices
+      - `male[]` — counts restricted to male voices
 
 ## GET /random_text?category=<name>
 - Returns test text: `{ text, source, category, categories[] }`.
 
 ## GET /ollama_models
 - Returns `{ models[], source, url, error? }`.
+
+## GET /ollama/tags
+- Proxy to Ollama `/api/tags`. Returns the raw tags payload.
+
+## POST /ollama/generate
+- Proxy to Ollama `/api/generate`. Body is forwarded as JSON.
+- `stream=false` (default): returns a single JSON object.
+- `stream=true`: streams NDJSON wrapped as SSE (`text/event-stream`).
+
+## POST /ollama/chat
+- Proxy to Ollama `/api/chat`. Body is forwarded as JSON.
+- `stream=false` (default): returns a single JSON object.
+- `stream=true`: streams NDJSON wrapped as SSE.
+
+## POST /ollama/pull
+- Proxy to Ollama `/api/pull` to fetch a model.
+- Body: `{ model: "llama3:8b", stream?: boolean }` (`name` also accepted).
+- `stream=true` (default): streams progress as SSE; `false` returns a final JSON snapshot.
+
+## GET /ollama/ps
+- Proxy to `/api/ps` (running models/status).
+
+## GET|POST /ollama/show
+- Proxy to `/api/show` for model details. Use `?model=name` or body `{ model: name }`.
+
+## GET|POST /ollama/delete
+- Proxy to `/api/delete` to remove a model from the local store. Use `?model=name` or body `{ model: name }`.
 
 ## POST /synthesise (alias: /synthesize)
 - Body: `{ text, voice, speed, language, trimSilence, engine? }` plus engine‑specific overrides (`style`, `speaker`, `seed`).
