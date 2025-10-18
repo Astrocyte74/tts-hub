@@ -38,10 +38,25 @@ Base URL: `${VITE_API_BASE_URL}/${VITE_API_PREFIX}` (defaults to same‑origin +
 - Proxy to Ollama `/api/tags`. Returns the raw tags payload.
 
 ## POST /ollama/generate
-- Proxy to Ollama `/api/ggenerate`. Body is forwarded as JSON; `stream` defaults to `false` for a single JSON result.
+- Proxy to Ollama `/api/generate`. Body is forwarded as JSON.
+- `stream=false` (default): returns a single JSON object.
+- `stream=true`: streams NDJSON wrapped as SSE (`text/event-stream`).
 
 ## POST /ollama/chat
-- Proxy to Ollama `/api/chat`. Body is forwarded as JSON; `stream` defaults to `false`.
+- Proxy to Ollama `/api/chat`. Body is forwarded as JSON.
+- `stream=false` (default): returns a single JSON object.
+- `stream=true`: streams NDJSON wrapped as SSE.
+
+## POST /ollama/pull
+- Proxy to Ollama `/api/pull` to fetch a model.
+- Body: `{ model: "llama3:8b", stream?: boolean }` (`name` also accepted).
+- `stream=true` (default): streams progress as SSE; `false` returns a final JSON snapshot.
+
+## GET /ollama/ps
+- Proxy to `/api/ps` (running models/status).
+
+## GET|POST /ollama/show
+- Proxy to `/api/show` for model details. Use `?model=name` or body `{ model: name }`.
 
 ## POST /synthesise (alias: /synthesize)
 - Body: `{ text, voice, speed, language, trimSilence, engine? }` plus engine‑specific overrides (`style`, `speaker`, `seed`).

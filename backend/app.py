@@ -16,7 +16,7 @@ import re
 
 import numpy as np
 import soundfile as sf
-from flask import Blueprint, Flask, abort, jsonify, make_response, request, send_from_directory
+from flask import Blueprint, Flask, Response, abort, jsonify, make_response, request, send_from_directory
 from flask_cors import CORS
 from favorites_store import FavoritesStore
 
@@ -1719,9 +1719,25 @@ def ollama_tags_proxy():
 def ollama_generate_proxy():
     import requests
     body = parse_json_request()
-    body.setdefault("stream", False)
+    stream = bool(body.get("stream"))
     url = f"{_ollama_base()}/api/generate"
     try:
+        if stream:
+            def _proxy():
+                with requests.post(url, json=body, stream=True, timeout=None) as r:
+                    r.raise_for_status()
+                    for line in r.iter_lines(decode_unicode=True):
+                        if not line:
+                            continue
+                        yield f"data: {line}\n\n"
+            headers = {
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            }
+            return Response(_proxy(), mimetype="text/event-stream", headers=headers)
+        # non-streaming
+        body.setdefault("stream", False)
         res = requests.post(url, json=body, timeout=120)
         res.raise_for_status()
         return jsonify(res.json())
@@ -1733,14 +1749,100 @@ def ollama_generate_proxy():
 def ollama_chat_proxy():
     import requests
     body = parse_json_request()
-    body.setdefault("stream", False)
+    stream = bool(body.get("stream"))
     url = f"{_ollama_base()}/api/chat"
     try:
+        if stream:
+            def _proxy():
+                with requests.post(url, json=body, stream=True, timeout=None) as r:
+                    r.raise_for_status()
+                    for line in r.iter_lines(decode_unicode=True):
+                        if not line:
+                            continue
+                        yield f"data: {line}\n\n"
+            headers = {
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            }
+            return Response(_proxy(), mimetype="text/event-stream", headers=headers)
+        # non-streaming
+        body.setdefault("stream", False)
         res = requests.post(url, json=body, timeout=120)
         res.raise_for_status()
         return jsonify(res.json())
     except Exception as exc:  # pragma: no cover
         raise PlaygroundError(f"Ollama /chat failed: {exc}", status=503)
+
+
+@api.route("/ollama/pull", methods=["POST"])
+def ollama_pull_proxy():
+    """Proxy to Ollama /api/pull. Supports streaming (SSE) or final JSON.
+
+    Body accepts { model: "name", stream?: bool } or { name: "name", stream?: bool }
+    """
+    import requests
+
+    body = parse_json_request()
+    name = str(body.get("model") or body.get("name") or "").strip()
+    if not name:
+        raise PlaygroundError("Field 'model' is required.", status=400)
+    upstream = {"name": name}
+    stream = bool(body.get("stream", True))
+    if not stream:
+        upstream["stream"] = False
+    url = f"{_ollama_base()}/api/pull"
+    try:
+        if stream:
+            def _proxy():
+                with requests.post(url, json=upstream, stream=True, timeout=None) as r:
+                    r.raise_for_status()
+                    for line in r.iter_lines(decode_unicode=True):
+                        if not line:
+                            continue
+                        yield f"data: {line}\n\n"
+            headers = {
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            }
+            return Response(_proxy(), mimetype="text/event-stream", headers=headers)
+        res = requests.post(url, json=upstream, timeout=None)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"Ollama /pull failed: {exc}", status=503)
+
+
+@api.route("/ollama/ps", methods=["GET"])
+def ollama_ps_proxy():
+    import requests
+    url = f"{_ollama_base()}/api/ps"
+    try:
+        res = requests.get(url, timeout=10)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"Ollama /ps failed: {exc}", status=503)
+
+
+@api.route("/ollama/show", methods=["GET", "POST"])
+def ollama_show_proxy():
+    import requests
+    if request.method == "GET":
+        model = request.args.get("model") or request.args.get("name")
+    else:
+        data = parse_json_request()
+        model = data.get("model") or data.get("name")
+    if not model:
+        raise PlaygroundError("Provide ?model=name or body {model:name}", status=400)
+    url = f"{_ollama_base()}/api/show"
+    try:
+        res = requests.post(url, json={"name": model}, timeout=20)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"Ollama /show failed: {exc}", status=503)
 
 
 @api.route("/voices_catalog", methods=["GET"])
@@ -2414,6 +2516,9 @@ _legacy_routes = [
     ("/ollama/tags", ollama_tags_proxy, ["GET"]),
     ("/ollama/generate", ollama_generate_proxy, ["POST"]),
     ("/ollama/chat", ollama_chat_proxy, ["POST"]),
+    ("/ollama/pull", ollama_pull_proxy, ["POST"]),
+    ("/ollama/ps", ollama_ps_proxy, ["GET"]),
+    ("/ollama/show", ollama_show_proxy, ["GET", "POST"]),
     ("/random_text", random_text_endpoint, ["GET"]),
     ("/ollama_models", ollama_models_endpoint, ["GET"]),
     ("/synthesise", synthesise_endpoint, ["POST"]),
