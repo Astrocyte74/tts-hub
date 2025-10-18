@@ -307,10 +307,69 @@ def group_voices_by_accent(voices: List[VoiceProfile]) -> List[Dict[str, Any]]:
     return sorted(groups.values(), key=lambda item: item["label"].lower())
 
 
+def _family_id_from_accent(accent_id: Optional[str]) -> str:
+    if not accent_id:
+        return "other"
+    return accent_id.split("_", 1)[0]
+
+
+def _family_label(label: Optional[str], *, default: str = "Other") -> str:
+    if not label:
+        return default
+    # Strip gender suffix like "USA · Female"
+    base = str(label).split(" · ", 1)[0].strip()
+    return base or default
+
+
+def build_accent_families(voices: List[Any]) -> Dict[str, List[Dict[str, Any]]]:
+    """Collapse gendered accent buckets into families with per-gender counts.
+
+    Accepts either VoiceProfile objects or dicts with shape from serialise_voice_profile.
+    Returns a dict with keys: any, female, male — each a list of { id, label, flag, count }.
+    """
+    from collections import defaultdict
+
+    def get_accent(v: Any) -> Tuple[str, str, str]:
+        if isinstance(v, dict):
+            a = v.get("accent") or {}
+            return str(a.get("id") or "other"), str(a.get("label") or "Other"), str(a.get("flag") or "🌐")
+        return getattr(v, "accent_id", "other"), getattr(v, "accent_label", "Other"), getattr(v, "accent_flag", "🌐")
+
+    def get_gender(v: Any) -> Optional[str]:
+        return (v.get("gender") if isinstance(v, dict) else getattr(v, "gender", None)) or None
+
+    meta: Dict[str, Dict[str, Any]] = {}
+    counts: Dict[str, Dict[str, int]] = defaultdict(lambda: {"any": 0, "female": 0, "male": 0})
+
+    for v in voices:
+        aid, alabel, aflag = get_accent(v)
+        fam = _family_id_from_accent(aid)
+        base_label = _family_label(alabel)
+        meta.setdefault(fam, {"id": fam, "label": base_label, "flag": aflag})
+        counts[fam]["any"] += 1
+        g = get_gender(v)
+        if g == "female":
+            counts[fam]["female"] += 1
+        elif g == "male":
+            counts[fam]["male"] += 1
+
+    def to_list(key: str) -> List[Dict[str, Any]]:
+        items = []
+        for fam, m in meta.items():
+            c = counts[fam].get(key, 0)
+            if c > 0:
+                items.append({"id": fam, "label": m["label"], "flag": m["flag"], "count": c})
+        items.sort(key=lambda x: x["label"].lower())
+        return items
+
+    return {"any": to_list("any"), "female": to_list("female"), "male": to_list("male")}
+
+
 
 def build_kokoro_voice_payload() -> Dict[str, Any]:
     voices = load_voice_profiles()
     accent_groups = group_voices_by_accent(voices)
+    accent_families = build_accent_families(voices)
     # Build filter helpers (gender & locale counts)
     from collections import Counter
     genders = Counter((v.gender or "unknown") for v in voices)
@@ -335,6 +394,7 @@ def build_kokoro_voice_payload() -> Dict[str, Any]:
             "genders": gender_filters,
             "locales": locale_filters,
             "accents": accent_groups,
+            "accentFamilies": accent_families,
         },
     }
 
@@ -1647,8 +1707,8 @@ def voices_catalog_endpoint():
 
     # Ensure filters exist even if engine doesn't provide them
     filters = voice_payload.get("filters") or {}
+    voices = voice_payload.get("voices", [])
     if not filters:
-        voices = voice_payload.get("voices", [])
         from collections import Counter
         genders = Counter((v.get("gender") or "unknown") for v in voices if isinstance(v, dict))
         locales = Counter((v.get("locale") or "misc") for v in voices if isinstance(v, dict))
@@ -1663,6 +1723,12 @@ def voices_catalog_endpoint():
             ],
             "accents": voice_payload.get("accentGroups") or voice_payload.get("groups") or [],
         }
+    # Add normalized accent families to filters
+    try:
+        filters = dict(filters)
+        filters["accentFamilies"] = build_accent_families(voices)
+    except Exception:
+        pass
 
     response = {
         "engine": engine["id"],
