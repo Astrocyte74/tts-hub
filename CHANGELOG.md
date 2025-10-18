@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented here.
 
+## [v0.2.0-wg] – 2025-10-18
+
+Highlights
+- WireGuard‑aware launcher
+  - New `WG_MODE` with `auto` (default), `bind-wg`, `bind-all`, `off`.
+  - Detects WireGuard/LAN IPs; binds appropriately and exports `PUBLIC_HOST`/`LAN_IP`.
+  - Prints Local/LAN/WG URLs and a ready‑to‑copy Docker test.
+- Backend URL hints
+  - `/api/meta` now includes `urls.local|bind|lan|wg` plus `bind_host`, `public_host`, and `lan_ip`.
+- UI “API & CLI” footer
+  - Collapsible panel shows active API base and peer‑reachable URLs (Local/LAN/WG) with curl + CLI snippets.
+  - Header “API” button scrolls to the panel.
+- Documentation
+  - New `docs/WIREGUARD_MODE.md` with quick starts and Docker examples.
+
+Notes
+- No breaking changes; localhost continues to work. WireGuard is now the recommended path for remote/NAS clients.
+- LAN isolation on some routers may still block direct 192.168.x.x access; the WG endpoint avoids that entirely.
+
 ## [UI revamp] – 2025-10-14
 
 Highlights
