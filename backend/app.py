@@ -1346,15 +1346,15 @@ RANDOM_SNIPPETS = build_random_snippets()
 RANDOM_CATEGORIES = sorted(RANDOM_SNIPPETS.keys())
 
 ACCENT_PREFIX_MAP: Dict[str, Tuple[str, str, str]] = {
-    "af": ("us_female", "American English · Female", "🇺🇸"),
-    "am": ("us_male", "American English · Male", "🇺🇸"),
-    "bf": ("uk_female", "British English · Female", "🇬🇧"),
-    "bm": ("uk_male", "British English · Male", "🇬🇧"),
+    "af": ("us_female", "USA · Female", "🇺🇸"),
+    "am": ("us_male", "USA · Male", "🇺🇸"),
+    "bf": ("uk_female", "UK · Female", "🇬🇧"),
+    "bm": ("uk_male", "UK · Male", "🇬🇧"),
 }
 
 ACCENT_LOCALE_MAP: Dict[str, Tuple[str, str, str]] = {
-    "en-us": ("us", "American English", "🇺🇸"),
-    "en-gb": ("uk", "British English", "🇬🇧"),
+    "en-us": ("us", "USA", "🇺🇸"),
+    "en-gb": ("uk", "UK", "🇬🇧"),
     "en-au": ("au", "Australian English", "🇦🇺"),
     "en-ca": ("ca", "Canadian English", "🇨🇦"),
     "en-in": ("in", "Indian English", "🇮🇳"),
@@ -1367,7 +1367,7 @@ ACCENT_LOCALE_MAP: Dict[str, Tuple[str, str, str]] = {
     "ko-kr": ("ko", "Korean", "🇰🇷"),
 }
 
-DEFAULT_ACCENT: Tuple[str, str, str] = ("other", "Other / Mixed", "🌐")
+DEFAULT_ACCENT: Tuple[str, str, str] = ("other", "Other", "🌐")
 
 
 def call_ollama(category: Optional[str], temperature: float = 0.7) -> Optional[str]:
