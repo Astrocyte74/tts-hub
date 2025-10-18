@@ -173,6 +173,17 @@ def derive_locale_from_id(voice_id: str) -> Optional[str]:
     return None
 
 
+def derive_gender_from_id(voice_id: str) -> Optional[str]:
+    token = voice_id.split("_", maxsplit=1)[0]
+    if len(token) >= 2:
+        c = token[1].lower()
+        if c == "f":
+            return "female"
+        if c == "m":
+            return "male"
+    return None
+
+
 def resolve_accent(voice_id: str, locale: Optional[str]) -> Tuple[str, str, str]:
     prefix = voice_id.split("_", 1)[0][:2].lower()
     if prefix in ACCENT_PREFIX_MAP:
@@ -208,13 +219,14 @@ def load_voice_profiles() -> List[VoiceProfile]:
         with np.load(VOICES_PATH) as archive:
             for key in sorted(archive.files):
                 locale = derive_locale_from_id(key)
+                gender = derive_gender_from_id(key)
                 accent_id, accent_label, accent_flag = resolve_accent(key, locale)
                 voices.append(
                     VoiceProfile(
                         id=key,
                         label=key.replace("_", " ").title(),
                         locale=locale,
-                        gender=None,
+                        gender=gender,
                         tags=[],
                         accent_id=accent_id,
                         accent_label=accent_label,
@@ -243,6 +255,7 @@ def serialise_voice_profile(voice: VoiceProfile) -> Dict[str, Any]:
         "gender": voice.gender,
         "tags": voice.tags,
         "notes": voice.notes,
+        "engine": "kokoro",
         "accent": {
             "id": voice.accent_id,
             "label": voice.accent_label,
@@ -298,6 +311,19 @@ def group_voices_by_accent(voices: List[VoiceProfile]) -> List[Dict[str, Any]]:
 def build_kokoro_voice_payload() -> Dict[str, Any]:
     voices = load_voice_profiles()
     accent_groups = group_voices_by_accent(voices)
+    # Build filter helpers (gender & locale counts)
+    from collections import Counter
+    genders = Counter((v.gender or "unknown") for v in voices)
+    locales = Counter((v.locale or "misc") for v in voices)
+    gender_filters = [
+        {"id": k, "label": ("Female" if k=="female" else "Male" if k=="male" else "Unknown"), "count": c}
+        for k, c in sorted(genders.items())
+    ]
+    locale_filters = [
+        {"id": k, "label": (k.upper() if k != "misc" else "Miscellaneous"), "count": c}
+        for k, c in sorted(locales.items())
+    ]
+
     return {
         "engine": "kokoro",
         "available": MODEL_PATH.exists() and VOICES_PATH.exists(),
@@ -305,7 +331,53 @@ def build_kokoro_voice_payload() -> Dict[str, Any]:
         "accentGroups": accent_groups,
         "groups": accent_groups,
         "count": len(voices),
+        "filters": {
+            "genders": gender_filters,
+            "locales": locale_filters,
+            "accents": accent_groups,
+        },
     }
+
+@api.route("/voices_catalog", methods=["GET"])
+def voices_catalog_endpoint():
+    engine_id = request.args.get("engine")
+    engine, available = resolve_engine(engine_id, allow_unavailable=True)
+
+    payload_factory = engine.get("fetch_voices")
+    voice_payload = payload_factory() if callable(payload_factory) else {"engine": engine["id"], "available": available, "voices": [], "accentGroups": [], "count": 0}
+
+    engines_meta = [serialise_engine_meta(e) for e in ENGINE_REGISTRY.values()]
+
+    # Ensure filters exist even if engine doesn't provide them
+    filters = voice_payload.get("filters") or {}
+    if not filters:
+        voices = voice_payload.get("voices", [])
+        from collections import Counter
+        genders = Counter((v.get("gender") or "unknown") for v in voices if isinstance(v, dict))
+        locales = Counter((v.get("locale") or "misc") for v in voices if isinstance(v, dict))
+        filters = {
+            "genders": [
+                {"id": k, "label": ("Female" if k=="female" else "Male" if k=="male" else "Unknown"), "count": c}
+                for k, c in sorted(genders.items())
+            ],
+            "locales": [
+                {"id": k, "label": (k.upper() if k != "misc" else "Miscellaneous"), "count": c}
+                for k, c in sorted(locales.items())
+            ],
+            "accents": voice_payload.get("accentGroups") or voice_payload.get("groups") or [],
+        }
+
+    response = {
+        "engine": engine["id"],
+        "available": available and bool(voice_payload.get("available", True)),
+        "voices": voice_payload.get("voices", []),
+        "count": voice_payload.get("count", len(voice_payload.get("voices", []))),
+        "filters": {
+            **filters,
+            "engines": engines_meta,
+        },
+    }
+    return jsonify(response)
 
 
 # ---------------------------------------------------------------------------
