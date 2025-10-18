@@ -14,6 +14,7 @@ import { SettingsPopover } from './components/SettingsPopover';
 import { PresetDialog } from './components/PresetDialog';
 import { InfoDialog } from './components/InfoDialog';
 import { ApiStatusFooter } from './components/ApiStatusFooter';
+import { OllamaPanel } from './components/OllamaPanel';
 import { FavoritesManagerDialog } from './components/FavoritesManagerDialog';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSessionStorage } from './hooks/useSessionStorage';
@@ -1702,6 +1703,7 @@ function App() {
         )}
       </InfoDialog>
       <ApiStatusFooter meta={metaQuery.data} />
+      <OllamaPanel />
       <PresetDialog
         isOpen={Boolean(saveDraft)}
         title={presetDialogTitle}
