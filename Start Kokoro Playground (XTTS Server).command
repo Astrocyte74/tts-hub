@@ -12,6 +12,22 @@ if [[ -f "$ROOT_DIR/.env" ]]; then
   set +a
 fi
 
+# Optional: keep system awake while the hub runs (display may sleep)
+# Set KEEP_AWAKE=1 (or true/yes/on) to re-exec this script under caffeinate -ims
+KEEP_AWAKE="${KEEP_AWAKE:-0}"
+_ka() {
+  printf '%s' "$KEEP_AWAKE" | tr '[:upper:]' '[:lower:]'
+}
+if [[ "$(_ka)" =~ ^(1|true|yes|on)$ && -z "${CAFFEINATED:-}" ]]; then
+  if command -v caffeinate >/dev/null 2>&1; then
+    export CAFFEINATED=1
+    echo "[Kokoro SPA] KEEP_AWAKE=1 → starting under caffeinate -ims (screen may sleep; system stays awake)"
+    exec caffeinate -ims /bin/bash "$0"
+  else
+    echo "[Kokoro SPA] KEEP_AWAKE=1 set but 'caffeinate' not found; continuing without it."
+  fi
+fi
+
 FRONTEND_DIR="${FRONTEND_DIR:-$ROOT_DIR/frontend}"
 ENV_FILE="$FRONTEND_DIR/.env"
 ENV_TEMPLATE="$FRONTEND_DIR/.env.example"
