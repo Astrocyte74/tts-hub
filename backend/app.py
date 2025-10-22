@@ -16,6 +16,7 @@ import re
 
 import numpy as np
 import soundfile as sf
+import librosa
 from flask import Blueprint, Flask, Response, abort, jsonify, make_response, request, send_from_directory
 from flask_cors import CORS
 from favorites_store import FavoritesStore
@@ -430,6 +431,27 @@ def _default_preview_text(language: Optional[str]) -> str:
     return mapping.get(lang, mapping["en-us"])
 
 
+def _preview_language_key(language: Optional[str], *, fallback: str = "default") -> str:
+    if not language:
+        return fallback
+    value = str(language).strip().lower()
+    return value or fallback
+
+
+def _find_cached_preview(engine: str, voice_id: str) -> Optional[str]:
+    engine_dir = PREVIEW_DIR / engine
+    if not engine_dir.exists():
+        return None
+    pattern = f"{voice_id}-*-v1.wav"
+    for candidate in sorted(engine_dir.glob(pattern)):
+        try:
+            relative = candidate.relative_to(OUTPUT_DIR)
+        except ValueError:
+            continue
+        return f"/audio/{relative.as_posix()}"
+    return None
+
+
 def _fade_and_trim(audio: np.ndarray, sr: int, *, max_seconds: float = 5.0) -> np.ndarray:
     target_len = min(len(audio), int(sr * max_seconds))
     if target_len <= 0:
@@ -447,18 +469,195 @@ def _fade_and_trim(audio: np.ndarray, sr: int, *, max_seconds: float = 5.0) -> n
     return clipped
 
 
-def _get_or_create_kokoro_preview(voice_id: str, language: str, *, force: bool = False) -> Path:
-    path = _preview_path("kokoro", voice_id, language)
+def _load_audio_for_preview(source_path: Path) -> Tuple[np.ndarray, int]:
+    ext = source_path.suffix.lower()
+    if ext in {".wav", ".flac", ".ogg"}:
+        data, sr = sf.read(source_path, always_2d=False)
+        if isinstance(data, np.ndarray):
+            if data.ndim > 1:
+                data = data.mean(axis=1)
+            data = data.astype(np.float32, copy=False)
+        else:
+            data = np.asarray(data, dtype=np.float32)
+        return data, int(sr)
+    audio, sr = librosa.load(str(source_path), sr=None, mono=True)
+    return np.asarray(audio, dtype=np.float32), int(sr)
+
+
+def _resolve_result_audio_path(result: Dict[str, Any]) -> Path:
+    candidates: List[str] = []
+    for key in ("filename", "file", "clip"):
+        value = result.get(key)
+        if isinstance(value, str) and value:
+            candidates.append(value)
+    path_like = result.get("path") or result.get("url") or result.get("audio_url")
+    if isinstance(path_like, str) and path_like:
+        candidates.append(path_like)
+    for entry in candidates:
+        text = entry.strip()
+        if not text:
+            continue
+        if text.startswith("/audio/"):
+            name = text.rsplit("/", 1)[-1]
+            candidate = OUTPUT_DIR / name
+        else:
+            candidate_path = Path(text)
+            if candidate_path.is_absolute():
+                candidate = candidate_path
+            else:
+                candidate = OUTPUT_DIR / candidate_path.name
+        if candidate.exists():
+            return candidate.resolve()
+    raise PlaygroundError("Preview generation failed: output file not found.", status=500)
+
+
+def _write_preview_from_file(engine: str, voice_id: str, language_key: str, source_path: Path) -> Path:
+    audio, sr = _load_audio_for_preview(source_path)
+    processed = _fade_and_trim(audio, sr, max_seconds=5.0)
+    target_path = _preview_path(engine, voice_id, language_key)
+    _ensure_parent(target_path)
+    sf.write(target_path, processed, sr)
+    return target_path
+
+
+def _get_or_create_kokoro_preview(voice_id: str, language: Optional[str], *, force: bool = False, **_: Any) -> Path:
+    lang_value = language or "en-us"
+    lang_key = _preview_language_key(lang_value, fallback="en-us")
+    path = _preview_path("kokoro", voice_id, lang_key)
     if path.exists() and not force:
         return path
     tts = get_tts()
-    text = _default_preview_text(language)
-    audio, sr = tts.create(text, voice=voice_id, speed=1.0, lang=language, trim=True)
+    text = _default_preview_text(lang_value)
+    audio, sr = tts.create(text, voice=voice_id, speed=1.0, lang=lang_value, trim=True)
     audio = np.squeeze(audio).astype(np.float32)
     processed = _fade_and_trim(audio, sr, max_seconds=5.0)
     _ensure_parent(path)
     sf.write(path, processed, sr)
     return path
+
+
+def _get_or_create_xtts_preview(voice_id: str, language: Optional[str], *, force: bool = False, **options: Any) -> Path:
+    lang_value = language or options.get("language") or "en-us"
+    language_key = _preview_language_key(lang_value, fallback="default")
+    path = _preview_path("xtts", voice_id, language_key)
+    if path.exists() and not force:
+        return path
+    payload: Dict[str, Any] = {
+        "text": _default_preview_text(lang_value),
+        "voice": voice_id,
+        "language": lang_value,
+        "speed": options.get("speed", 1.0),
+        "trimSilence": True,
+    }
+    if options.get("temperature") is not None:
+        payload["temperature"] = options["temperature"]
+    if options.get("seed") is not None:
+        payload["seed"] = options["seed"]
+    if options.get("format"):
+        payload["format"] = options["format"]
+    if options.get("sample_rate"):
+        payload["sample_rate"] = options["sample_rate"]
+    data = _xtts_prepare_payload(payload)
+    result = _xtts_synthesise(data)
+    source_path = _resolve_result_audio_path(result)
+    try:
+        preview_path = _write_preview_from_file("xtts", voice_id, language_key, source_path)
+    finally:
+        try:
+            source_path.unlink()
+        except OSError:
+            pass
+    return preview_path
+
+
+def _get_or_create_openvoice_preview(voice_id: str, language: Optional[str], *, force: bool = False, **options: Any) -> Path:
+    voice_map = get_openvoice_voice_map()
+    meta = voice_map.get(voice_id)
+    if meta is None:
+        raise PlaygroundError(f"Unknown OpenVoice reference '{voice_id}'.", status=400)
+    language_value = options.get("language") or language or meta.get("language") or "English"
+    style_value = options.get("style") or meta.get("style") or "default"
+    language_key = _preview_language_key(language_value, fallback="default")
+    path = _preview_path("openvoice", voice_id, language_key)
+    if path.exists() and not force:
+        return path
+    payload: Dict[str, Any] = {
+        "text": _default_preview_text("en-us"),
+        "voice": voice_id,
+        "language": language_value,
+        "style": style_value,
+        "trimSilence": True,
+    }
+    data = _openvoice_prepare_payload(payload)
+    result = _openvoice_synthesise(data)
+    source_path = _resolve_result_audio_path(result)
+    try:
+        preview_path = _write_preview_from_file("openvoice", voice_id, language_key, source_path)
+    finally:
+        try:
+            source_path.unlink()
+        except OSError:
+            pass
+    return preview_path
+
+
+def _get_or_create_chattts_preview(voice_id: str, language: Optional[str], *, force: bool = False, **options: Any) -> Path:
+    language_value = options.get("language") or language or "en-us"
+    language_key = _preview_language_key(language_value, fallback="default")
+    path = _preview_path("chattts", voice_id, language_key)
+    if path.exists() and not force:
+        return path
+    payload: Dict[str, Any] = {
+        "text": _default_preview_text(language_value),
+        "voice": voice_id,
+        "language": language_value,
+        "trimSilence": True,
+    }
+    if options.get("seed") is not None:
+        payload["seed"] = options["seed"]
+    data = _chattts_prepare_payload(payload)
+    try:
+        result = _chattts_synthesise(data)
+    except PlaygroundError as exc:
+        message = str(exc)
+        if data.get("speaker") and "--spk" in message:
+            fallback = dict(data)
+            fallback.pop("speaker", None)
+            result = _chattts_synthesise(fallback)
+        else:
+            raise
+    source_path = _resolve_result_audio_path(result)
+    try:
+        preview_path = _write_preview_from_file("chattts", voice_id, language_key, source_path)
+    finally:
+        try:
+            source_path.unlink()
+        except OSError:
+            pass
+    return preview_path
+
+
+def _normalise_chattts_speaker(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    candidate = str(value).strip()
+    if not candidate:
+        return None
+    candidate = candidate.replace("\n", " ").strip()
+    # take first token to avoid CLI argument parsing issues with descriptive strings
+    parts = candidate.split()
+    if parts:
+        candidate = parts[0]
+    candidate = candidate.strip(".,;:!\"'")
+    return candidate or None
+
+
+PREVIEW_GENERATORS: Dict[str, Callable[..., Path]] = {
+    "kokoro": _get_or_create_kokoro_preview,
+    "xtts": _get_or_create_xtts_preview,
+    "openvoice": _get_or_create_openvoice_preview,
+    "chattts": _get_or_create_chattts_preview,
+}
 
 
 ## preview route defined later (after api blueprint is declared)
@@ -502,6 +701,13 @@ def build_xtts_voice_payload() -> Dict[str, Any]:
     voices: List[Dict[str, Any]] = []
     for voice_id, voice_path in mapping.items():
         label = voice_path.stem.replace('_', ' ').title()
+        preview_url = _find_cached_preview("xtts", voice_id)
+        raw: Dict[str, Any] = {
+            'engine': 'xtts',
+            'path': str(voice_path),
+        }
+        if preview_url:
+            raw['preview_url'] = preview_url
         voices.append(
             {
                 'id': voice_id,
@@ -511,6 +717,7 @@ def build_xtts_voice_payload() -> Dict[str, Any]:
                 'tags': [],
                 'notes': voice_path.name,
                 'accent': {'id': 'custom', 'label': 'Custom Voice', 'flag': '🎙️'},
+                'raw': raw,
             }
         )
     groups: List[Dict[str, Any]] = []
@@ -821,6 +1028,7 @@ def build_openvoice_voice_payload() -> Dict[str, Any]:
     for voice_id, meta in voice_map.items():
         language = meta.get("language", "English")
         accent = accent_map.get(language, accent_map["English"])
+        preview_url = _find_cached_preview("openvoice", voice_id)
         voices.append(
             {
                 "id": voice_id,
@@ -839,6 +1047,8 @@ def build_openvoice_voice_payload() -> Dict[str, Any]:
                 },
             }
         )
+        if preview_url:
+            voices[-1]["raw"]["preview_url"] = preview_url
         grouped.setdefault(language, []).append(voice_id)
     accent_groups: List[Dict[str, Any]] = []
     for language, members in grouped.items():
@@ -1022,6 +1232,10 @@ def build_chattts_voice_payload() -> Dict[str, Any]:
 
     if available:
         random_voice_id = 'chattts_random'
+        preview_url = _find_cached_preview("chattts", random_voice_id)
+        raw_random: Dict[str, Any] = {'engine': 'chattts', 'type': 'random'}
+        if preview_url:
+            raw_random['preview_url'] = preview_url
         voices.append(
             {
                 'id': random_voice_id,
@@ -1031,7 +1245,7 @@ def build_chattts_voice_payload() -> Dict[str, Any]:
                 'tags': ['ChatTTS'],
                 'notes': 'Sampled from ChatTTS model at runtime.',
                 'accent': {'id': 'chattts', 'label': 'ChatTTS', 'flag': '🎤'},
-                'raw': {'engine': 'chattts', 'type': 'random'},
+                'raw': raw_random,
             }
         )
         voice_map[random_voice_id] = {'type': 'random'}
@@ -1042,7 +1256,20 @@ def build_chattts_voice_payload() -> Dict[str, Any]:
         speaker = preset.get('speaker')
         if not isinstance(preset_id, str) or not preset_id.strip() or not isinstance(speaker, str):
             continue
+        normalised_speaker = _normalise_chattts_speaker(speaker)
+        if not normalised_speaker:
+            continue
         preset_voice_id = f"chattts_preset_{preset_id}"
+        preview_url = _find_cached_preview("chattts", preset_voice_id)
+        raw_preset: Dict[str, Any] = {
+            'engine': 'chattts',
+            'type': 'preset',
+            'preset_id': preset_id,
+            'speaker': normalised_speaker,
+            'seed': preset.get('seed'),
+        }
+        if preview_url:
+            raw_preset['preview_url'] = preview_url
         voices.append(
             {
                 'id': preset_voice_id,
@@ -1052,19 +1279,13 @@ def build_chattts_voice_payload() -> Dict[str, Any]:
                 'tags': ['ChatTTS', 'Preset'],
                 'notes': preset.get('notes'),
                 'accent': {'id': 'chattts_preset', 'label': 'ChatTTS Preset', 'flag': '🎙️'},
-                'raw': {
-                    'engine': 'chattts',
-                    'type': 'preset',
-                    'preset_id': preset_id,
-                    'speaker': speaker,
-                    'seed': preset.get('seed'),
-                },
+                'raw': raw_preset,
             }
         )
         voice_map[preset_voice_id] = {
             'type': 'preset',
             'preset_id': preset_id,
-            'speaker': speaker,
+            'speaker': normalised_speaker,
             'seed': preset.get('seed'),
         }
         preset_voice_ids.append(preset_voice_id)
@@ -1264,6 +1485,8 @@ def _chattts_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         seed = preset_seed
     if seed is None:
         seed = random.randint(0, 2**31 - 1)
+
+    speaker_value = _normalise_chattts_speaker(speaker_value)
 
     return {
         'text': text,
@@ -1958,30 +2181,43 @@ def voices_catalog_endpoint():
 def create_voice_preview_endpoint():
     """Generate or return a cached short preview clip for a voice.
 
-    Request JSON: { engine: string, voiceId: string, language?: string, force?: boolean }
+    Request JSON: { engine: string, voiceId: string, language?: string, force?: boolean, ...engine specific }
     Returns: { preview_url: string }
     """
     payload = parse_json_request()
-    engine_id = str(payload.get("engine") or "kokoro").lower()
+    engine_id = str(payload.get("engine") or "kokoro").strip().lower()
     voice_id = str(payload.get("voiceId") or payload.get("voice") or "").strip()
     if not voice_id:
         raise PlaygroundError("Field 'voiceId' is required.", status=400)
-    language = str(payload.get("language") or "en-us").lower()
+    raw_language = payload.get("language")
+    language = str(raw_language).strip() if isinstance(raw_language, str) and raw_language.strip() else None
     force = bool(payload.get("force"))
 
     engine, available = resolve_engine(engine_id)
     if not available:
         raise PlaygroundError(f"TTS engine '{engine_id}' is not available.", status=503)
 
-    if engine["id"] != "kokoro":
-        raise PlaygroundError("Preview generation is currently supported for Kokoro only.", status=400)
+    generator = PREVIEW_GENERATORS.get(engine["id"])
+    if generator is None:
+        raise PlaygroundError(f"Preview generation is not supported for engine '{engine['id']}'.", status=400)
 
-    path = _get_or_create_kokoro_preview(voice_id, language, force=force)
+    options = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"engine", "voiceId", "voice", "force", "language"}
+    }
+    reported_language = language
+    if not reported_language:
+        lang_option = options.get("language")
+        if isinstance(lang_option, str) and lang_option.strip():
+            reported_language = lang_option.strip()
+
+    path = generator(voice_id, language, force=force, **options)
     rel = path.relative_to(OUTPUT_DIR)
     return jsonify({
         "engine": engine["id"],
         "voice": voice_id,
-        "language": language,
+        "language": reported_language,
         "preview_url": f"/audio/{rel.as_posix()}",
     })
 

@@ -2,6 +2,9 @@
 
 Welcome. This repo powers the local TTS hub (Flask API + SPA) you’ve been using from the NAS/bots. This page is the fastest way to get productive in a new Codex session.
 
+
+
+
 ## Where to Work
 - Use this directory as your working root: `~/projects/tts-hub/kokoro_twvv`
 - This folder is the real Git repo (remote = `origin`). The top‑level `~/projects/tts-hub` is just a worktree wrapper — do not open Codex there.
@@ -71,4 +74,12 @@ Welcome. This repo powers the local TTS hub (Flask API + SPA) you’ve been usin
 - Cache `/favorites` and `/voices_catalog` for 1–5 minutes if your code does repeated lookups.
 - Log hub 4xx text (don’t retry schema errors).
 
-Happy shipping.
+
+##NEXT DOCS TO READ
+  - README.md — overview + Ollama proxy section.
+  - API_ROUTES.md — exact endpoints and payloads (synthesise, favorites, voices_catalog, ollama/*).
+  - docs/WIREGUARD_MODE.md — how URLs resolve over WG + peer testing.
+  - AGENTS.md — component map and quick start checklist (same as onboarding, in brief).
+  - CONTRIBUTING.md — simplified git workflow (direct pushes to main).
+  
+  

@@ -328,13 +328,47 @@ export async function createChatttsPreset(payload: CreateChatttsPresetPayload): 
   return postJson<CreateChatttsPresetResponse>('chattts/presets', payload);
 }
 
-export async function createVoicePreview(params: { engine: string; voiceId: string; language?: string; force?: boolean }): Promise<{ preview_url: string }> {
+export interface CreateVoicePreviewParams {
+  engine: string;
+  voiceId: string;
+  language?: string;
+  force?: boolean;
+  style?: string;
+  speed?: number;
+  trimSilence?: boolean;
+  seed?: number;
+  speaker?: string;
+  temperature?: number;
+  format?: string;
+  sample_rate?: number;
+}
+
+export async function createVoicePreview(params: CreateVoicePreviewParams): Promise<{ preview_url: string }> {
   const body: Record<string, unknown> = {
     engine: params.engine,
     voiceId: params.voiceId,
   };
-  if (params.language) body.language = params.language;
-  if (params.force) body.force = true;
+  const optionalKeys: (keyof CreateVoicePreviewParams)[] = [
+    'language',
+    'force',
+    'style',
+    'speed',
+    'trimSilence',
+    'seed',
+    'speaker',
+    'temperature',
+    'format',
+    'sample_rate',
+  ];
+  for (const key of optionalKeys) {
+    const value = params[key];
+    if (value === undefined || value === null) continue;
+    if (key === 'force') {
+      body.force = Boolean(value);
+    } else {
+      body[key as string] = value;
+    }
+  }
   const res = await postJson<Record<string, unknown>>('voices/preview', body);
   const url = typeof res['preview_url'] === 'string' ? (res['preview_url'] as string) : '';
   if (!url) throw new Error('Preview generation did not return a URL.');

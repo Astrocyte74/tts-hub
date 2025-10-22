@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import './App.css';
 import { VoiceSelector } from './components/VoiceSelector';
@@ -29,6 +29,7 @@ import {
   fetchVoiceGroups,
   synthesiseClip,
   createVoicePreview,
+  type CreateVoicePreviewParams,
   createProfile,
   listProfiles,
   exportProfiles,
@@ -52,12 +53,17 @@ const DEFAULT_LANGUAGE = 'en-us';
 const DEFAULT_ENGINE = 'kokoro';
 const DEFAULT_TEXT = 'Welcome to the Kokoro Playground SPA. Try synthesising this line!';
 const DEFAULT_ANNOUNCER_TEMPLATE = 'Now auditioning {voice_label}';
+const PREVIEW_CAPABLE_ENGINES = new Set(['kokoro', 'xtts', 'openvoice', 'chattts'] as const);
 
 function normaliseLanguage(language: string | null | undefined): string {
   if (!language) {
     return DEFAULT_LANGUAGE;
   }
   return language.toLowerCase();
+}
+
+function makePreviewKey(engine: string, voiceId: string): string {
+  return `${engine}::${voiceId}`;
 }
 
 function buildLanguageOptions(voices: VoiceProfile[]): string[] {
@@ -219,6 +225,185 @@ function App() {
     });
     return map;
   }, [voices]);
+  const previewBusyIdsForEngine = useMemo(() => {
+    const prefix = `${engineId}::`;
+    return previewBusy
+      .filter((key) => key.startsWith(prefix))
+      .map((key) => key.slice(prefix.length));
+  }, [previewBusy, engineId]);
+  const supportsPreview = useMemo(() => PREVIEW_CAPABLE_ENGINES.has(engineId as any), [engineId]);
+  const getVoiceLabel = useCallback((id: string) => voiceById.get(id)?.label ?? id, [voiceById]);
+  const buildPreviewPayload = useCallback(
+    (voiceId: string): CreateVoicePreviewParams => {
+      const payload: CreateVoicePreviewParams = {
+        engine: engineId,
+        voiceId,
+      };
+      const baseLanguage = normaliseLanguage(language);
+      const voiceMeta = voiceById.get(voiceId);
+      const rawMeta = (voiceMeta?.raw ?? {}) as Record<string, unknown>;
+      const voiceType = typeof rawMeta.type === 'string' ? (rawMeta.type as string) : undefined;
+
+      if (engineId === 'kokoro') {
+        payload.language = baseLanguage;
+        payload.speed = Number(speed);
+        payload.trimSilence = Boolean(trimSilence);
+      } else if (engineId === 'xtts') {
+        payload.language = baseLanguage;
+        payload.speed = Number(speed);
+        payload.trimSilence = Boolean(trimSilence);
+      } else if (engineId === 'openvoice') {
+        const rawLanguage =
+          typeof rawMeta.language === 'string' && rawMeta.language.trim()
+            ? (rawMeta.language as string)
+            : undefined;
+        if (rawLanguage) {
+          payload.language = rawLanguage;
+        }
+        const styleForVoice =
+          openvoiceVoiceStyles[voiceId] ??
+          openvoiceStyle ??
+          (typeof rawMeta.style === 'string' && rawMeta.style.trim() ? (rawMeta.style as string) : 'default');
+        payload.style = styleForVoice;
+      } else if (engineId === 'chattts') {
+        payload.language = baseLanguage;
+        const speakerValue =
+          typeof rawMeta.speaker === 'string' && rawMeta.speaker.trim()
+            ? (rawMeta.speaker as string).trim()
+            : undefined;
+        if (speakerValue) {
+          payload.speaker = speakerValue;
+        }
+        let seed: number | undefined;
+        if (voiceType === 'preset') {
+          if (typeof rawMeta.seed === 'number' && Number.isFinite(rawMeta.seed)) {
+            seed = Math.floor(rawMeta.seed as number);
+          }
+        } else if (chatttsSeed && chatttsSeed.trim()) {
+          const parsed = Number(chatttsSeed.trim());
+          if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
+            seed = Math.floor(parsed);
+          }
+        } else if (typeof rawMeta.seed === 'number' && Number.isFinite(rawMeta.seed)) {
+          seed = Math.floor(rawMeta.seed as number);
+        }
+        if (seed !== undefined) {
+          payload.seed = seed;
+        }
+      }
+      return payload;
+    },
+    [engineId, language, trimSilence, speed, voiceById, openvoiceVoiceStyles, openvoiceStyle, chatttsSeed],
+  );
+  const handleGeneratePreview = useCallback(
+    async (voiceId: string) => {
+      if (!supportsPreview) {
+        return;
+      }
+      const key = makePreviewKey(engineId, voiceId);
+      setError(null);
+      try {
+        setPreviewBusy((prev) => (prev.includes(key) ? prev : [...prev, key]));
+        await createVoicePreview(buildPreviewPayload(voiceId));
+        await voicesQuery.refetch();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to generate preview.');
+      } finally {
+        setPreviewBusy((prev) => prev.filter((value) => value !== key));
+      }
+    },
+    [supportsPreview, engineId, buildPreviewPayload, setError, setPreviewBusy, voicesQuery],
+  );
+  const handleBulkGeneratePreview = useCallback(
+    async (voiceIds: string[]) => {
+      if (!supportsPreview) {
+        return;
+      }
+      const uniqueIds = Array.from(new Set(voiceIds));
+      if (!uniqueIds.length) {
+        return;
+      }
+      const availableIds: string[] = [];
+      for (const id of uniqueIds) {
+        const key = makePreviewKey(engineId, id);
+        const busy = previewBusy.includes(key);
+        const queued = queue.some(
+          (item) =>
+            item.engine === engineId &&
+            item.id.startsWith(`pv-${engineId}-${id}-`) &&
+            (item.status === 'pending' || item.status === 'rendering'),
+        );
+        if (busy || queued) {
+          continue;
+        }
+        availableIds.push(id);
+      }
+      if (!availableIds.length) {
+        return;
+      }
+      const newKeys = availableIds.map((id) => makePreviewKey(engineId, id));
+      setPreviewBusy((prev) => Array.from(new Set([...prev, ...newKeys])));
+      setResultsDrawerOpen(true);
+
+      const queueEntries = new Map<string, string>();
+      const baseTime = Date.now();
+      const newItems = availableIds.map((id, index) => {
+        const queueId = `pv-${engineId}-${id}-${baseTime + index}`;
+        queueEntries.set(id, queueId);
+        return {
+          id: queueId,
+          label: `Preview · ${getVoiceLabel(id)}`,
+          engine: engineId,
+          status: 'pending' as QueueItem['status'],
+          progress: 0,
+          startedAt: new Date().toISOString(),
+        };
+      });
+      if (newItems.length) {
+        setQueue((prev) => [...prev, ...newItems]);
+      }
+
+      let firstError: string | null = null;
+      try {
+        for (const id of availableIds) {
+          const queueId = queueEntries.get(id);
+          if (!queueId) continue;
+          setQueue((prev) =>
+            prev.map((item) =>
+              item.id === queueId && item.status === 'pending' ? { ...item, status: 'rendering' } : item,
+            ),
+          );
+          try {
+            await createVoicePreview(buildPreviewPayload(id));
+            setQueue((prev) =>
+              prev.map((item) =>
+                item.id === queueId && (item.status === 'rendering' || item.status === 'pending')
+                  ? { ...item, status: 'done', progress: 100, finishedAt: new Date().toISOString() }
+                  : item,
+              ),
+            );
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to generate preview.';
+            if (!firstError) {
+              firstError = message;
+            }
+            setQueue((prev) =>
+              prev.map((item) =>
+                item.id === queueId ? { ...item, status: 'error', error: message } : item,
+              ),
+            );
+          }
+        }
+        await voicesQuery.refetch();
+        if (firstError) {
+          setError(firstError);
+        }
+      } finally {
+        setPreviewBusy((prev) => prev.filter((key) => !newKeys.includes(key)));
+      }
+    },
+    [supportsPreview, engineId, previewBusy, queue, setPreviewBusy, setResultsDrawerOpen, getVoiceLabel, setQueue, buildPreviewPayload, voicesQuery, setError],
+  );
   const chatttsPresets = useMemo(() => voiceCatalogue?.presets ?? [], [voiceCatalogue?.presets]);
   const kokoroFavoritesByVoice = useMemo(() => {
     return kokoroFavorites.reduce<Record<string, { label: string; count: number }>>((acc, favorite) => {
@@ -1545,53 +1730,13 @@ function App() {
                 setError(err instanceof Error ? err.message : 'Failed to update favorite.');
               }
             }}
-            onGeneratePreview={engineId === 'kokoro' ? async (voiceId) => {
-                try {
-                  setPreviewBusy((prev) => (prev.includes(voiceId) ? prev : [...prev, voiceId]));
-                  await createVoicePreview({ engine: 'kokoro', voiceId, language });
-                  voicesQuery.refetch();
-                } catch (err) {
-                  setError(err instanceof Error ? err.message : 'Failed to generate preview.');
-                } finally {
-                  setPreviewBusy((prev) => prev.filter((id) => id !== voiceId));
-              }
-            } : undefined}
-            previewBusyIds={previewBusy}
+            onGeneratePreview={supportsPreview ? handleGeneratePreview : undefined}
+            previewBusyIds={previewBusyIdsForEngine}
             onEditFavoriteVoice={(voiceId) => {
               const fav = getFavoriteByVoice(voiceId);
               if (fav) setEditingFavoriteId(fav.id);
             }}
-            onBulkGeneratePreview={engineId === 'kokoro' ? async (voiceIds) => {
-                const ids = Array.from(new Set(voiceIds));
-                if (!ids.length) return;
-                const enqueue = (id: string, label: string) =>
-                  setQueue((prev) => [
-                    ...prev,
-                    { id: `pv-${id}-${Date.now()}`, label: `Preview · ${label}`, engine: 'kokoro', status: 'pending', progress: 0, startedAt: new Date().toISOString() },
-                  ]);
-                const voiceLabel = (id: string) => voices.find((v) => v.id === id)?.label ?? id;
-                try {
-                  const activeLabels = new Set(queue.map((q) => q.label));
-                  const toRun = ids.filter((id) => !previewBusy.includes(id) && !activeLabels.has(`Preview · ${voiceLabel(id)}`));
-                  if (!toRun.length) return;
-                  setPreviewBusy((prev) => Array.from(new Set([...prev, ...toRun])));
-                  setResultsDrawerOpen(true);
-                  for (const id of toRun) enqueue(id, voiceLabel(id));
-                  for (const id of toRun) {
-                    const label = voiceLabel(id);
-                    setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` && q.status === 'pending' ? { ...q, status: 'rendering' } : q));
-                    try {
-                      await createVoicePreview({ engine: 'kokoro', voiceId: id, language });
-                      setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` && (q.status === 'rendering' || q.status === 'pending') ? { ...q, status: 'done', progress: 100, finishedAt: new Date().toISOString() } : q));
-                    } catch (err) {
-                      setQueue((prev) => prev.map((q) => q.label === `Preview · ${label}` ? { ...q, status: 'error', error: String(err) } : q));
-                    }
-                  }
-                  voicesQuery.refetch();
-              } finally {
-                setPreviewBusy((prev) => prev.filter((id) => !ids.includes(id)));
-              }
-            } : undefined}
+            onBulkGeneratePreview={supportsPreview ? handleBulkGeneratePreview : undefined}
             enableHoverPreview={Boolean(hoverPreview)}
           />
           </div>

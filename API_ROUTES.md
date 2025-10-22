@@ -75,9 +75,13 @@ Base URL: `${VITE_API_BASE_URL}/${VITE_API_PREFIX}` (defaults to same‑origin +
 - Returns `{ preset, presets }` and refreshes catalogue.
 
 ## POST /voices/preview (Phase 3)
-- Body: `{ engine, voiceId, language?, force? }`.
-- Behavior (Kokoro): get‑or‑create a ~5s preview WAV under `out/voice_previews/kokoro/` with trim+normalize+fade.
-- Returns `{ preview_url }` and `/voices` will include `raw.preview_url` thereafter.
+- Body: `{ engine, voiceId, language?, force?, ...engineSpecific }`.
+  - Kokoro: respects `language`, `speed`, `trimSilence` (optional) and caches under `out/voice_previews/kokoro/`.
+  - XTTS v2: accepts `language`, `speed`, `trimSilence`, `seed`, `temperature`, `format`, `sample_rate`; caches under `out/voice_previews/xtts/`.
+  - OpenVoice v2: accepts `language` (defaults to the voice’s locale) and `style`. Uses existing reference clips and caches under `out/voice_previews/openvoice/`.
+  - ChatTTS: accepts `language`, `seed`, and `speaker`. Normalises the generated MP3, trims/fades, and caches under `out/voice_previews/chattts/`.
+- All engines return `{ preview_url }`; subsequent `/voices` responses expose the cached path via `voice.raw.preview_url`.
+- Pass `force=true` to regenerate and overwrite the cached sample.
 
 ## GET /audio/<filename>
 - Serves generated audio from `out/` (previews included under `out/voice_previews/...`).
