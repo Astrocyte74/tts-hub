@@ -1,14 +1,14 @@
 # Contributing / Dev Workflow (Codex + Humans)
 
-This repo’s active development happens in this directory (`kokoro_twvv`). `main` is the default branch; direct pushes by maintainers are allowed. PRs are recommended for larger changes.
+This repo’s active development happens in this directory (`kokoro_twvv`). `main` is the default branch; direct pushes are standard. PRs are optional and can be used when you want review or a discussion thread.
 
 ## Where to work
 - Use: `~/projects/tts-hub/kokoro_twvv` (this folder is the real Git repo with `origin` remote).
 - Avoid opening Codex in the project root (`~/projects/tts-hub`), which is a wrapper worktree.
 
 ## Branch model
-- `main`: releasable state. Direct pushes by maintainers are allowed; use PRs for non‑trivial changes.
-- Feature branches: short‑lived branches created from `origin/main`.
+- `main`: releasable state. Push directly.
+- Feature branches (optional): short‑lived branches created from `origin/main` when you want a PR/review trail.
 
 ## Daily flow (copy/paste)
 ```
@@ -22,8 +22,7 @@ git checkout -b feat/<short-name> origin/main
 git add -A && git commit -m "feat: <short summary>"
 git push -u origin feat/<short-name>
 
-# 3) (Recommended) Open a PR on GitHub: base=main, compare=feat/<short-name>
-#    For small changes you may push directly to main; otherwise squash‑merge the PR.
+# 3) Optional: Open a PR on GitHub (base=main, compare=feat/<short-name>) if you want review; otherwise push directly to main.
 
 # 4) Refresh local main
 git fetch origin
