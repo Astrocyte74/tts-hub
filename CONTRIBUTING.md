@@ -13,7 +13,7 @@ This repo’s active development happens in this directory (`kokoro_twvv`). `mai
 ## Daily flow (copy/paste)
 ```
 # 1) Create a feature branch from latest main
-cd /Users/markdarby/projects/tts-hub/kokoroB
+cd /Users/markdarby/projects/tts-hub/kokoro_twvv
 git fetch origin
 git checkout -b feat/<short-name> origin/main
 

@@ -56,7 +56,7 @@ export function ApiStatusFooter({ meta }: { meta: MetaResponse | undefined }) {
             <p className="panel__meta">CLI on this Mac</p>
             <pre style={{ whiteSpace: 'pre-wrap', background: 'rgba(2,6,23,0.6)', padding: 12, borderRadius: 10, border: '1px solid rgba(148,163,184,0.25)' }}>
 {`export TTSHUB_API_BASE=${wgUrl ?? lanUrl ?? bindUrl}
-python3 kokoroB/cli/tts_cli.py menu`}
+python3 cli/tts_cli.py menu`}
             </pre>
           </div>
           <div>

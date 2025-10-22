@@ -1,15 +1,13 @@
 # AGENTS — Kokoro UI (CodexB)
 
-This document orients future agents working on the CodexB branch so you can ship changes quickly and safely.
+This document orients future agents working in this repo so you can ship changes quickly and safely.
 
 ## TL;DR
-- Worktree: this folder is a Git worktree on branch `ui-redesign-codexB`.
 - Dev: `./Start\ Kokoro\ Playground\ (XTTS Server).command` (reuses backend if already running). UI on 5175.
-- Shared models are auto‑reused from `../kokoro_twvv/models` — no large downloads.
-- Two UIs concurrently: start backend in one worktree, in the other use `SKIP_BACKEND=1`.
+- Shared models are auto‑reused; the launcher creates `models/` as needed — no large downloads on subsequent runs.
 - Status summary prints on startup; drawer auto-opens for bulk actions.
 
-## Repo Layout (worktree)
+## Repo Layout
 - `backend/` — Flask API and routes for synthesis, auditions, previews.
 - `frontend/` — React + Vite SPA.
   - `src/App.tsx` — app shell, state wiring, queue + dialogs.
@@ -106,8 +104,6 @@ WireGuard mode (launcher)
 ## Common Tasks
 - Run UI only against an existing backend:
   - `SKIP_BACKEND=1 ./Start\ Kokoro\ Playground\ (XTTS Server).command`
-- Change ports:
-  - UI defaults (worktree): A=5174, B=5175; backend defaults 7860.
 - Ensure previews fetch from backend in dev:
   - Set `VITE_API_BASE_URL=http://127.0.0.1:7860` if running UI-only.
 
@@ -116,6 +112,5 @@ WireGuard mode (launcher)
 - Previews currently implemented for Kokoro; other engines need parity when we add them.
 
 ## Contact Points / Quick Links
-- API routes overview: `API_ROUTES.md` (repo root)
+- API routes overview: `API_ROUTES.md`
 - Phase 2 summary + a11y notes: `DESIGN.md`
-- Worktrees usage: `../WORKTREES.md` and `README_WORKTREE.md`
