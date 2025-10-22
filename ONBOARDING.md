@@ -6,11 +6,11 @@ Welcome. This repo powers the local TTS hub (Flask API + SPA) you’ve been usin
 - Use this directory as your working root: `~/projects/tts-hub/kokoro_twvv`
 - This folder is the real Git repo (remote = `origin`). The top‑level `~/projects/tts-hub` is just a worktree wrapper — do not open Codex there.
 
-## Git Workflow (main is protected)
-- Create a topic branch: `git checkout -b feature/<topic>`
-- Commit focused changes; push and open a PR: `git push -u origin feature/<topic>`
-- Merge via PR (direct pushes to `main` are blocked by rules)
-- Update local `main` after merges:
+## Git Workflow
+- Create a topic branch (recommended): `git checkout -b feature/<topic>`
+- Commit focused changes; push and open a PR (recommended for larger changes): `git push -u origin feature/<topic>`
+- Direct pushes to `main` are allowed for maintainers (use sparingly; keep commits small and self‑contained).
+- Update local `main` after merges/pushes:
   - `git checkout main && git pull --ff-only`
   - If local `main` diverged: `git branch backup/local-main-<ts>; git reset --hard origin/main`
 

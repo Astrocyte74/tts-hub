@@ -1,22 +1,14 @@
 # Contributing / Dev Workflow (Codex + Humans)
 
-This repo uses a protected `main` branch and a separate worktree for day‑to‑day development.
+This repo’s active development happens in this directory (`kokoro_twvv`). `main` is the default branch; direct pushes by maintainers are allowed. PRs are recommended for larger changes.
 
 ## Where to work
-- Daily dev worktree: `/Users/markdarby/projects/tts-hub/kokoroB`
-- Do not develop in: `/Users/markdarby/projects/tts-hub/kokoro_twvv` (this is the stable main worktree)
-
-If you need your own workspace, create another worktree from `kokoro_twvv`:
-
-```
-cd /Users/markdarby/projects/tts-hub/kokoro_twvv
-git worktree add ../kokoroFeature feat/<short-name>
-```
+- Use: `~/projects/tts-hub/kokoro_twvv` (this folder is the real Git repo with `origin` remote).
+- Avoid opening Codex in the project root (`~/projects/tts-hub`), which is a wrapper worktree.
 
 ## Branch model
-- `main` (protected): always releasable; only merge via Pull Requests (PRs).
+- `main`: releasable state. Direct pushes by maintainers are allowed; use PRs for non‑trivial changes.
 - Feature branches: short‑lived branches created from `origin/main`.
-- Optional: `dev` exists in `kokoroB` for convenience, but prefer branching from `origin/main` per feature.
 
 ## Daily flow (copy/paste)
 ```
@@ -30,8 +22,8 @@ git checkout -b feat/<short-name> origin/main
 git add -A && git commit -m "feat: <short summary>"
 git push -u origin feat/<short-name>
 
-# 3) Open a PR on GitHub: base=main, compare=feat/<short-name>
-#    Merge the PR once checks pass (main is protected; direct pushes are blocked).
+# 3) (Recommended) Open a PR on GitHub: base=main, compare=feat/<short-name>
+#    For small changes you may push directly to main; otherwise squash‑merge the PR.
 
 # 4) Refresh local main
 git fetch origin
@@ -95,11 +87,8 @@ Ports
 - GitHub Release body can use the corresponding `RELEASE_NOTES_*` file.
 
 ## Branch protection
-`main` has a ruleset:
-- Require a pull request before merging
-- Block force pushes
-- Restrict deletions
-(Required checks can be added later when CI exists.)
+`main` allows direct pushes by maintainers. We still avoid force pushes and branch deletions.
+(Required checks/PRs can be re‑enabled later when CI exists.)
 
 ## Troubleshooting
 - Two UIs running? Start one launcher normally (backend+UI) and in the other use `SKIP_BACKEND=1`.
