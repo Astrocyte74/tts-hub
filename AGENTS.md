@@ -79,19 +79,18 @@ Mode-first Workflow
 5) Docs
    - Update `DESIGN.md` and `README.md` sections relevant to the change.
 
-## Slash Commands (for Codex)
+## Codex Quick Start (for new sessions)
 
-These are lightweight conventions so a new Codex can self‑orient quickly.
+When a new agent opens in this repo, use this checklist to get oriented:
 
-- `/onboard` — Reply with a very brief “start here” list and a couple of test commands:
-  - Where to work: `kokoro_twvv` (not the repo root)
-  - Read: `ONBOARDING.md` (quick start), `README.md`, `API_ROUTES.md`, `docs/WIREGUARD_MODE.md`
-  - Launch: `KEEP_AWAKE=1 WG_MODE=auto KOKORO_MODE=prod ./Start\ Kokoro\ Playground\ (XTTS\ Server).command`
-  - API checks (peer):
-    - `curl -sS "$API/favorites" | jq '.profiles[0]'`
-    - `curl -sS "$API/voices_catalog?engine=kokoro" | jq '.filters.genders, .voices[0]'`
-    - `curl -sS -X POST "$API/synthesise" -H 'Content-Type: application/json' -d '{"text":"Hi","engine":"kokoro","voice":"af_heart"}' | jq`
-  - Note: direct pushes to `main` are allowed; PRs optional.
+- Work here: `kokoro_twvv` (not the repo root)
+- Read: `ONBOARDING.md` (quick start), `README.md`, `API_ROUTES.md`, `docs/WIREGUARD_MODE.md`
+- Launch (prod): `KEEP_AWAKE=1 WG_MODE=auto KOKORO_MODE=prod ./Start\ Kokoro\ Playground\ (XTTS\ Server).command`
+- API checks (from a peer):
+  - `curl -sS "$API/favorites" | jq '.profiles[0]'`
+  - `curl -sS "$API/voices_catalog?engine=kokoro" | jq '.filters.genders, .voices[0]'`
+  - `curl -sS -X POST "$API/synthesise" -H 'Content-Type: application/json' -d '{"text":"Hi","engine":"kokoro","voice":"af_heart"}' | jq`
+- Git: direct pushes to `main` are allowed; PRs are optional.
 
 
 WireGuard mode (launcher)
