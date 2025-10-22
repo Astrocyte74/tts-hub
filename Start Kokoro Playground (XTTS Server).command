@@ -28,6 +28,20 @@ if [[ "$(_ka)" =~ ^(1|true|yes|on)$ && -z "${CAFFEINATED:-}" ]]; then
   fi
 fi
 
+# Print keep-awake status hint once we're in the final execution context
+if command -v caffeinate >/dev/null 2>&1; then
+  if [[ -n "${CAFFEINATED:-}" ]]; then
+    echo "[Kokoro SPA] Power: keep-awake=ON via caffeinate -ims (display may sleep; system/network stay awake). Unset KEEP_AWAKE to allow normal sleep."
+  else
+    if [[ "$(_ka)" =~ ^(1|true|yes|on)$ ]]; then
+      echo "[Kokoro SPA] Power: keep-awake requested but not active in this process. Tip: set KEEP_AWAKE=1 before launching to enable (requires 'caffeinate')."
+    else
+      echo "[Kokoro SPA] Power: keep-awake=OFF. Tip: set KEEP_AWAKE=1 to keep system awake while the hub runs."
+    fi
+  fi
+else
+  echo "[Kokoro SPA] Power: 'caffeinate' not found; keep-awake unavailable. Install Xcode command line tools or use clamshell/WoL as needed."
+fi
 FRONTEND_DIR="${FRONTEND_DIR:-$ROOT_DIR/frontend}"
 ENV_FILE="$FRONTEND_DIR/.env"
 ENV_TEMPLATE="$FRONTEND_DIR/.env.example"
