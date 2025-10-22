@@ -42,7 +42,6 @@ if command -v caffeinate >/dev/null 2>&1; then
 else
   echo "[Kokoro SPA] Power: 'caffeinate' not found; keep-awake unavailable. Install Xcode command line tools or use clamshell/WoL as needed."
 fi
-
 FRONTEND_DIR="${FRONTEND_DIR:-$ROOT_DIR/frontend}"
 ENV_FILE="$FRONTEND_DIR/.env"
 ENV_TEMPLATE="$FRONTEND_DIR/.env.example"
