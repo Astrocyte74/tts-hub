@@ -1,18 +1,20 @@
 import { useEffect, useState } from 'react';
 
+type FavoritePatch = {
+  id: string;
+  label: string;
+  notes?: string;
+  language?: string;
+  speed?: number;
+  trimSilence?: boolean;
+  style?: string;
+  seed?: number;
+};
+
 interface EditFavoriteDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (patch: {
-    id: string;
-    label: string;
-    notes?: string;
-    language?: string;
-    speed?: number;
-    trimSilence?: boolean;
-    style?: string;
-    seed?: number;
-  }) => Promise<void> | void;
+  onSave: (patch: FavoritePatch) => Promise<void> | void;
   favorite: {
     id: string;
     label: string;
@@ -55,7 +57,7 @@ export function EditFavoriteDialog({ isOpen, onClose, onSave, favorite }: EditFa
     if (!label.trim()) return;
     setSaving(true);
     try {
-      const patch: any = {
+      const patch: FavoritePatch = {
         id: favorite.id,
         label: label.trim(),
         notes: notes.trim() || undefined,
@@ -125,4 +127,3 @@ export function EditFavoriteDialog({ isOpen, onClose, onSave, favorite }: EditFa
     </div>
   );
 }
-

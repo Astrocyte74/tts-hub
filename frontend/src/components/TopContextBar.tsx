@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { IconBrand, IconCaretDown, IconCog, IconCpu, IconDocument, IconMic, IconWave, IconPlay } from '../icons';
+import { IconBrand, IconCaretDown, IconChatTTS, IconCog, IconCpu, IconDocument, IconMic, IconWave, IconPlay } from '../icons';
 import type { SynthesisResult, VoiceProfile } from '../types';
 
 interface TopContextBarProps {
@@ -140,8 +140,12 @@ export function TopContextBar({
           aria-selected={activePanel === 'script'}
           className={`topbar__chip ${activePanel === 'script' ? 'topbar__chip--active' : ''}`}
           onClick={() => {
-            onChangePanel && onChangePanel('script');
-            onShowScript && onShowScript();
+            if (onChangePanel) {
+              onChangePanel('script');
+            }
+            if (onShowScript) {
+              onShowScript();
+            }
           }}
           aria-label="Edit script"
           title="Script (1)"
@@ -156,10 +160,14 @@ export function TopContextBar({
           aria-selected={activePanel === 'controls'}
           className={`topbar__chip ${activePanel === 'controls' ? 'topbar__chip--active' : ''}`}
           onClick={() => {
-            onChangePanel && onChangePanel('controls');
-            onEngineClick && onEngineClick();
+            if (onChangePanel) {
+              onChangePanel('controls');
+            }
+            if (onEngineClick) {
+              onEngineClick();
+            }
           }}
-          title="Engine (2)"
+          title={`Engine (2) — ${statusLabel}`}
         >
           <span className="topbar__chip-icon" aria-hidden><IconCpu /></span>
           <span className="topbar__chip-label">Engine</span>
@@ -174,8 +182,12 @@ export function TopContextBar({
           aria-selected={activePanel === 'voices'}
           className={`topbar__chip ${activePanel === 'voices' ? 'topbar__chip--active' : ''} ${noVoiceSelected && activePanel === 'voices' ? 'topbar__chip--warn' : ''}`}
           onClick={() => {
-            onChangePanel && onChangePanel('voices');
-            onShowVoicePalette && onShowVoicePalette();
+            if (onChangePanel) {
+              onChangePanel('voices');
+            }
+            if (onShowVoicePalette) {
+              onShowVoicePalette();
+            }
           }}
           aria-label="Show voice palette"
           title="Jump to voices (V)"
@@ -205,8 +217,12 @@ export function TopContextBar({
             aria-selected={activePanel === 'results' || Boolean(isResultsOpen)}
             className={`topbar__chip ${activePanel === 'results' || isResultsOpen ? 'topbar__chip--active' : ''}`}
             onClick={() => {
-              onChangePanel && onChangePanel('results');
-              onToggleResults && onToggleResults();
+              if (onChangePanel) {
+                onChangePanel('results');
+              }
+              if (onToggleResults) {
+                onToggleResults();
+              }
             }}
             aria-label="Show results"
             title="Results (4)"
@@ -236,6 +252,20 @@ export function TopContextBar({
           title="API & CLI"
         >
           <span className="topbar__button-label">API</span>
+        </button>
+        <button
+          type="button"
+          className="topbar__button"
+          onClick={() => {
+            if (onAiAssistClick) {
+              onAiAssistClick();
+            }
+          }}
+          disabled={!ollamaAvailable || !onAiAssistClick}
+          aria-label="Open AI Assist"
+          title={ollamaAvailable ? 'AI Assist (Shift + /)' : 'AI Assist unavailable'}
+        >
+          <IconChatTTS />
         </button>
         <button type="button" className="topbar__button" onClick={onOpenSettings} aria-label="Open settings" title="Settings (S)">
           <IconCog />
@@ -269,23 +299,59 @@ export function TopContextBar({
                         className="popover__button"
                         type="button"
                         title={(p.notes && p.notes.trim()) ? p.notes : `${p.engine} · ${p.voiceId}`}
-                        onClick={() => { onQuickSelectProfile && onQuickSelectProfile({ id: p.id, engine: p.engine, voiceId: p.voiceId }); setVoiceMenuOpen(false); }}
+                        onClick={() => {
+                          if (onQuickSelectProfile) {
+                            onQuickSelectProfile({ id: p.id, engine: p.engine, voiceId: p.voiceId });
+                          }
+                          setVoiceMenuOpen(false);
+                        }}
                       >
                         {p.label}
                       </button>
                       <div style={{ display: 'flex', gap: 6 }}>
                         {onEditFavorite ? (
-                          <button className="popover__button" type="button" title="Edit favorite" onClick={(e) => { e.stopPropagation(); onEditFavorite(p.id); setVoiceMenuOpen(false); }}>✎</button>
+                          <button
+                            className="popover__button"
+                            type="button"
+                            title="Edit favorite"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEditFavorite(p.id);
+                              setVoiceMenuOpen(false);
+                            }}
+                          >
+                            ✎
+                          </button>
                         ) : null}
                         {onDeleteFavorite ? (
-                          <button className="popover__button" type="button" title="Delete favorite" onClick={(e) => { e.stopPropagation(); onDeleteFavorite(p.id); setVoiceMenuOpen(false); }}>🗑</button>
+                          <button
+                            className="popover__button"
+                            type="button"
+                            title="Delete favorite"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteFavorite(p.id);
+                              setVoiceMenuOpen(false);
+                            }}
+                          >
+                            🗑
+                          </button>
                         ) : null}
                       </div>
                     </div>
                   ))}
                   {onOpenFavoritesManager ? (
                     <div style={{ marginTop: 8 }}>
-                      <button className="popover__button" type="button" onClick={() => { onOpenFavoritesManager(); setVoiceMenuOpen(false); }}>Manage Favorites…</button>
+                      <button
+                        className="popover__button"
+                        type="button"
+                        onClick={() => {
+                          onOpenFavoritesManager();
+                          setVoiceMenuOpen(false);
+                        }}
+                      >
+                        Manage Favorites…
+                      </button>
                     </div>
                   ) : null}
                 </div>
@@ -294,7 +360,17 @@ export function TopContextBar({
                 <div>
                   <strong>Favorites</strong>
                   {quickFavorites.map((v) => (
-                    <button key={`fav-${v.id}`} className="popover__button" type="button" onClick={() => { onQuickSelectVoice && onQuickSelectVoice(v.id); setVoiceMenuOpen(false); }}>
+                    <button
+                      key={`fav-${v.id}`}
+                      className="popover__button"
+                      type="button"
+                      onClick={() => {
+                        if (onQuickSelectVoice) {
+                          onQuickSelectVoice(v.id);
+                        }
+                        setVoiceMenuOpen(false);
+                      }}
+                    >
                       {v.label}
                     </button>
                   ))}
@@ -304,7 +380,17 @@ export function TopContextBar({
                 <div>
                   <strong>Recent</strong>
                   {quickRecents.map((v) => (
-                    <button key={`rec-${v.id}`} className="popover__button" type="button" onClick={() => { onQuickSelectVoice && onQuickSelectVoice(v.id); setVoiceMenuOpen(false); }}>
+                    <button
+                      key={`rec-${v.id}`}
+                      className="popover__button"
+                      type="button"
+                      onClick={() => {
+                        if (onQuickSelectVoice) {
+                          onQuickSelectVoice(v.id);
+                        }
+                        setVoiceMenuOpen(false);
+                      }}
+                    >
                       {v.label}
                     </button>
                   ))}

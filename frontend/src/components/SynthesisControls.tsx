@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { IconChatTTS, IconKokoro, IconOpenVoice, IconXTTS } from '../icons';
 
 interface EngineOption {

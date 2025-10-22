@@ -82,7 +82,11 @@ export function WaveformTrim({ src, height = 56, initialStart = 0, initialEnd, f
       try {
         const res = await fetch(src, { cache: 'force-cache' });
         const arr = await res.arrayBuffer();
-        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const audioCtx = window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!audioCtx) {
+          return;
+        }
+        const ctx = new audioCtx();
         const audioBuffer = await ctx.decodeAudioData(arr);
         if (cancelled) return;
         setBuffer(audioBuffer);
@@ -218,4 +222,3 @@ export function WaveformTrim({ src, height = 56, initialStart = 0, initialEnd, f
     </div>
   );
 }
-

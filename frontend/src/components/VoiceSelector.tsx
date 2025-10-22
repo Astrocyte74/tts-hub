@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import clsx from 'clsx';
 import type { VoiceGroup, VoiceProfile } from '../types';
@@ -206,26 +206,29 @@ export function VoiceSelector({
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
   };
 
-  const passesFacets = (voice: VoiceProfile) => {
-    if (activeLocales.length && !activeLocales.includes(voice.locale ?? 'unknown')) return false;
-    if (activeGenders.length && !activeGenders.includes(voice.gender ?? 'unknown')) return false;
-    if (activeTags.length && !activeTags.some((t) => voice.tags.includes(t))) return false;
-    return true;
-  };
+  const passesFacets = useCallback(
+    (voice: VoiceProfile) => {
+      if (activeLocales.length && !activeLocales.includes(voice.locale ?? 'unknown')) return false;
+      if (activeGenders.length && !activeGenders.includes(voice.gender ?? 'unknown')) return false;
+      if (activeTags.length && !activeTags.some((t) => voice.tags.includes(t))) return false;
+      return true;
+    },
+    [activeLocales, activeGenders, activeTags],
+  );
 
   const filteredForFacets = useMemo(() => {
     if (!activeLocales.length && !activeGenders.length && !activeTags.length) return filteredVoices;
     return filteredVoices.filter(passesFacets);
-  }, [filteredVoices, activeLocales, activeGenders, activeTags]);
+  }, [filteredVoices, activeLocales, activeGenders, activeTags, passesFacets]);
 
   // Hover preview (best-effort) — attempts to find a preview URL in raw data
-  const toAbsolute = (url: string): string => {
+  const toAbsolute = useCallback((url: string): string => {
     if (!url) return url;
     if (/^https?:\/\//i.test(url)) return url;
     return API_BASE ? `${API_BASE}${url.startsWith('/') ? '' : '/'}${url}` : url;
-  };
+  }, [API_BASE]);
 
-  const findPreviewUrl = (voice: VoiceProfile): string | null => {
+  const findPreviewUrl = useCallback((voice: VoiceProfile): string | null => {
     const candidates = ['sample_url','sample','preview_url','preview','audio_url','audio','demo_url','demo'];
     const tryObject = (obj: unknown): string | null => {
       if (!obj || typeof obj !== 'object') return null;
@@ -248,7 +251,7 @@ export function VoiceSelector({
     const nestedHit = tryObject(nested);
     if (nestedHit) return nestedHit;
     return null;
-  };
+  }, [toAbsolute]);
 
   const playPreview = (voice: VoiceProfile) => {
     if (!audioRef.current) {
@@ -290,7 +293,7 @@ export function VoiceSelector({
   );
 
   const groupsToRender = useMemo(() => buildDisplayGroups(filteredForFacets, groups, new Set(filteredForFacets.map(v=>v.id)), activeGroup), [filteredForFacets, groups, activeGroup]);
-  const missingPreviewIds = useMemo(() => filteredForFacets.filter((v) => !findPreviewUrl(v)).map((v) => v.id), [filteredForFacets]);
+  const missingPreviewIds = useMemo(() => filteredForFacets.filter((v) => !findPreviewUrl(v)).map((v) => v.id), [filteredForFacets, findPreviewUrl]);
   const bulkBusy = useMemo(() => missingPreviewIds.some((id) => previewBusyIds.includes(id)), [missingPreviewIds, previewBusyIds]);
 
   return (

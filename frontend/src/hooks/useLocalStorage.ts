@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-export function useLocalStorage<T>(key: string, initialValue: T): [T, (next: T) => void] {
+export function useLocalStorage<T>(key: string, initialValue: T): [T, (next: T | ((prev: T) => T)) => void] {
   const initialRef = useRef(initialValue);
 
   useEffect(() => {
@@ -22,15 +22,18 @@ export function useLocalStorage<T>(key: string, initialValue: T): [T, (next: T) 
   const [value, setValue] = useState<T>(() => readValue());
 
   const persist = useCallback(
-    (next: T) => {
-      setValue(next);
-      if (typeof window !== 'undefined') {
-        try {
-          window.localStorage.setItem(key, JSON.stringify(next));
-        } catch {
-          // best effort persistence; ignore quota errors
+    (next: T | ((prev: T) => T)) => {
+      setValue((prev) => {
+        const resolved = typeof next === 'function' ? (next as (prev: T) => T)(prev) : next;
+        if (typeof window !== 'undefined') {
+          try {
+            window.localStorage.setItem(key, JSON.stringify(resolved));
+          } catch {
+            // best effort persistence; ignore quota errors
+          }
         }
-      }
+        return resolved;
+      });
     },
     [key],
   );

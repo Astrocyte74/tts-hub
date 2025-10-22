@@ -49,18 +49,18 @@ export function ResultsDrawer({
   const activeCount = queue.filter((q) => q.status === 'pending' || q.status === 'rendering').length;
   const hasActiveQueue = activeCount > 0;
   const [activeTab, setActiveTab] = useState<'queue' | 'history'>(hasActiveQueue ? 'queue' : 'history');
+  const clipCount = items.length;
 
   useEffect(() => {
     if (!open) return;
     if (hasActiveQueue) {
       setActiveTab('queue');
-    } else if (items.length) {
+    } else if (clipCount) {
       setActiveTab('history');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, hasActiveQueue, items.length]);
+  }, [open, hasActiveQueue, clipCount]);
 
-  const toggleLabel = open ? 'Close' : `Open (${items.length})`;
+  const toggleLabel = open ? 'Close' : `Open (${clipCount})`;
 
   return (
     <div className={`results-drawer ${open ? 'results-drawer--open' : ''}`} aria-live="polite">
@@ -87,7 +87,7 @@ export function ResultsDrawer({
             className={`tabs__tab ${activeTab === 'history' ? 'is-active' : ''}`}
             onClick={() => setActiveTab('history')}
           >
-            Clips ({items.length})
+            Clips ({clipCount})
           </button>
         </div>
         {activeTab === 'queue' ? (
@@ -126,7 +126,7 @@ export function ResultsDrawer({
           </div>
         ) : (
           <div className="results-drawer__list">
-            {!items.length ? (
+            {!clipCount ? (
               <div className="results-drawer__empty">Generate audio to see the clips here.</div>
             ) : (
               <>

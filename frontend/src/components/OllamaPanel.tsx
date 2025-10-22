@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { ollamaTags, ollamaPs, ollamaShow, ollamaGenerate, ollamaChat, ollamaPull } from '../api/client';
+import { ollamaTags, ollamaPs, ollamaGenerate, ollamaPull } from '../api/client';
 
 export function OllamaPanel() {
   const [open, setOpen] = useState(false);
@@ -22,23 +22,37 @@ export function OllamaPanel() {
       if (streamPull) {
         await ollamaPull(model, {
           stream: true,
-          onEvent: (line) => setPullLog((prev) => (prev ? prev + '\n' + line : line)),
+          onEvent: (line) => setPullLog((prev) => (prev ? `${prev}\n${line}` : line)),
         });
-        return { streamed: true } as any;
+        return;
       }
-      return ollamaPull(model, { stream: false });
+      await ollamaPull(model, { stream: false });
     },
   });
 
   const models = useMemo(() => {
-    const payload = tagsQuery.data as any;
-    const raw = (payload && (payload.models || payload.data)) || [];
-    const names = Array.isArray(raw)
-      ? raw
-          .map((item: any) => (typeof item === 'string' ? item : item?.name))
-          .filter((s: any) => typeof s === 'string' && s)
+    const payload = tagsQuery.data;
+    if (!payload || typeof payload !== 'object') {
+      return [] as string[];
+    }
+    const typedPayload = payload as { models?: unknown; data?: unknown };
+    const candidates = Array.isArray(typedPayload.models)
+      ? typedPayload.models
+      : Array.isArray(typedPayload.data)
+      ? typedPayload.data
       : [];
-    return names as string[];
+    const names: string[] = [];
+    candidates.forEach((item) => {
+      if (typeof item === 'string') {
+        names.push(item);
+      } else if (item && typeof item === 'object') {
+        const name = (item as { name?: unknown }).name;
+        if (typeof name === 'string') {
+          names.push(name);
+        }
+      }
+    });
+    return names;
   }, [tagsQuery.data]);
 
   return (
@@ -105,4 +119,3 @@ export function OllamaPanel() {
     </div>
   );
 }
-

@@ -156,6 +156,7 @@ export interface GlobalProfile {
   style?: string;
   seed?: number;
   serverUrl?: string;
+  notes?: string;
   tags?: string[];
   meta?: Record<string, unknown>;
   createdAt?: string;

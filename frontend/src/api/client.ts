@@ -10,6 +10,7 @@ import type {
   VoiceGroup,
   VoiceProfile,
   VoiceCatalogue,
+  GlobalProfile,
 } from '../types';
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
@@ -397,7 +398,10 @@ export async function ollamaChat(body: Record<string, unknown>): Promise<Record<
   return postJson<Record<string, unknown>>('ollama/chat', body);
 }
 
-export async function ollamaPull(model: string, opts?: { stream?: boolean; onEvent?: (text: string) => void }): Promise<Record<string, unknown>> {
+type OllamaPullStreamResult = { streamed: true };
+type OllamaPullResult = Record<string, unknown> | OllamaPullStreamResult;
+
+export async function ollamaPull(model: string, opts?: { stream?: boolean; onEvent?: (text: string) => void }): Promise<OllamaPullResult> {
   const stream = opts?.stream ?? true;
   if (stream && typeof opts?.onEvent === 'function') {
     const res = await fetch(buildUrl('ollama/pull'), {
@@ -424,7 +428,7 @@ export async function ollamaPull(model: string, opts?: { stream?: boolean; onEve
         }
       });
     }
-    return { streamed: true } as any;
+    return { streamed: true };
   }
   return postJson<Record<string, unknown>>('ollama/pull', { model, stream: false });
 }
@@ -434,16 +438,16 @@ export async function createProfile(payload: Record<string, unknown>): Promise<R
   return postJson<Record<string, unknown>>('favorites', payload);
 }
 
-export async function listProfiles(): Promise<{ profiles: Record<string, unknown>[]; count: number }> {
-  return getJson<{ profiles: Record<string, unknown>[]; count: number }>('favorites');
+export async function listProfiles(): Promise<{ profiles: GlobalProfile[]; count: number }> {
+  return getJson<{ profiles: GlobalProfile[]; count: number }>('favorites');
 }
 
 export async function exportProfiles(): Promise<Record<string, unknown>> {
   return getJson<Record<string, unknown>>('favorites/export');
 }
 
-export async function importProfiles(payload: Record<string, unknown>): Promise<{ imported: number; mode: string }> {
-  return postJson<{ imported: number; mode: string }>('favorites/import', payload);
+export async function importProfiles(payload: Record<string, unknown> & { mode?: 'merge' | 'replace' }): Promise<{ imported: number; mode: 'merge' | 'replace' }> {
+  return postJson<{ imported: number; mode: 'merge' | 'replace' }>('favorites/import', payload);
 }
 
 export async function updateFavorite(id: string, patch: Record<string, unknown>): Promise<Record<string, unknown>> {
