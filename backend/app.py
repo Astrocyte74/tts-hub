@@ -2360,13 +2360,29 @@ def xtts_custom_voice_endpoint():
                 raise PlaygroundError("Field 'url' is required for YouTube source.", status=400)
             if not _have_tool("yt-dlp"):
                 raise PlaygroundError("yt-dlp is required for YouTube imports. Install 'yt-dlp' and try again.", status=503)
-            # Download best audio to temp
-            temp_src = OUTPUT_DIR / f"yt-{uuid.uuid4().hex}.m4a"
-            cmd = ["yt-dlp", "-f", "bestaudio/best", "-x", "-o", str(temp_src), url]
+            # Download best audio to temp (let yt-dlp decide extension)
+            temp_base = OUTPUT_DIR / f"yt-{uuid.uuid4().hex}"
+            out_tmpl = f"{temp_base}.%(ext)s"
+            cmd = ["yt-dlp", "-f", "bestaudio/best", "-o", out_tmpl, url]
             try:
                 subprocess.run(cmd, check=True)
             except subprocess.CalledProcessError as exc:
                 raise PlaygroundError(f"yt-dlp failed: {exc}", status=500)
+            # Resolve the actual downloaded filename
+            candidates = list(OUTPUT_DIR.glob(f"{temp_base.name}.*"))
+            if not candidates:
+                raise PlaygroundError("yt-dlp did not produce an output file.", status=500)
+            # Prefer typical audio extensions
+            pref_order = [".m4a", ".mp3", ".webm", ".opus", ".ogg"]
+            best = None
+            for ext in pref_order:
+                for c in candidates:
+                    if c.suffix.lower() == ext:
+                        best = c
+                        break
+                if best:
+                    break
+            temp_src = (OUTPUT_DIR / candidates[0]) if best is None else (OUTPUT_DIR / best)
 
         # Determine output slug/filename
         if not label and temp_src is not None:
