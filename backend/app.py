@@ -63,6 +63,8 @@ XTTS_OUTPUT_FORMAT = os.environ.get("XTTS_OUTPUT_FORMAT", "wav").lower()
 XTTS_TIMEOUT_SECONDS = float(os.environ.get("XTTS_TIMEOUT", "120"))
 XTTS_SUPPORTED_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg"}
 XTTS_SERVER_URL = os.environ.get("XTTS_SERVER_URL")
+XTTS_MIN_REF_SECONDS = float(os.environ.get("XTTS_MIN_REF_SECONDS", "5"))
+XTTS_MAX_REF_SECONDS = float(os.environ.get("XTTS_MAX_REF_SECONDS", "30"))
 
 _xtts_voice_cache: Dict[str, Path] = {}
 _xtts_voice_lock = threading.Lock()
@@ -672,6 +674,92 @@ def _slugify_voice_id(name: str) -> str:
             slug_chars.append('_')
     slug = ''.join(slug_chars).strip('_')
     return slug or name.lower()
+
+
+def _have_tool(name: str) -> bool:
+    try:
+        return shutil.which(name) is not None
+    except Exception:
+        return False
+
+
+def _parse_timecode(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            v = float(value)
+            return v if v >= 0 else None
+        except Exception:
+            return None
+    s = str(value).strip()
+    if not s:
+        return None
+    # mm:ss or hh:mm:ss
+    if ":" in s:
+        parts = s.split(":")
+        try:
+            parts = [float(p) for p in parts]
+        except Exception:
+            return None
+        if len(parts) == 2:
+            m, sec = parts
+            return max(0.0, m * 60.0 + sec)
+        if len(parts) == 3:
+            h, m, sec = parts
+            return max(0.0, h * 3600.0 + m * 60.0 + sec)
+        return None
+    try:
+        return max(0.0, float(s))
+    except Exception:
+        return None
+
+
+def _probe_duration_seconds(path: Path) -> float:
+    try:
+        with sf.SoundFile(str(path)) as f:
+            return float(len(f)) / float(f.samplerate)
+    except Exception:
+        try:
+            # librosa fallback
+            return float(librosa.get_duration(path=str(path)))
+        except Exception as exc:
+            raise PlaygroundError(f"Failed to read audio duration: {exc}", status=400)
+
+
+def _ffmpeg_normalise_to_wav(src: Path, dst: Path, *, start: Optional[float] = None, end: Optional[float] = None) -> None:
+    if not _have_tool("ffmpeg"):
+        raise PlaygroundError("ffmpeg is required to process audio. Install ffmpeg and try again.", status=503)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    cmd: List[str] = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
+    if start is not None and start > 0:
+        cmd += ["-ss", f"{start}"]
+    cmd += ["-i", str(src)]
+    if end is not None and end > 0:
+        if start is not None and end > start:
+            cmd += ["-t", f"{end - start}"]
+        else:
+            cmd += ["-to", f"{end}"]
+    # mono, 24kHz, keep volume safe
+    cmd += ["-ac", "1", "-ar", "24000", "-vn", str(dst)]
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as exc:
+        raise PlaygroundError(f"ffmpeg failed to process audio: {exc}", status=500)
+
+
+def _unique_xtts_filename(slug: str, ext: str = ".wav") -> Path:
+    directory = XTTS_VOICE_DIR
+    directory.mkdir(parents=True, exist_ok=True)
+    candidate = directory / f"{slug}{ext}"
+    if not candidate.exists():
+        return candidate
+    i = 2
+    while True:
+        alt = directory / f"{slug}_{i}{ext}"
+        if not alt.exists():
+            return alt
+        i += 1
 
 
 def get_xtts_voice_map() -> Dict[str, Path]:
@@ -2220,6 +2308,114 @@ def create_voice_preview_endpoint():
         "language": reported_language,
         "preview_url": f"/audio/{rel.as_posix()}",
     })
+
+
+@api.route("/xtts/custom_voice", methods=["POST"])
+def xtts_custom_voice_endpoint():
+    """Create a custom XTTS voice from an uploaded file or a YouTube URL segment.
+
+    Accepts either:
+      - multipart/form-data with fields: label?, file, start?, end?
+      - application/json: { source: 'youtube', url: string, start?: string|number, end?: string|number, label?: string }
+
+    Saves a normalised mono 24kHz WAV under XTTS_VOICE_DIR and returns the created voice id and preview URL.
+    """
+    # Ensure XTTS service is present
+    if not XTTS_SERVICE_DIR.exists() or not XTTS_PYTHON.exists():
+        raise PlaygroundError("XTTS engine is not available on this host.", status=503)
+
+    XTTS_VOICE_DIR.mkdir(parents=True, exist_ok=True)
+
+    content_type = (request.content_type or "").lower()
+    label: Optional[str] = None
+    start_seconds: Optional[float] = None
+    end_seconds: Optional[float] = None
+    temp_src: Optional[Path] = None
+    try:
+        if content_type.startswith("multipart/form-data"):
+            file = request.files.get("file")
+            if not file or file.filename is None:
+                raise PlaygroundError("No file uploaded.", status=400)
+            raw_label = request.form.get("label")
+            if raw_label:
+                label = str(raw_label).strip()
+            if request.form.get("start"):
+                start_seconds = _parse_timecode(request.form.get("start"))
+            if request.form.get("end"):
+                end_seconds = _parse_timecode(request.form.get("end"))
+            # Save to a temp file first
+            suffix = Path(file.filename).suffix or ".wav"
+            temp_src = Path(OUTPUT_DIR) / f"upload-{uuid.uuid4().hex}{suffix}"
+            file.save(str(temp_src))
+        else:
+            payload = parse_json_request()
+            source = str(payload.get("source") or "").strip().lower()
+            label = (str(payload.get("label") or "").strip() or None)
+            start_seconds = _parse_timecode(payload.get("start"))
+            end_seconds = _parse_timecode(payload.get("end"))
+            if source != "youtube":
+                raise PlaygroundError("Provide multipart 'file' upload or JSON { source: 'youtube', url }.", status=400)
+            url = str(payload.get("url") or "").strip()
+            if not url:
+                raise PlaygroundError("Field 'url' is required for YouTube source.", status=400)
+            if not _have_tool("yt-dlp"):
+                raise PlaygroundError("yt-dlp is required for YouTube imports. Install 'yt-dlp' and try again.", status=503)
+            # Download best audio to temp
+            temp_src = OUTPUT_DIR / f"yt-{uuid.uuid4().hex}.m4a"
+            cmd = ["yt-dlp", "-f", "bestaudio/best", "-x", "-o", str(temp_src), url]
+            try:
+                subprocess.run(cmd, check=True)
+            except subprocess.CalledProcessError as exc:
+                raise PlaygroundError(f"yt-dlp failed: {exc}", status=500)
+
+        # Determine output slug/filename
+        if not label and temp_src is not None:
+            label = Path(temp_src).stem
+        slug = _slugify_voice_id(label or f"voice-{uuid.uuid4().hex[:6]}")
+        out_path = _unique_xtts_filename(slug, ".wav")
+
+        # Normalise and optionally trim
+        _ffmpeg_normalise_to_wav(temp_src, out_path, start=start_seconds, end=end_seconds)
+
+        # Validate duration
+        dur = _probe_duration_seconds(out_path)
+        if dur < XTTS_MIN_REF_SECONDS or dur > XTTS_MAX_REF_SECONDS:
+            try:
+                out_path.unlink()
+            except OSError:
+                pass
+            raise PlaygroundError(
+                f"Reference must be between {int(XTTS_MIN_REF_SECONDS)} and {int(XTTS_MAX_REF_SECONDS)} seconds (got {dur:.1f}s).",
+                status=400,
+            )
+
+        voice_id = _slugify_voice_id(out_path.stem)
+        # Generate preview (best-effort)
+        try:
+            _get_or_create_xtts_preview(voice_id, language=None, force=True)
+        except Exception:
+            pass
+
+        rel_preview = _find_cached_preview("xtts", voice_id)
+        return jsonify(
+            {
+                "status": "created",
+                "engine": "xtts",
+                "voice": {
+                    "id": voice_id,
+                    "label": out_path.stem.replace("_", " ").title(),
+                    "path": str(out_path),
+                    "preview_url": rel_preview,
+                },
+            }
+        )
+    finally:
+        # Clean up temp source files
+        if temp_src and temp_src.exists():
+            try:
+                temp_src.unlink()
+            except OSError:
+                pass
 
 
 @api.route("/chattts/presets", methods=["POST"])
