@@ -249,9 +249,29 @@ PROJECT_OVERVIEW.md              Architectural overview
 - Launch via script (dev & prod) to confirm `/api/meta` and UI respond with grouped voices and announcer controls.
 
 Enjoy the upgraded Kokoro Playground! Contributions via issues or pull requests are welcome.
-- Favorites as presets (UI + API)
-  - Star a voice to save a Favorite with engine + voice + params (language, speed, trim; style for OpenVoice; seed for ChatTTS).
-  - Favorites include optional notes for human context; import/export preserves notes.
-  - Quick select (caret on the Voice chip) shows Favorites first with Edit/Delete/Manage actions.
-  - Favorites section in Voices is collapsible and now uses a compact row layout with a quick param summary and notes preview.
-  - Scripts can synthesize by Favorite: `POST /api/synthesise { text, favoriteSlug }` (aliases `favoriteId`, and existing `profileId/profileSlug` still work).
+  - Favorites as presets (UI + API)
+    - Star a voice to save a Favorite with engine + voice + params (language, speed, trim; style for OpenVoice; seed for ChatTTS).
+    - Favorites include optional notes for human context; import/export preserves notes.
+    - Quick select (caret on the Voice chip) shows Favorites first with Edit/Delete/Manage actions.
+    - Favorites section in Voices is collapsible and now uses a compact row layout with a quick param summary and notes preview.
+    - Scripts can synthesize by Favorite: `POST /api/synthesise { text, favoriteSlug }` (aliases `favoriteId`, and existing `profileId/profileSlug` still work).
+
+---
+
+## XTTS Custom Voices
+
+Create custom XTTS reference voices from local audio or a YouTube clip.
+
+- Create (UI): Voice panel → “Create custom voice…”. Supports file upload or YouTube URL with optional start/end. The server normalizes audio and validates a short duration.
+- Manage (UI): “Manage custom voices…” to edit Default Language, Gender, Accent, Tags, and Notes; inline quick‑edit for Gender/Accent is available on each XTTS card. A read‑only Source section shows the original filename or YouTube URL/title and the range used.
+- API endpoints (see API_ROUTES.md for details):
+  - `POST /api/xtts/custom_voice` (upload or YouTube)
+  - `GET|PATCH|DELETE /api/xtts/custom_voice/:id`
+
+Notes
+- “Default Language” can auto‑apply to the session when a voice is selected (toggle in Settings).
+- Accent is used for UI filtering/badges and isn’t sent to the engine; Language is what the engine uses.
+
+## Favorites
+
+- The API returns all favorites across engines; clients that want a curated subset (e.g., for a bot) should implement their own filtering.

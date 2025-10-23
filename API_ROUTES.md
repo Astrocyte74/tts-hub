@@ -109,3 +109,38 @@ Notes
 - `/synthesise` aliases: request may include `favoriteId`/`favoriteSlug` (and legacy `profileId`/`profileSlug`) to resolve engine/voice/params; body supplies `text`.
 - All errors return JSON via `PlaygroundError` with `{ error, status }`.
 - In dev, set `VITE_API_BASE_URL` so the SPA on 5175 fetches `/audio/...` from the backend on 7860.
+
+## XTTS Custom Voices
+
+Create and manage XTTS reference voices that appear in the XTTS catalogue (`/voices?engine=xtts`). References are stored under `XTTS/tts-service/voices/` with an optional sidecar JSON for metadata (`<voice>.meta.json`).
+
+- POST `/xtts/custom_voice`
+  - Multipart upload: fields `file` (audio), optional `label`, `start`, `end` (mm:ss or seconds)
+  - JSON (YouTube): `{ source: 'youtube', url, start?, end?, label? }`
+  - Normalises to mono 24 kHz WAV via ffmpeg and validates length (default 5–30 seconds).
+  - Returns `{ status, engine: 'xtts', voice: { id, label, path, preview_url? } }`.
+  - Notes: requires `ffmpeg`; YouTube import additionally requires `yt-dlp`.
+
+- GET `/xtts/custom_voice/:id`
+  - Returns `{ id, label, path, meta }` where `meta` is the sidecar JSON if present.
+
+- PATCH `/xtts/custom_voice/:id`
+  - Updates sidecar fields: `{ language?, gender?, tags?, notes?, accent? }`.
+  - `accent` is `{ id, label, flag }` and is used for UI filtering (not sent to the engine).
+  - `language` is the voice’s default language; the UI can auto‑apply it on selection.
+
+- DELETE `/xtts/custom_voice/:id`
+  - Removes the WAV and its sidecar.
+
+Sidecar example (`<voice>.meta.json`)
+```
+{
+  "language": "en-us",
+  "gender": "male",
+  "accent": { "id": "us", "label": "USA · Male", "flag": "🇺🇸" },
+  "tags": ["british", "custom"],
+  "notes": "Sample from YouTube",
+  "source": { "type": "youtube", "url": "https://…", "title": "…", "start": 5, "end": 22 },
+  "createdAt": "2025-10-23T06:30:00Z"
+}
+```
