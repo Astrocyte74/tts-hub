@@ -1,4 +1,5 @@
 import type { JSX } from 'react';
+import { CollapsiblePanel } from './CollapsiblePanel';
 import { IconChatTTS, IconKokoro, IconOpenVoice, IconXTTS } from '../icons';
 
 interface EngineOption {
@@ -290,16 +291,18 @@ export function SynthesisControls({
           </label>
         </div>
       ) : null}
-      <div className="toggle-list">
-        <label className="toggle">
-          <input type="checkbox" checked={trimSilence} onChange={(event) => onTrimSilenceChange(event.target.checked)} />
-          <span>Trim silence</span>
-        </label>
-        <label className="toggle">
-          <input type="checkbox" checked={autoPlay} onChange={(event) => onAutoPlayChange(event.target.checked)} />
-          <span>Autoplay new clips</span>
-        </label>
-      </div>
+      <CollapsiblePanel title="Audio Options" storageKey="kokoro:collapse:audioOptions" defaultOpen>
+        <div className="toggle-list">
+          <label className="toggle">
+            <input type="checkbox" checked={trimSilence} onChange={(event) => onTrimSilenceChange(event.target.checked)} />
+            <span>Trim silence</span>
+          </label>
+          <label className="toggle">
+            <input type="checkbox" checked={autoPlay} onChange={(event) => onAutoPlayChange(event.target.checked)} />
+            <span>Autoplay new clips</span>
+          </label>
+        </div>
+      </CollapsiblePanel>
     </section>
   );
 }

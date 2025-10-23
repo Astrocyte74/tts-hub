@@ -6,6 +6,7 @@ import { TextWorkbench } from './components/TextWorkbench';
 import { SynthesisControls } from './components/SynthesisControls';
 import { EditFavoriteDialog } from './components/EditFavoriteDialog';
 import { AnnouncerControls } from './components/AnnouncerControls';
+import { CollapsiblePanel } from './components/CollapsiblePanel';
 import { SynthesisActions } from './components/SynthesisActions';
 import { AudioResultList } from './components/AudioResultList';
 import { TopContextBar } from './components/TopContextBar';
@@ -1692,17 +1693,23 @@ function App() {
               hideLanguageSpeed={true}
             />
             {engineAvailable ? (
-              <AnnouncerControls
-                enabled={announcerEnabled}
-                onEnabledChange={setAnnouncerEnabled}
-                voices={voices}
-                selectedVoice={announcerVoice}
-                onVoiceChange={setAnnouncerVoice}
-                template={announcerTemplate}
-                onTemplateChange={setAnnouncerTemplate}
-                gapSeconds={Number(announcerGap)}
-                onGapChange={(value) => setAnnouncerGap(Number(value))}
-              />
+              <CollapsiblePanel
+                title="Announcer"
+                storageKey="kokoro:collapse:announcer"
+                defaultOpen={false}
+              >
+                <AnnouncerControls
+                  enabled={announcerEnabled}
+                  onEnabledChange={setAnnouncerEnabled}
+                  voices={voices}
+                  selectedVoice={announcerVoice}
+                  onVoiceChange={setAnnouncerVoice}
+                  template={announcerTemplate}
+                  onTemplateChange={setAnnouncerTemplate}
+                  gapSeconds={Number(announcerGap)}
+                  onGapChange={(value) => setAnnouncerGap(Number(value))}
+                />
+              </CollapsiblePanel>
             ) : null}
           </div>
         ) : activePanel === 'voices' ? (

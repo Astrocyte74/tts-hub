@@ -399,6 +399,23 @@
   justify-content: flex-end;
 }
 
+.panel--collapsible .panel__header { align-items: center; }
+.collapsible__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: #f8fafc;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.collapsible__chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+.collapsible__chevron.is-open { transform: rotate(90deg); }
+
 .panel--compact {
   margin-top: 18px;
 }
