@@ -376,6 +376,42 @@ export async function createVoicePreview(params: CreateVoicePreviewParams): Prom
   return { preview_url: url };
 }
 
+// -------------------- XTTS custom voices --------------------
+
+export interface CreateXttsCustomVoiceResponse {
+  status: string;
+  engine: string;
+  voice: { id: string; label: string; path: string; preview_url?: string };
+}
+
+export async function createXttsCustomVoiceUpload(
+  file: File,
+  opts?: { label?: string; start?: string | number; end?: string | number },
+): Promise<CreateXttsCustomVoiceResponse> {
+  const fd = new FormData();
+  fd.append('file', file);
+  if (opts?.label) fd.append('label', String(opts.label));
+  if (opts?.start !== undefined) fd.append('start', String(opts.start));
+  if (opts?.end !== undefined) fd.append('end', String(opts.end));
+  const res = await fetch(buildUrl('xtts/custom_voice'), { method: 'POST', body: fd });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`POST xtts/custom_voice failed (${res.status}): ${text}`);
+  }
+  return (await res.json()) as CreateXttsCustomVoiceResponse;
+}
+
+export async function createXttsCustomVoiceFromYouTube(
+  url: string,
+  opts?: { label?: string; start?: string | number; end?: string | number },
+): Promise<CreateXttsCustomVoiceResponse> {
+  const body: Record<string, unknown> = { source: 'youtube', url };
+  if (opts?.label) body.label = String(opts.label);
+  if (opts?.start !== undefined) body.start = opts.start;
+  if (opts?.end !== undefined) body.end = opts.end;
+  return postJson<CreateXttsCustomVoiceResponse>('xtts/custom_voice', body);
+}
+
 // -------------------- Ollama proxies --------------------
 
 export async function ollamaTags(): Promise<Record<string, unknown>> {

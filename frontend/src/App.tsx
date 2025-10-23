@@ -17,6 +17,7 @@ import { InfoDialog } from './components/InfoDialog';
 import { ApiStatusFooter } from './components/ApiStatusFooter';
 import { OllamaPanel } from './components/OllamaPanel';
 import { FavoritesManagerDialog } from './components/FavoritesManagerDialog';
+import { XttsCustomVoiceDialog } from './components/XttsCustomVoiceDialog';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSessionStorage } from './hooks/useSessionStorage';
 import {
@@ -153,6 +154,7 @@ function App() {
   const [shouldReopenFavoritesManager, setShouldReopenFavoritesManager] = useState(false);
   const [openvoiceHelpOpen, setOpenvoiceHelpOpen] = useState(false);
   const [isAiAssistOpen, setAiAssistOpen] = useState(false);
+  const [isXttsDialogOpen, setXttsDialogOpen] = useState(false);
 
   const [openvoiceStyle, setOpenvoiceStyle] = useLocalStorage('kokoro:openvoiceStyle', 'default');
   const [openvoiceVoiceStyles, setOpenvoiceVoiceStyles] = useLocalStorage<Record<string, string>>('kokoro:openvoiceVoiceStyles', {});
@@ -1747,6 +1749,7 @@ function App() {
             favorites={starredVoiceIds}
             favoritesNotesByVoice={favoritesNotesByVoiceMap}
             favoritesMetaByVoice={favoritesMetaByVoiceMap}
+            onCreateCustomVoice={engineId === 'xtts' ? () => setXttsDialogOpen(true) : undefined}
             languages={availableLanguages}
             language={language}
             onLanguageChange={(value) => setLanguage(normaliseLanguage(value))}
@@ -1842,6 +1845,19 @@ function App() {
         editorFontSize={Number(editorFontSize)}
         onEditorFontSizeChange={(value) => setEditorFontSize(Number(value))}
       />
+      {engineId === 'xtts' ? (
+        <XttsCustomVoiceDialog
+          isOpen={isXttsDialogOpen}
+          onClose={() => setXttsDialogOpen(false)}
+          onCreated={({ id }) => {
+            setSelectedVoices([id]);
+            voicesQuery.refetch();
+            voiceGroupsQuery.refetch();
+            setActivePanel('voices');
+          }}
+          onError={(message) => setError(message)}
+        />
+      ) : null}
       <FavoritesManagerDialog
         isOpen={isFavoritesManagerOpen}
         favorites={favoritesForManager}
