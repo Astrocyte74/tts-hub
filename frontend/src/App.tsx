@@ -124,6 +124,7 @@ function App() {
   const [hoverPreview, setHoverPreview] = useLocalStorage('kokoro:hoverPreview', true);
   const [autoOpenClips, setAutoOpenClips] = useLocalStorage('kokoro:autoOpenClips', true);
   const [editorFontSize, setEditorFontSize] = useLocalStorage('kokoro:editorFontSize', 16);
+  const [autoApplyDefaults, setAutoApplyDefaults] = useLocalStorage('kokoro:autoApplyVoiceDefaults', true);
   const [announcerEnabled, setAnnouncerEnabled] = useLocalStorage('kokoro:announcerEnabled', false);
   const [announcerVoice, setAnnouncerVoice] = useLocalStorage<string | null>('kokoro:announcerVoice', null);
   const [announcerTemplate, setAnnouncerTemplate] = useLocalStorage('kokoro:announcerTemplate', DEFAULT_ANNOUNCER_TEMPLATE);
@@ -1750,10 +1751,19 @@ function App() {
               selected={selectedVoices}
               onToggle={(voiceId) => {
                 setError(null);
-                const next = selectedVoices.includes(voiceId)
+                const wasSelected = selectedVoices.includes(voiceId);
+                const next = wasSelected
                   ? selectedVoices.filter((id) => id !== voiceId)
                   : [...selectedVoices, voiceId];
                 setSelectedVoices(next);
+                // Auto-apply default language from voice metadata (XTTS) when newly selecting
+                if (!wasSelected && engineId === 'xtts' && autoApplyDefaults) {
+                  const v = voiceById.get(voiceId);
+                  const loc = v?.locale;
+                  if (loc && typeof loc === 'string' && loc.trim()) {
+                    setLanguage(normaliseLanguage(loc));
+                  }
+                }
               }}
               onClear={() => {
                 setError(null);
@@ -1869,6 +1879,8 @@ function App() {
         onClearRecents={() => setVoiceRecents([])}
         editorFontSize={Number(editorFontSize)}
         onEditorFontSizeChange={(value) => setEditorFontSize(Number(value))}
+        autoApplyDefaults={Boolean(autoApplyDefaults)}
+        onAutoApplyDefaultsChange={(value) => setAutoApplyDefaults(Boolean(value))}
       />
       {engineId === 'xtts' ? (
         <XttsCustomVoiceDialog

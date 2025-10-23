@@ -15,6 +15,8 @@ interface SettingsPopoverProps {
   onClearRecents?: () => void;
   editorFontSize?: number;
   onEditorFontSizeChange?: (value: number) => void;
+  autoApplyDefaults?: boolean;
+  onAutoApplyDefaultsChange?: (value: boolean) => void;
 }
 
 export function SettingsPopover({
@@ -34,6 +36,8 @@ export function SettingsPopover({
   onClearRecents,
   editorFontSize = 15,
   onEditorFontSizeChange,
+  autoApplyDefaults = true,
+  onAutoApplyDefaultsChange,
 }: SettingsPopoverProps) {
   if (!open) return null;
   return (
@@ -78,6 +82,16 @@ export function SettingsPopover({
                 onChange={(e) => onAutoOpenClipsChange && onAutoOpenClipsChange(e.target.checked)}
               />
               <span>Auto open Clips on completion</span>
+            </label>
+          </div>
+          <div className="popover__row">
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={autoApplyDefaults}
+                onChange={(e) => onAutoApplyDefaultsChange && onAutoApplyDefaultsChange(e.target.checked)}
+              />
+              <span>Auto-apply voice defaults on selection</span>
             </label>
           </div>
           {onClearRecents ? (

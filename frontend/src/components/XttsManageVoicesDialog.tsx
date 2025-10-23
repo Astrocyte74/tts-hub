@@ -112,8 +112,27 @@ function VoiceRow({ voice, accents, busy, onSave, onDelete }: { voice: VoiceProf
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <label className="field">
-          <span className="field__label">Language</span>
-          <input type="text" value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="en-us" />
+          <span className="field__label">Default Language</span>
+          <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+            {[
+              { id: 'en-us', label: 'English (US)' },
+              { id: 'en-gb', label: 'English (UK)' },
+              { id: 'es', label: 'Spanish' },
+              { id: 'fr', label: 'French' },
+              { id: 'de', label: 'German' },
+              { id: 'it', label: 'Italian' },
+              { id: 'ja', label: 'Japanese' },
+              { id: 'zh', label: 'Chinese' },
+              { id: 'ko', label: 'Korean' },
+              { id: 'pt', label: 'Portuguese' },
+              { id: 'tr', label: 'Turkish' },
+              { id: 'ar', label: 'Arabic' },
+            ].map((opt) => (
+              <option key={opt.id} value={opt.id}>{opt.label}</option>
+            ))}
+            {!language ? <option value="">—</option> : null}
+          </select>
+          <span className="panel__hint panel__hint--muted">Used when this voice is selected. The engine uses the base language code.</span>
         </label>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
           <label className="field">
@@ -134,6 +153,7 @@ function VoiceRow({ voice, accents, busy, onSave, onDelete }: { voice: VoiceProf
                 </option>
               ))}
             </select>
+            <span className="panel__hint panel__hint--muted">UI filter only; not used by the XTTS engine.</span>
           </label>
         </div>
         <label className="field">
