@@ -112,7 +112,7 @@ export function TextWorkbench({
     <section className="panel">
       <header className="panel__header panel__header--stack">
         <div className="panel__heading">
-          <h2 className="panel__title">Script</h2>
+          <h2 className="panel__title">Script Editor</h2>
           <span className="panel__crumb" aria-label="Step 2: Script">2 SCRIPT</span>
           <p className="panel__meta">
             {wordCount} {wordCount === 1 ? 'word' : 'words'} · {charCount} chars · ~{formatDuration(estimatedDuration)}

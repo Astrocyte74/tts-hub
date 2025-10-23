@@ -1689,6 +1689,7 @@ function App() {
               onKokoroFavoriteChange={engineId === 'kokoro' ? handleKokoroFavoriteChange : undefined}
               onManageKokoroFavorites={engineId === 'kokoro' ? handleOpenFavoritesManager : undefined}
               kokoroFavoritesCount={engineId === 'kokoro' ? kokoroFavorites.length : undefined}
+              hideLanguageSpeed={true}
             />
             {engineAvailable ? (
               <AnnouncerControls
@@ -1734,6 +1735,11 @@ function App() {
             favorites={starredVoiceIds}
             favoritesNotesByVoice={favoritesNotesByVoiceMap}
             favoritesMetaByVoice={favoritesMetaByVoiceMap}
+            languages={availableLanguages}
+            language={language}
+            onLanguageChange={(value) => setLanguage(normaliseLanguage(value))}
+            speed={Number(speed)}
+            onSpeedChange={(value) => setSpeed(Number(value))}
             onToggleFavorite={async (voiceId) => {
               setError(null);
               try {
