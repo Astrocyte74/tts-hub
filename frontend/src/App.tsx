@@ -1927,6 +1927,11 @@ function App() {
         isOpen={Boolean(editingFavorite)}
         onClose={() => setEditingFavoriteId(null)}
         favorite={editingFavorite}
+        onEditVoice={(voiceId) => {
+          setEditingFavoriteId(null);
+          setXttsEditTarget(voiceId);
+          setXttsManageOpen(true);
+        }}
         onSave={async (patch) => {
           try {
             await updateFavorite(patch.id, patch);
