@@ -2448,6 +2448,46 @@ def xtts_custom_voice_endpoint():
             )
 
         voice_id = _slugify_voice_id(out_path.stem)
+        # Write sidecar with source metadata
+        sidecar_path = out_path.with_suffix('.meta.json')
+        try:
+            source_meta: Dict[str, Any]
+            if content_type.startswith("multipart/form-data"):
+                up = request.files.get('file') if 'file' in request.files else None
+                src_name = (up.filename if up and getattr(up, 'filename', None) else None)
+                source_meta = {
+                    'type': 'upload',
+                    'filename': src_name or (temp_src.name if temp_src else None),
+                    'start': start_seconds,
+                    'end': end_seconds,
+                }
+            else:
+                yt_title = None
+                try:
+                    proc = subprocess.run(["yt-dlp", "-e", url], capture_output=True, text=True, timeout=60)
+                    if proc.returncode == 0:
+                        yt_title = (proc.stdout or '').strip()
+                except Exception:
+                    yt_title = None
+                source_meta = {
+                    'type': 'youtube',
+                    'url': url,
+                    'title': yt_title,
+                    'start': start_seconds,
+                    'end': end_seconds,
+                }
+            sidecar_payload: Dict[str, Any] = {
+                'gender': 'unknown',
+                'tags': [],
+                'notes': (label or None),
+                'accent': {'id': 'custom', 'label': 'Custom Voice', 'flag': '🎙️'},
+                'source': source_meta,
+                'createdAt': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+            }
+            with sidecar_path.open('w', encoding='utf-8') as f:
+                json.dump(sidecar_payload, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
         # Generate preview (best-effort)
         try:
             _get_or_create_xtts_preview(voice_id, language=None, force=True)
