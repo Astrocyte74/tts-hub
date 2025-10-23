@@ -2786,20 +2786,6 @@ def favorites_collection_endpoint():
     # POST create
     _check_api_key()
     payload = parse_json_request()
-    # Auto-tag starred favorites for Telegram picker
-    try:
-        tags_val = payload.get("tags")
-        if isinstance(tags_val, list):
-            tags = [str(t) for t in tags_val if str(t).strip()]
-        elif tags_val is None:
-            tags = []
-        else:
-            tags = [str(tags_val)]
-        if "star" in tags and "telegram" not in tags:
-            tags.append("telegram")
-        payload["tags"] = tags
-    except Exception:
-        pass
     try:
         created = _favorites_store.create(payload)
     except ValueError as exc:
@@ -2817,21 +2803,6 @@ def favorites_item_endpoint(profile_id: str):
         return jsonify(item)
     if request.method == "PATCH":
         payload = parse_json_request()
-        # Maintain telegram tag when star is present
-        try:
-            if "tags" in payload:
-                tags_val = payload.get("tags")
-                if isinstance(tags_val, list):
-                    tags = [str(t) for t in tags_val if str(t).strip()]
-                elif tags_val is None:
-                    tags = []
-                else:
-                    tags = [str(tags_val)]
-                if "star" in tags and "telegram" not in tags:
-                    tags.append("telegram")
-                payload["tags"] = tags
-        except Exception:
-            pass
         updated = _favorites_store.update(profile_id, payload)
         if not updated:
             raise PlaygroundError("Not found", status=404)
