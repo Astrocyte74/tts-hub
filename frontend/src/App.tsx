@@ -121,6 +121,7 @@ function App() {
   const [autoPlay, setAutoPlay] = useLocalStorage('kokoro:autoPlay', true);
   const [hoverPreview, setHoverPreview] = useLocalStorage('kokoro:hoverPreview', true);
   const [autoOpenClips, setAutoOpenClips] = useLocalStorage('kokoro:autoOpenClips', true);
+  const [editorFontSize, setEditorFontSize] = useLocalStorage('kokoro:editorFontSize', 16);
   const [announcerEnabled, setAnnouncerEnabled] = useLocalStorage('kokoro:announcerEnabled', false);
   const [announcerVoice, setAnnouncerVoice] = useLocalStorage<string | null>('kokoro:announcerVoice', null);
   const [announcerTemplate, setAnnouncerTemplate] = useLocalStorage('kokoro:announcerTemplate', DEFAULT_ANNOUNCER_TEMPLATE);
@@ -1646,6 +1647,10 @@ function App() {
               onCategoryChange={setRandomCategory}
               onAiAssistClick={() => setAiAssistOpen(true)}
               aiAssistAvailable={ollamaAvailable}
+              voices={voices}
+              selectedVoiceIds={selectedVoices}
+              onGoToVoices={() => setActivePanel('voices')}
+              editorFontSize={Number(editorFontSize)}
             />
             <SynthesisActions
               canSynthesize={canSynthesize}
@@ -1834,6 +1839,8 @@ function App() {
         onAutoOpenClipsChange={(value) => setAutoOpenClips(Boolean(value))}
         recentCount={voiceRecents.length}
         onClearRecents={() => setVoiceRecents([])}
+        editorFontSize={Number(editorFontSize)}
+        onEditorFontSizeChange={(value) => setEditorFontSize(Number(value))}
       />
       <FavoritesManagerDialog
         isOpen={isFavoritesManagerOpen}

@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { VoiceProfile } from '../types';
 
 interface TextWorkbenchProps {
   text: string;
@@ -11,6 +12,12 @@ interface TextWorkbenchProps {
   onCategoryChange: (value: string) => void;
   onAiAssistClick?: () => void;
   aiAssistAvailable?: boolean;
+  // Context around selected voices for quick access
+  voices?: VoiceProfile[];
+  selectedVoiceIds?: string[];
+  onGoToVoices?: () => void;
+  // Optional editor font size override (px)
+  editorFontSize?: number;
 }
 
 function formatDuration(seconds: number) {
@@ -36,8 +43,33 @@ export function TextWorkbench({
   onCategoryChange,
   onAiAssistClick,
   aiAssistAvailable = false,
+  voices = [],
+  selectedVoiceIds = [],
+  onGoToVoices,
+  editorFontSize,
 }: TextWorkbenchProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [randomOpen, setRandomOpen] = useState(false);
+  const randomBtnRef = useRef<HTMLButtonElement | null>(null);
+  const randomPanelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!randomOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setRandomOpen(false);
+    const onClick = (e: MouseEvent) => {
+      const btn = randomBtnRef.current;
+      const panel = randomPanelRef.current;
+      const target = e.target as Node | null;
+      if (!target) return;
+      if ((btn && btn.contains(target)) || (panel && panel.contains(target))) return;
+      setRandomOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('click', onClick);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('click', onClick);
+    };
+  }, [randomOpen]);
 
   const wordCount = useMemo(() => {
     if (!text.trim()) {
@@ -117,6 +149,16 @@ export function TextWorkbench({
           <p className="panel__meta">
             {wordCount} {wordCount === 1 ? 'word' : 'words'} · {charCount} chars · ~{formatDuration(estimatedDuration)}
           </p>
+          {Array.isArray(selectedVoiceIds) && selectedVoiceIds.length ? (
+            <p className="panel__meta">
+              Selected voice(s): {formatVoiceSummary(voices, selectedVoiceIds)}{' '}
+              {onGoToVoices ? (
+                <button type="button" className="link-button" onClick={onGoToVoices} aria-label="Change voices">
+                  Change
+                </button>
+              ) : null}
+            </p>
+          ) : null}
         </div>
         <div className="panel__actions panel__actions--wrap">
           <span className={`status-pill ${aiAssistAvailable ? 'status-pill--ok' : 'status-pill--warn'}`} title={aiAssistAvailable ? 'Ollama connected' : 'Connect Ollama (see .env)'}>
@@ -132,35 +174,60 @@ export function TextWorkbench({
               ))}
             </select>
           </label>
-          <button className="panel__button" type="button" onClick={onInsertRandom} disabled={isRandomLoading}>
-            {isRandomLoading ? 'Fetching…' : 'Insert random'}
-          </button>
-          <button className="panel__button panel__button--ghost" type="button" onClick={onAppendRandom} disabled={isRandomLoading}>
-            {isRandomLoading ? 'Fetching…' : 'Append random'}
+          <button
+            ref={randomBtnRef}
+            className="panel__button"
+            type="button"
+            onClick={() => setRandomOpen((v) => !v)}
+            aria-expanded={randomOpen}
+            aria-haspopup="menu"
+            title="Random text options"
+          >
+            {isRandomLoading ? 'Fetching…' : 'Random…'}
           </button>
         </div>
       </header>
-
       <div className="textworkbench__toolbar" role="group" aria-label="Script helpers">
-        <div className="textworkbench__helpers">
-          <button type="button" className="chip-button" onClick={handlePause}>
-            Pause
+        <div style={{ flex: 1, minWidth: 260 }}>
+          <button
+            type="button"
+            className="collapsible__toggle"
+            aria-expanded={true}
+            aria-controls="script-tools"
+            title="Insert SSML helpers"
+            onClick={() => {
+              const el = document.getElementById('script-tools');
+              if (el) el.toggleAttribute('hidden');
+            }}
+          >
+            <span className="collapsible__chevron is-open" aria-hidden>
+              ▶
+            </span>
+            <span className="panel__title" style={{ fontSize: 14, marginLeft: 6 }}>Script Tools</span>
           </button>
-          <button type="button" className="chip-button" onClick={handleEmphasis}>
-            Emphasis
-          </button>
-          <button type="button" className="chip-button" onClick={handlePitch}>
-            Pitch
-          </button>
-          <button type="button" className="chip-button" onClick={handleRate}>
-            Rate
-          </button>
+          <div id="script-tools" style={{ marginTop: 8 }}>
+            <div className="textworkbench__helpers">
+              <button type="button" className="chip-button" onClick={handlePause} title="Insert a 500ms pause">
+                Pause
+              </button>
+              <button type="button" className="chip-button" onClick={handleEmphasis} title="Wrap selection with emphasis">
+                Emphasis
+              </button>
+              <button type="button" className="chip-button" onClick={handlePitch} title="Wrap selection with pitch prosody">
+                Pitch
+              </button>
+              <button type="button" className="chip-button" onClick={handleRate} title="Wrap selection with rate prosody">
+                Rate
+              </button>
+            </div>
+          </div>
         </div>
         <button
           type="button"
           className={`chip-button chip-button--accent ${!onAiAssistClick ? 'is-disabled' : ''}`}
           onClick={onAiAssistClick}
           disabled={!onAiAssistClick}
+          title="Open AI Assist"
         >
           AI Assist
         </button>
@@ -174,8 +241,62 @@ export function TextWorkbench({
         placeholder="Type or paste the script you want to synthesise…"
         rows={10}
         aria-invalid={Boolean(ssmlError)}
+        style={editorFontSize ? ({ ['--editor-font-size' as any]: `${editorFontSize}px` } as React.CSSProperties) : undefined}
       />
       {ssmlError ? <p className="form-hint form-hint--error">{ssmlError}</p> : null}
+
+      {randomOpen ? (
+        <div className="popover" role="dialog" aria-label="Random text">
+          <div className="popover__backdrop" onClick={() => setRandomOpen(false)} />
+          <div ref={randomPanelRef} className="popover__panel" style={{ position: 'absolute', width: 220 }}>
+            <div className="popover__content" role="menu">
+              <button
+                className="popover__button"
+                type="button"
+                role="menuitem"
+                title="Replace editor with random text"
+                onClick={() => {
+                  setRandomOpen(false);
+                  onInsertRandom();
+                }}
+                disabled={isRandomLoading}
+              >
+                {isRandomLoading ? 'Fetching…' : 'Insert random'}
+              </button>
+              <button
+                className="popover__button"
+                type="button"
+                role="menuitem"
+                title="Append random text as a new paragraph"
+                onClick={() => {
+                  setRandomOpen(false);
+                  onAppendRandom();
+                }}
+                disabled={isRandomLoading}
+              >
+                {isRandomLoading ? 'Fetching…' : 'Append random'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
+}
+
+function formatVoiceSummary(voices: VoiceProfile[], selectedVoiceIds: string[]) {
+  if (!selectedVoiceIds.length) {
+    return 'Pick a voice';
+  }
+  if (selectedVoiceIds.length === 1) {
+    const id = selectedVoiceIds[0];
+    const match = voices.find((voice) => voice.id === id);
+    return match ? match.label : id;
+  }
+  if (selectedVoiceIds.length === 2) {
+    const labels = selectedVoiceIds.map((id) => voices.find((voice) => voice.id === id)?.label ?? id);
+    return `${labels[0]} + ${labels[1]}`;
+  }
+  const first = voices.find((voice) => voice.id === selectedVoiceIds[0])?.label ?? selectedVoiceIds[0];
+  return `${first} + ${selectedVoiceIds.length - 1} more`;
 }

@@ -13,6 +13,8 @@ interface SettingsPopoverProps {
   onAutoOpenClipsChange?: (value: boolean) => void;
   recentCount?: number;
   onClearRecents?: () => void;
+  editorFontSize?: number;
+  onEditorFontSizeChange?: (value: number) => void;
 }
 
 export function SettingsPopover({
@@ -30,6 +32,8 @@ export function SettingsPopover({
   onAutoOpenClipsChange,
   recentCount = 0,
   onClearRecents,
+  editorFontSize = 15,
+  onEditorFontSizeChange,
 }: SettingsPopoverProps) {
   if (!open) return null;
   return (
@@ -100,6 +104,21 @@ export function SettingsPopover({
                 step={0.05}
                 value={speed}
                 onChange={(e) => onSpeedChange(parseFloat(e.target.value))}
+              />
+            </label>
+          </div>
+          <div className="popover__row">
+            <label className="field">
+              <span className="field__label">
+                Editor font size <span className="field__value">{editorFontSize}px</span>
+              </span>
+              <input
+                type="range"
+                min={14}
+                max={20}
+                step={1}
+                value={editorFontSize}
+                onChange={(e) => onEditorFontSizeChange && onEditorFontSizeChange(parseInt(e.target.value, 10))}
               />
             </label>
           </div>
