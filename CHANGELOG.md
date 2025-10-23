@@ -101,3 +101,26 @@ API
 
 Notes
 - Removed top‑bar “Save favorite”; starring is the single save gesture.
+## [Unreleased] – 2025-10-23
+
+Highlights
+- XTTS custom voices (upload or YouTube)
+  - API: `POST /api/xtts/custom_voice` supports multipart upload (file) or JSON `{ source:'youtube', url, start?, end?, label? }`.
+  - Normalizes audio via ffmpeg (mono, 24 kHz), validates 5–30s by default.
+  - Sidecar metadata recorded alongside WAV (`<voice>.meta.json`): `source{ type, url|filename, title?, start?, end? }`, plus editable fields (`language`, `gender`, `accent`, `tags`, `notes`).
+  - Manage endpoints: `GET|PATCH|DELETE /api/xtts/custom_voice/:id`.
+  - UI: Voice panel → “Create custom voice…” and “Manage custom voices…”.
+
+- Inline quick‑edit on XTTS cards
+  - Per‑card gender and accent dropdowns (saved via PATCH) with badges on cards and favorites lists.
+  - “Default Language” editable in Manage dialog (dropdown); optional auto‑apply on selection (Settings toggle).
+
+- Top bar + layout polish
+  - Stepper chips with faint connectors, grouped Tools menu, clearer primary CTA.
+  - Voice panel header includes inline Language/Speed controls; Engine panel focuses on audio options (now in collapsible card) and Announcer (collapsible).
+
+Behavior changes
+- Favorites auto‑tagging with `telegram` was removed; favorites returned by the API are unchanged and no longer modified on create/update.
+
+Docs
+- README and API_ROUTES updated for XTTS custom voice endpoints and Manage dialog behavior.

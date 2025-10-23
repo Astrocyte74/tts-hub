@@ -27,9 +27,10 @@ interface EditFavoriteDialogProps {
     seed?: number;
     notes?: string;
   } | null;
+  onEditVoice?: (voiceId: string) => void;
 }
 
-export function EditFavoriteDialog({ isOpen, onClose, onSave, favorite }: EditFavoriteDialogProps) {
+export function EditFavoriteDialog({ isOpen, onClose, onSave, favorite, onEditVoice }: EditFavoriteDialogProps) {
   const [label, setLabel] = useState('');
   const [notes, setNotes] = useState('');
   const [language, setLanguage] = useState('');
@@ -117,6 +118,12 @@ export function EditFavoriteDialog({ isOpen, onClose, onSave, favorite }: EditFa
               <span>Seed</span>
               <input type="number" value={seed} onChange={(e) => setSeed(e.target.value)} placeholder="(optional)" />
             </label>
+          ) : null}
+          {favorite.engine === 'xtts' && typeof onEditVoice === 'function' ? (
+            <div className="modal__subtitle" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+              <span>Edit voice metadata (gender/accent/tags) for this XTTS voice.</span>
+              <button type="button" className="modal__button" onClick={() => onEditVoice(favorite.voiceId)}>Edit voice…</button>
+            </div>
           ) : null}
           <footer className="modal__footer">
             <button type="button" className="modal__button modal__button--ghost" onClick={onClose} disabled={saving}>Cancel</button>

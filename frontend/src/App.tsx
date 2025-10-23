@@ -17,6 +17,8 @@ import { InfoDialog } from './components/InfoDialog';
 import { ApiStatusFooter } from './components/ApiStatusFooter';
 import { OllamaPanel } from './components/OllamaPanel';
 import { FavoritesManagerDialog } from './components/FavoritesManagerDialog';
+import { XttsCustomVoiceDialog } from './components/XttsCustomVoiceDialog';
+import { XttsManageVoicesDialog } from './components/XttsManageVoicesDialog';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSessionStorage } from './hooks/useSessionStorage';
 import {
@@ -122,6 +124,7 @@ function App() {
   const [hoverPreview, setHoverPreview] = useLocalStorage('kokoro:hoverPreview', true);
   const [autoOpenClips, setAutoOpenClips] = useLocalStorage('kokoro:autoOpenClips', true);
   const [editorFontSize, setEditorFontSize] = useLocalStorage('kokoro:editorFontSize', 16);
+  const [autoApplyDefaults, setAutoApplyDefaults] = useLocalStorage('kokoro:autoApplyVoiceDefaults', true);
   const [announcerEnabled, setAnnouncerEnabled] = useLocalStorage('kokoro:announcerEnabled', false);
   const [announcerVoice, setAnnouncerVoice] = useLocalStorage<string | null>('kokoro:announcerVoice', null);
   const [announcerTemplate, setAnnouncerTemplate] = useLocalStorage('kokoro:announcerTemplate', DEFAULT_ANNOUNCER_TEMPLATE);
@@ -153,6 +156,9 @@ function App() {
   const [shouldReopenFavoritesManager, setShouldReopenFavoritesManager] = useState(false);
   const [openvoiceHelpOpen, setOpenvoiceHelpOpen] = useState(false);
   const [isAiAssistOpen, setAiAssistOpen] = useState(false);
+  const [isXttsDialogOpen, setXttsDialogOpen] = useState(false);
+  const [isXttsManageOpen, setXttsManageOpen] = useState(false);
+  const [xttsEditTarget, setXttsEditTarget] = useState<string | null>(null);
 
   const [openvoiceStyle, setOpenvoiceStyle] = useLocalStorage('kokoro:openvoiceStyle', 'default');
   const [openvoiceVoiceStyles, setOpenvoiceVoiceStyles] = useLocalStorage<Record<string, string>>('kokoro:openvoiceVoiceStyles', {});
@@ -512,6 +518,22 @@ function App() {
       notes: profile.notes,
     };
   }, [editingFavoriteId, profiles]);
+
+  const openFavoriteEditor = useCallback((id: string) => {
+    const profile = profiles.find((p) => p.id === id);
+    if (!profile) {
+      setEditingFavoriteId(id);
+      return;
+    }
+    if (profile.engine === 'xtts' && profile.voiceId) {
+      setEditingFavoriteId(null);
+      setXttsEditTarget(profile.voiceId);
+      setActivePanel('voices');
+      setXttsManageOpen(true);
+      return;
+    }
+    setEditingFavoriteId(id);
+  }, [profiles, setActivePanel]);
 
   const favoritesNotesByVoiceMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -1593,7 +1615,7 @@ function App() {
           }
           setActivePanel('script');
         }}
-        onEditFavorite={(id) => setEditingFavoriteId(id)}
+        onEditFavorite={(id) => openFavoriteEditor(id)}
         onDeleteFavorite={async (id) => { try { await deleteFavorite(id); profilesQuery.refetch(); } catch (err) { setError(err instanceof Error ? err.message : 'Delete failed'); } }}
         onOpenFavoritesManager={() => setFavoritesManagerOpen(true)}
         engines={engineList.map((engine) => ({ id: engine.id, label: engine.label, available: engine.available, status: engine.status }))}
@@ -1729,10 +1751,19 @@ function App() {
               selected={selectedVoices}
               onToggle={(voiceId) => {
                 setError(null);
-                const next = selectedVoices.includes(voiceId)
+                const wasSelected = selectedVoices.includes(voiceId);
+                const next = wasSelected
                   ? selectedVoices.filter((id) => id !== voiceId)
                   : [...selectedVoices, voiceId];
                 setSelectedVoices(next);
+                // Auto-apply default language from voice metadata (XTTS) when newly selecting
+                if (!wasSelected && engineId === 'xtts' && autoApplyDefaults) {
+                  const v = voiceById.get(voiceId);
+                  const loc = v?.locale;
+                  if (loc && typeof loc === 'string' && loc.trim()) {
+                    setLanguage(normaliseLanguage(loc));
+                  }
+                }
               }}
               onClear={() => {
                 setError(null);
@@ -1747,6 +1778,11 @@ function App() {
             favorites={starredVoiceIds}
             favoritesNotesByVoice={favoritesNotesByVoiceMap}
             favoritesMetaByVoice={favoritesMetaByVoiceMap}
+            onCreateCustomVoice={engineId === 'xtts' ? () => setXttsDialogOpen(true) : undefined}
+            onManageCustomVoices={engineId === 'xtts' ? () => setXttsManageOpen(true) : undefined}
+            onEditCustomVoice={engineId === 'xtts' ? (id) => { setXttsEditTarget(id); setXttsManageOpen(true); } : undefined}
+            accentOptions={engineId === 'xtts' ? (metaQuery.data?.accent_groups ?? []).map((g) => ({ id: (g as any)['id'] as string, label: (g as any)['label'] as string, flag: (g as any)['flag'] as string | undefined })) : undefined}
+            onQuickVoiceMetaChanged={() => { voicesQuery.refetch(); voiceGroupsQuery.refetch(); }}
             languages={availableLanguages}
             language={language}
             onLanguageChange={(value) => setLanguage(normaliseLanguage(value))}
@@ -1786,7 +1822,9 @@ function App() {
             previewBusyIds={previewBusyIdsForEngine}
             onEditFavoriteVoice={(voiceId) => {
               const fav = getFavoriteByVoice(voiceId);
-              if (fav) setEditingFavoriteId(fav.id);
+              if (fav) {
+                openFavoriteEditor(fav.id);
+              }
             }}
             onBulkGeneratePreview={supportsPreview ? handleBulkGeneratePreview : undefined}
             enableHoverPreview={Boolean(hoverPreview)}
@@ -1841,13 +1879,53 @@ function App() {
         onClearRecents={() => setVoiceRecents([])}
         editorFontSize={Number(editorFontSize)}
         onEditorFontSizeChange={(value) => setEditorFontSize(Number(value))}
+        autoApplyDefaults={Boolean(autoApplyDefaults)}
+        onAutoApplyDefaultsChange={(value) => setAutoApplyDefaults(Boolean(value))}
       />
+      {engineId === 'xtts' ? (
+        <XttsCustomVoiceDialog
+          isOpen={isXttsDialogOpen}
+          onClose={() => setXttsDialogOpen(false)}
+          onCreated={({ id }) => {
+            setSelectedVoices([id]);
+            voicesQuery.refetch();
+            voiceGroupsQuery.refetch();
+            setActivePanel('voices');
+          }}
+          onError={(message) => setError(message)}
+        />
+      ) : null}
+      {engineId === 'xtts' ? (
+        <XttsManageVoicesDialog
+          isOpen={isXttsManageOpen}
+          voices={voices}
+          accentOptions={(metaQuery.data?.accent_groups ?? []).map((g) => ({ id: (g as any)['id'] as string, label: (g as any)['label'] as string, flag: (g as any)['flag'] as string | undefined }))}
+          onClose={() => { setXttsManageOpen(false); setXttsEditTarget(null); }}
+          onChanged={() => { voicesQuery.refetch(); voiceGroupsQuery.refetch(); }}
+          onError={(message) => setError(message)}
+          initialVoiceId={xttsEditTarget ?? undefined}
+        />
+      ) : null}
+      {engineId === 'xtts' ? (
+        <XttsCustomVoiceDialog
+          isOpen={isXttsDialogOpen}
+          onClose={() => setXttsDialogOpen(false)}
+          onCreated={({ id }) => {
+            setSelectedVoices([id]);
+            voicesQuery.refetch();
+            voiceGroupsQuery.refetch();
+            setActivePanel('voices');
+          }}
+          onError={(message) => setError(message)}
+        />
+      ) : null}
       <FavoritesManagerDialog
         isOpen={isFavoritesManagerOpen}
         favorites={favoritesForManager}
         onClose={() => setFavoritesManagerOpen(false)}
-        onEdit={(id) => setEditingFavoriteId(id)}
+        onEdit={(id) => openFavoriteEditor(id)}
         onDelete={async (id) => { try { await deleteFavorite(id); profilesQuery.refetch(); } catch (err) { setError(err instanceof Error ? err.message : 'Delete failed'); } }}
+        voiceMetaMap={Object.fromEntries(voices.map((v) => [v.id, { locale: v.locale, gender: v.gender, accent: v.accent }]))}
         onExport={async () => {
           try {
             const data = await exportProfiles();
@@ -1882,6 +1960,11 @@ function App() {
         isOpen={Boolean(editingFavorite)}
         onClose={() => setEditingFavoriteId(null)}
         favorite={editingFavorite}
+        onEditVoice={(voiceId) => {
+          setEditingFavoriteId(null);
+          setXttsEditTarget(voiceId);
+          setXttsManageOpen(true);
+        }}
         onSave={async (patch) => {
           try {
             await updateFavorite(patch.id, patch);
@@ -1907,6 +1990,7 @@ function App() {
             handleDeleteFavorite(favorite);
           }
         }}
+        voiceMetaMap={Object.fromEntries(voices.map((v) => [v.id, { locale: v.locale, gender: v.gender, accent: v.accent }]))}
       />
       <InfoDialog
         isOpen={isAiAssistOpen}
