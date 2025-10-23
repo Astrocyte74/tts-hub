@@ -518,6 +518,22 @@ function App() {
     };
   }, [editingFavoriteId, profiles]);
 
+  const openFavoriteEditor = useCallback((id: string) => {
+    const profile = profiles.find((p) => p.id === id);
+    if (!profile) {
+      setEditingFavoriteId(id);
+      return;
+    }
+    if (profile.engine === 'xtts' && profile.voiceId) {
+      setEditingFavoriteId(null);
+      setXttsEditTarget(profile.voiceId);
+      setActivePanel('voices');
+      setXttsManageOpen(true);
+      return;
+    }
+    setEditingFavoriteId(id);
+  }, [profiles, setActivePanel]);
+
   const favoritesNotesByVoiceMap = useMemo(() => {
     const map: Record<string, string> = {};
     profiles.forEach((profile) => {
@@ -1598,7 +1614,7 @@ function App() {
           }
           setActivePanel('script');
         }}
-        onEditFavorite={(id) => setEditingFavoriteId(id)}
+        onEditFavorite={(id) => openFavoriteEditor(id)}
         onDeleteFavorite={async (id) => { try { await deleteFavorite(id); profilesQuery.refetch(); } catch (err) { setError(err instanceof Error ? err.message : 'Delete failed'); } }}
         onOpenFavoritesManager={() => setFavoritesManagerOpen(true)}
         engines={engineList.map((engine) => ({ id: engine.id, label: engine.label, available: engine.available, status: engine.status }))}
@@ -1891,7 +1907,7 @@ function App() {
         isOpen={isFavoritesManagerOpen}
         favorites={favoritesForManager}
         onClose={() => setFavoritesManagerOpen(false)}
-        onEdit={(id) => setEditingFavoriteId(id)}
+        onEdit={(id) => openFavoriteEditor(id)}
         onDelete={async (id) => { try { await deleteFavorite(id); profilesQuery.refetch(); } catch (err) { setError(err instanceof Error ? err.message : 'Delete failed'); } }}
         onExport={async () => {
           try {
