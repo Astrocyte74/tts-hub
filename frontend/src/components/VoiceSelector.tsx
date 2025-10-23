@@ -494,7 +494,14 @@ export function VoiceSelector({
                             <span className="fav-row__pill-text">{voice.accent.label}</span>
                           </span>
                         ) : null}
-                        {voice.locale ? <span>{voice.locale}</span> : null}
+                        {voice.gender ? (
+                          <span className="voice-card__badge" title={`Gender: ${voice.gender}`}>
+                            {voice.gender === 'female' ? '♀' : voice.gender === 'male' ? '♂' : '—'}
+                          </span>
+                        ) : null}
+                        {voice.locale ? (
+                          <span className="voice-card__badge" title={`Language: ${voice.locale}`}>{voice.locale.toUpperCase()}</span>
+                        ) : null}
                         {summary ? <span>{summary}</span> : null}
                         {note ? <span className="fav-row__note" title={note}>{note}</span> : null}
                       </span>

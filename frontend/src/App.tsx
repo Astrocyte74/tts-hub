@@ -1810,7 +1810,9 @@ function App() {
             previewBusyIds={previewBusyIdsForEngine}
             onEditFavoriteVoice={(voiceId) => {
               const fav = getFavoriteByVoice(voiceId);
-              if (fav) setEditingFavoriteId(fav.id);
+              if (fav) {
+                openFavoriteEditor(fav.id);
+              }
             }}
             onBulkGeneratePreview={supportsPreview ? handleBulkGeneratePreview : undefined}
             enableHoverPreview={Boolean(hoverPreview)}
