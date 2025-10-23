@@ -18,6 +18,7 @@ import { ApiStatusFooter } from './components/ApiStatusFooter';
 import { OllamaPanel } from './components/OllamaPanel';
 import { FavoritesManagerDialog } from './components/FavoritesManagerDialog';
 import { XttsCustomVoiceDialog } from './components/XttsCustomVoiceDialog';
+import { XttsManageVoicesDialog } from './components/XttsManageVoicesDialog';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSessionStorage } from './hooks/useSessionStorage';
 import {
@@ -155,6 +156,7 @@ function App() {
   const [openvoiceHelpOpen, setOpenvoiceHelpOpen] = useState(false);
   const [isAiAssistOpen, setAiAssistOpen] = useState(false);
   const [isXttsDialogOpen, setXttsDialogOpen] = useState(false);
+  const [isXttsManageOpen, setXttsManageOpen] = useState(false);
 
   const [openvoiceStyle, setOpenvoiceStyle] = useLocalStorage('kokoro:openvoiceStyle', 'default');
   const [openvoiceVoiceStyles, setOpenvoiceVoiceStyles] = useLocalStorage<Record<string, string>>('kokoro:openvoiceVoiceStyles', {});
@@ -1745,7 +1747,7 @@ function App() {
               voiceStyles={engineId === 'openvoice' ? openvoiceVoiceStyles : undefined}
               styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
               onVoiceStyleChange={engineId === 'openvoice' ? handleOpenvoiceVoiceStyleChange : undefined}
-            onOpenvoiceInstructions={engineId === 'openvoice' ? () => setOpenvoiceHelpOpen(true) : undefined}
+            onOpenvoiceInstructions={engineId === 'openvoice' ? () => setOpenvoiceHelpOpen(true) : engineId === 'xtts' ? () => setXttsManageOpen(true) : undefined}
             favorites={starredVoiceIds}
             favoritesNotesByVoice={favoritesNotesByVoiceMap}
             favoritesMetaByVoice={favoritesMetaByVoiceMap}
@@ -1845,6 +1847,29 @@ function App() {
         editorFontSize={Number(editorFontSize)}
         onEditorFontSizeChange={(value) => setEditorFontSize(Number(value))}
       />
+      {engineId === 'xtts' ? (
+        <XttsCustomVoiceDialog
+          isOpen={isXttsDialogOpen}
+          onClose={() => setXttsDialogOpen(false)}
+          onCreated={({ id }) => {
+            setSelectedVoices([id]);
+            voicesQuery.refetch();
+            voiceGroupsQuery.refetch();
+            setActivePanel('voices');
+          }}
+          onError={(message) => setError(message)}
+        />
+      ) : null}
+      {engineId === 'xtts' ? (
+        <XttsManageVoicesDialog
+          isOpen={isXttsManageOpen}
+          voices={voices}
+          accentOptions={(metaQuery.data?.accent_groups ?? []).map((g) => ({ id: (g as any)['id'] as string, label: (g as any)['label'] as string, flag: (g as any)['flag'] as string | undefined }))}
+          onClose={() => setXttsManageOpen(false)}
+          onChanged={() => { voicesQuery.refetch(); voiceGroupsQuery.refetch(); }}
+          onError={(message) => setError(message)}
+        />
+      ) : null}
       {engineId === 'xtts' ? (
         <XttsCustomVoiceDialog
           isOpen={isXttsDialogOpen}

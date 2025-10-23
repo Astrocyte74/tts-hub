@@ -412,6 +412,23 @@ export async function createXttsCustomVoiceFromYouTube(
   return postJson<CreateXttsCustomVoiceResponse>('xtts/custom_voice', body);
 }
 
+export async function getXttsCustomVoice(id: string): Promise<Record<string, unknown>> {
+  return getJson<Record<string, unknown>>(`xtts/custom_voice/${encodeURIComponent(id)}`);
+}
+
+export async function updateXttsCustomVoice(id: string, patch: { language?: string; gender?: string; tags?: string[]; notes?: string; accent?: { id: string; label: string; flag: string } }): Promise<Record<string, unknown>> {
+  return postJson<Record<string, unknown>>(`xtts/custom_voice/${encodeURIComponent(id)}`, patch);
+}
+
+export async function deleteXttsCustomVoice(id: string): Promise<{ status: string }> {
+  const res = await fetch(buildUrl(`xtts/custom_voice/${encodeURIComponent(id)}`), { method: 'DELETE' });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`DELETE xtts/custom_voice/${id} failed (${res.status}): ${text}`);
+  }
+  return (await res.json()) as { status: string };
+}
+
 // -------------------- Ollama proxies --------------------
 
 export async function ollamaTags(): Promise<Record<string, unknown>> {
