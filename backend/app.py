@@ -790,21 +790,63 @@ def build_xtts_voice_payload() -> Dict[str, Any]:
     for voice_id, voice_path in mapping.items():
         label = voice_path.stem.replace('_', ' ').title()
         preview_url = _find_cached_preview("xtts", voice_id)
+        # Load sidecar metadata if present
+        sidecar_path = voice_path.with_suffix('.meta.json')
+        sidecar: Dict[str, Any] = {}
+        if sidecar_path.exists():
+            try:
+                with sidecar_path.open('r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        sidecar = data
+            except Exception:
+                sidecar = {}
+        # Normalise metadata
+        locale = None
+        gender = None
+        tags: List[str] = []
+        notes = voice_path.name
+        accent = {'id': 'custom', 'label': 'Custom Voice', 'flag': '🎙️'}
+        if sidecar:
+            lang_value = sidecar.get('language')
+            if isinstance(lang_value, str) and lang_value.strip():
+                locale = lang_value.strip().lower()
+            gender_value = sidecar.get('gender')
+            if isinstance(gender_value, str) and gender_value.strip():
+                g = gender_value.strip().lower()
+                if g in {'female', 'male', 'unknown'}:
+                    gender = g
+            tags_value = sidecar.get('tags')
+            if isinstance(tags_value, list):
+                tags = [str(t) for t in tags_value if str(t).strip()]
+            notes_value = sidecar.get('notes')
+            if isinstance(notes_value, str) and notes_value.strip():
+                notes = notes_value.strip()
+            acc_value = sidecar.get('accent')
+            if isinstance(acc_value, dict):
+                acc_id = str(acc_value.get('id') or 'custom')
+                acc_label = str(acc_value.get('label') or 'Custom Voice')
+                acc_flag = str(acc_value.get('flag') or '🎙️')
+                accent = {'id': acc_id, 'label': acc_label, 'flag': acc_flag}
+
         raw: Dict[str, Any] = {
             'engine': 'xtts',
             'path': str(voice_path),
         }
         if preview_url:
             raw['preview_url'] = preview_url
+        # Include a hint of sidecar on raw for clients that need it
+        if sidecar:
+            raw['meta'] = sidecar
         voices.append(
             {
                 'id': voice_id,
                 'label': label,
-                'locale': None,
-                'gender': None,
-                'tags': [],
-                'notes': voice_path.name,
-                'accent': {'id': 'custom', 'label': 'Custom Voice', 'flag': '🎙️'},
+                'locale': locale,
+                'gender': gender,
+                'tags': tags,
+                'notes': notes,
+                'accent': accent,
                 'raw': raw,
             }
         )
@@ -2432,6 +2474,125 @@ def xtts_custom_voice_endpoint():
                 temp_src.unlink()
             except OSError:
                 pass
+
+
+def _xtts_sidecar_path_for_id(voice_id: str) -> Tuple[Path, Path]:
+    vid, path = _resolve_xtts_voice_path(voice_id)
+    return path, path.with_suffix('.meta.json')
+
+
+@api.route("/xtts/custom_voice/<voice_id>", methods=["GET", "PATCH", "DELETE"])
+def xtts_custom_voice_item_endpoint(voice_id: str):
+    """Manage a single XTTS custom voice.
+
+    GET    → return metadata and resolved path
+    PATCH  → update sidecar fields: language, gender, accent{id,label,flag}, tags[], notes
+    DELETE → remove audio file and sidecar
+    """
+    try:
+        voice_path, sidecar_path = _xtts_sidecar_path_for_id(voice_id)
+    except PlaygroundError as exc:
+        raise
+
+    if request.method == 'GET':
+        meta: Dict[str, Any] = {}
+        if sidecar_path.exists():
+            try:
+                with sidecar_path.open('r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        meta = data
+            except Exception:
+                meta = {}
+        return jsonify({
+            'id': voice_id,
+            'label': voice_path.stem.replace('_', ' ').title(),
+            'path': str(voice_path),
+            'meta': meta,
+        })
+
+    if request.method == 'DELETE':
+        # Safety: ensure file is under XTTS_VOICE_DIR
+        try:
+            voice_path.resolve().relative_to(XTTS_VOICE_DIR.resolve())
+        except Exception:
+            raise PlaygroundError('Refusing to delete file outside voices directory.', status=400)
+        removed = []
+        try:
+            voice_path.unlink()
+            removed.append(str(voice_path))
+        except OSError:
+            pass
+        try:
+            if sidecar_path.exists():
+                sidecar_path.unlink()
+                removed.append(str(sidecar_path))
+        except OSError:
+            pass
+        return jsonify({'status': 'deleted', 'removed': removed})
+
+    # PATCH
+    payload = parse_json_request()
+    sidecar: Dict[str, Any] = {}
+    if sidecar_path.exists():
+        try:
+            with sidecar_path.open('r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    sidecar = data
+        except Exception:
+            sidecar = {}
+
+    # Allowed fields
+    def _str(v: Any) -> Optional[str]:
+        return str(v).strip() if isinstance(v, str) and str(v).strip() else None
+
+    lang = _str(payload.get('language'))
+    if lang is not None:
+        sidecar['language'] = lang.lower()
+
+    gender = _str(payload.get('gender'))
+    if gender is not None:
+        g = gender.lower()
+        if g not in {'female', 'male', 'unknown'}:
+            raise PlaygroundError("gender must be 'female', 'male', or 'unknown'", status=400)
+        sidecar['gender'] = g
+
+    if 'tags' in payload:
+        tags_val = payload.get('tags')
+        if tags_val is None:
+            sidecar.pop('tags', None)
+        elif isinstance(tags_val, list):
+            sidecar['tags'] = [str(t) for t in tags_val if str(t).strip()]
+        else:
+            raise PlaygroundError('tags must be an array of strings', status=400)
+
+    notes = payload.get('notes')
+    if notes is None:
+        pass
+    elif isinstance(notes, str):
+        sidecar['notes'] = notes.strip()
+    else:
+        raise PlaygroundError('notes must be a string', status=400)
+
+    if 'accent' in payload:
+        acc = payload.get('accent')
+        if acc is None:
+            sidecar.pop('accent', None)
+        elif isinstance(acc, dict):
+            sid = _str(acc.get('id')) or 'custom'
+            slabel = _str(acc.get('label')) or 'Custom Voice'
+            sflag = _str(acc.get('flag')) or '🎙️'
+            sidecar['accent'] = {'id': sid, 'label': slabel, 'flag': sflag}
+        else:
+            raise PlaygroundError('accent must be an object {id,label,flag}', status=400)
+
+    sidecar['updatedAt'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+    sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+    with sidecar_path.open('w', encoding='utf-8') as f:
+        json.dump(sidecar, f, indent=2, ensure_ascii=False)
+
+    return jsonify({'status': 'updated', 'id': voice_id, 'meta': sidecar})
 
 
 @api.route("/chattts/presets", methods=["POST"])
