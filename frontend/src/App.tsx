@@ -1747,11 +1747,12 @@ function App() {
               voiceStyles={engineId === 'openvoice' ? openvoiceVoiceStyles : undefined}
               styleOptions={engineId === 'openvoice' ? styleOptions : undefined}
               onVoiceStyleChange={engineId === 'openvoice' ? handleOpenvoiceVoiceStyleChange : undefined}
-            onOpenvoiceInstructions={engineId === 'openvoice' ? () => setOpenvoiceHelpOpen(true) : engineId === 'xtts' ? () => setXttsManageOpen(true) : undefined}
+            onOpenvoiceInstructions={engineId === 'openvoice' ? () => setOpenvoiceHelpOpen(true) : undefined}
             favorites={starredVoiceIds}
             favoritesNotesByVoice={favoritesNotesByVoiceMap}
             favoritesMetaByVoice={favoritesMetaByVoiceMap}
             onCreateCustomVoice={engineId === 'xtts' ? () => setXttsDialogOpen(true) : undefined}
+            onManageCustomVoices={engineId === 'xtts' ? () => setXttsManageOpen(true) : undefined}
             languages={availableLanguages}
             language={language}
             onLanguageChange={(value) => setLanguage(normaliseLanguage(value))}

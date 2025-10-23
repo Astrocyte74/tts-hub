@@ -35,6 +35,7 @@ interface VoiceSelectorProps {
   speed?: number;
   onSpeedChange?: (value: number) => void;
   onCreateCustomVoice?: () => void;
+  onManageCustomVoices?: () => void;
 }
 
 interface GroupedVoices {
@@ -131,6 +132,7 @@ export function VoiceSelector({
   onBulkGeneratePreview,
   enableHoverPreview = true,
   onCreateCustomVoice,
+  onManageCustomVoices,
   languages,
   language,
   onLanguageChange,
@@ -323,6 +325,11 @@ export function VoiceSelector({
           {typeof onCreateCustomVoice === 'function' ? (
             <button className="panel__button" type="button" onClick={onCreateCustomVoice} title="Create custom voice">
               Create custom voice
+            </button>
+          ) : null}
+          {typeof onManageCustomVoices === 'function' ? (
+            <button className="panel__button panel__button--ghost" type="button" onClick={onManageCustomVoices} title="Manage custom voices">
+              Manage custom voices
             </button>
           ) : null}
           {Array.isArray(languages) && languages.length && typeof onLanguageChange === 'function' ? (
