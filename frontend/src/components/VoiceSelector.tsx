@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import clsx from 'clsx';
 import type { VoiceGroup, VoiceProfile } from '../types';
+import { updateXttsCustomVoice } from '../api/client';
 
 interface VoiceSelectorProps {
   engineLabel: string;
@@ -37,6 +38,8 @@ interface VoiceSelectorProps {
   onCreateCustomVoice?: () => void;
   onManageCustomVoices?: () => void;
   onEditCustomVoice?: (voiceId: string) => void;
+  accentOptions?: Array<{ id: string; label: string; flag?: string }>;
+  onQuickVoiceMetaChanged?: () => void;
 }
 
 interface GroupedVoices {
@@ -135,6 +138,8 @@ export function VoiceSelector({
   onCreateCustomVoice,
   onManageCustomVoices,
   onEditCustomVoice,
+  accentOptions,
+  onQuickVoiceMetaChanged,
   languages,
   language,
   onLanguageChange,
@@ -547,6 +552,7 @@ export function VoiceSelector({
                     const hasPreview = Boolean(findPreviewUrl(voice));
                     const voiceStyle = voiceStyles?.[voice.id];
                     const canEditStyle = !!availableStyleChoices?.length && typeof onVoiceStyleChange === 'function';
+                    const isXTTS = engineLabel.toLowerCase().includes('xtts');
                     return (
                       <div
                         key={voice.id}
@@ -615,6 +621,53 @@ export function VoiceSelector({
                           >
                             {previewBusyIds.includes(voice.id) ? 'Generating…' : 'Generate preview'}
                           </button>
+                        ) : null}
+                        {isXTTS && (
+                          <label className="voice-card__style-control" title="Gender">
+                            <span>Gender</span>
+                            <select
+                              value={voice.gender ?? 'unknown'}
+                              onChange={async (e) => {
+                                try {
+                                  await updateXttsCustomVoice(voice.id, { gender: e.target.value });
+                                  onQuickVoiceMetaChanged && onQuickVoiceMetaChanged();
+                                } catch (err) {
+                                  console.error('Update gender failed', err);
+                                }
+                              }}
+                              disabled={disabled}
+                            >
+                              <option value="unknown">unknown</option>
+                              <option value="female">female</option>
+                              <option value="male">male</option>
+                            </select>
+                          </label>
+                        )}
+                        {isXTTS && Array.isArray(accentOptions) && accentOptions.length ? (
+                          <label className="voice-card__style-control" title="Accent">
+                            <span>Accent</span>
+                            <select
+                              value={(voice.accent?.id ?? 'custom')}
+                              onChange={async (e) => {
+                                const opt = accentOptions.find((a) => a.id === e.target.value);
+                                const patch = opt ? { accent: { id: opt.id, label: opt.label, flag: opt.flag || '🎙️' } } : { accent: { id: 'custom', label: 'Custom Voice', flag: '🎙️' } };
+                                try {
+                                  await updateXttsCustomVoice(voice.id, patch as any);
+                                  onQuickVoiceMetaChanged && onQuickVoiceMetaChanged();
+                                } catch (err) {
+                                  console.error('Update accent failed', err);
+                                }
+                              }}
+                              disabled={disabled}
+                            >
+                              <option value="custom">Custom Voice</option>
+                              {accentOptions.map((a) => (
+                                <option key={a.id} value={a.id}>
+                                  {a.flag ? `${a.flag} ` : ''}{a.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                         ) : null}
                         {onToggleFavorite ? (
                           <button type="button" className={clsx('fav-btn', { 'is-active': isFav })} aria-label={isFav ? 'Unfavorite' : 'Favorite'} aria-pressed={isFav} onClick={() => onToggleFavorite(voice.id)}>

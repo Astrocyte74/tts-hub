@@ -14,9 +14,10 @@ interface FavoritesManagerDialogProps {
   onDelete: (id: string) => void;
   onExport?: () => void;
   onImport?: (data: unknown) => void;
+  voiceMetaMap?: Record<string, { locale?: string | null; gender?: string | null; accent?: { id: string; label: string; flag?: string } | null }>;
 }
 
-export function FavoritesManagerDialog({ isOpen, favorites, onClose, onEdit, onDelete, onExport, onImport }: FavoritesManagerDialogProps) {
+export function FavoritesManagerDialog({ isOpen, favorites, onClose, onEdit, onDelete, onExport, onImport, voiceMetaMap }: FavoritesManagerDialogProps) {
   const [q, setQ] = useState('');
   const [engine, setEngine] = useState<string>('all');
 
@@ -70,11 +71,27 @@ export function FavoritesManagerDialog({ isOpen, favorites, onClose, onEdit, onD
         </header>
         <div className="modal__body modal__body--scrollable">
           {filtered.length === 0 ? <p className="panel__empty">No favorites match.</p> : null}
-          {filtered.map((f) => (
+          {filtered.map((f) => {
+            const meta = voiceMetaMap ? voiceMetaMap[f.voiceId] : undefined;
+            return (
             <div key={f.id} className="app__banner" style={{ gap: 8 }}>
               <div>
                 <strong>{f.label}</strong>
-                <div style={{ opacity: .8, fontSize: 12 }}>{f.engine} · {f.voiceId}</div>
+                <div style={{ display:'flex', gap:6, alignItems:'center', opacity: .9, fontSize: 12 }}>
+                  <span>{f.engine} · {f.voiceId}</span>
+                  {meta?.accent ? (
+                    <span className="fav-row__pill" title={meta.accent.label}>
+                      <span aria-hidden>{meta.accent.flag}</span>
+                      <span className="fav-row__pill-text">{meta.accent.label}</span>
+                    </span>
+                  ) : null}
+                  {meta?.gender ? (
+                    <span className="voice-card__badge" title={`Gender: ${meta.gender}`}>{meta.gender === 'female' ? '♀' : meta.gender === 'male' ? '♂' : '—'}</span>
+                  ) : null}
+                  {meta?.locale ? (
+                    <span className="voice-card__badge" title={`Language: ${meta.locale}`}>{String(meta.locale).toUpperCase()}</span>
+                  ) : null}
+                </div>
                 {f.notes ? <div style={{ marginTop: 6, fontSize: 13, opacity: .9 }}>{f.notes}</div> : null}
               </div>
               <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
@@ -82,7 +99,7 @@ export function FavoritesManagerDialog({ isOpen, favorites, onClose, onEdit, onD
                 <button className="modal__button modal__button--danger" onClick={() => { if (confirm(`Delete “${f.label}”?`)) onDelete(f.id); }}>Delete</button>
               </div>
             </div>
-          ))}
+          );})}
         </div>
         <footer className="modal__footer">
           <button className="modal__button modal__button--ghost" onClick={onClose}>Close</button>

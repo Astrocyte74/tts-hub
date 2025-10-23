@@ -1771,6 +1771,8 @@ function App() {
             onCreateCustomVoice={engineId === 'xtts' ? () => setXttsDialogOpen(true) : undefined}
             onManageCustomVoices={engineId === 'xtts' ? () => setXttsManageOpen(true) : undefined}
             onEditCustomVoice={engineId === 'xtts' ? (id) => { setXttsEditTarget(id); setXttsManageOpen(true); } : undefined}
+            accentOptions={engineId === 'xtts' ? (metaQuery.data?.accent_groups ?? []).map((g) => ({ id: (g as any)['id'] as string, label: (g as any)['label'] as string, flag: (g as any)['flag'] as string | undefined })) : undefined}
+            onQuickVoiceMetaChanged={() => { voicesQuery.refetch(); voiceGroupsQuery.refetch(); }}
             languages={availableLanguages}
             language={language}
             onLanguageChange={(value) => setLanguage(normaliseLanguage(value))}
@@ -1911,6 +1913,7 @@ function App() {
         onClose={() => setFavoritesManagerOpen(false)}
         onEdit={(id) => openFavoriteEditor(id)}
         onDelete={async (id) => { try { await deleteFavorite(id); profilesQuery.refetch(); } catch (err) { setError(err instanceof Error ? err.message : 'Delete failed'); } }}
+        voiceMetaMap={Object.fromEntries(voices.map((v) => [v.id, { locale: v.locale, gender: v.gender, accent: v.accent }]))}
         onExport={async () => {
           try {
             const data = await exportProfiles();
@@ -1975,6 +1978,7 @@ function App() {
             handleDeleteFavorite(favorite);
           }
         }}
+        voiceMetaMap={Object.fromEntries(voices.map((v) => [v.id, { locale: v.locale, gender: v.gender, accent: v.accent }]))}
       />
       <InfoDialog
         isOpen={isAiAssistOpen}
