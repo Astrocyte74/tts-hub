@@ -417,7 +417,16 @@ export async function getXttsCustomVoice(id: string): Promise<Record<string, unk
 }
 
 export async function updateXttsCustomVoice(id: string, patch: { language?: string; gender?: string; tags?: string[]; notes?: string; accent?: { id: string; label: string; flag: string } }): Promise<Record<string, unknown>> {
-  return postJson<Record<string, unknown>>(`xtts/custom_voice/${encodeURIComponent(id)}`, patch);
+  const res = await fetch(buildUrl(`xtts/custom_voice/${encodeURIComponent(id)}`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`PATCH xtts/custom_voice/${id} failed (${res.status}): ${text}`);
+  }
+  return (await res.json()) as Record<string, unknown>;
 }
 
 export async function deleteXttsCustomVoice(id: string): Promise<{ status: string }> {
