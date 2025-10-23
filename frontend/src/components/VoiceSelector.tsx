@@ -36,6 +36,7 @@ interface VoiceSelectorProps {
   onSpeedChange?: (value: number) => void;
   onCreateCustomVoice?: () => void;
   onManageCustomVoices?: () => void;
+  onEditCustomVoice?: (voiceId: string) => void;
 }
 
 interface GroupedVoices {
@@ -133,6 +134,7 @@ export function VoiceSelector({
   enableHoverPreview = true,
   onCreateCustomVoice,
   onManageCustomVoices,
+  onEditCustomVoice,
   languages,
   language,
   onLanguageChange,
@@ -584,6 +586,17 @@ export function VoiceSelector({
                         {hasPreview ? (
                           <button type="button" className="chip-button" aria-label="Play preview" onClick={() => playPreview(voice)}>
                             Preview
+                          </button>
+                        ) : null}
+                        {typeof onEditCustomVoice === 'function' ? (
+                          <button
+                            type="button"
+                            className="chip-button"
+                            aria-label="Edit voice metadata"
+                            title="Edit voice metadata"
+                            onClick={() => onEditCustomVoice(voice.id)}
+                          >
+                            Edit
                           </button>
                         ) : null}
                         {(!findPreviewUrl(voice) && onGeneratePreview) ? (

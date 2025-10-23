@@ -9,11 +9,20 @@ interface XttsManageVoicesDialogProps {
   onClose: () => void;
   onChanged: () => void; // refresh voices on save/delete
   onError?: (message: string) => void;
+  initialVoiceId?: string;
 }
 
-export function XttsManageVoicesDialog({ isOpen, voices, accentOptions = [], onClose, onChanged, onError }: XttsManageVoicesDialogProps) {
+export function XttsManageVoicesDialog({ isOpen, voices, accentOptions = [], onClose, onChanged, onError, initialVoiceId }: XttsManageVoicesDialogProps) {
   const [q, setQ] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Focus a specific voice by pre-filling search when opened from per-card Edit
+  if (isOpen && initialVoiceId && q === '') {
+    const v = voices.find((v) => v.id === initialVoiceId);
+    if (v) {
+      // show either id or label in search to bring it to the top
+      setQ(v.id);
+    }
+  }
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();

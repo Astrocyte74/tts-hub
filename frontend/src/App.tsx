@@ -157,6 +157,7 @@ function App() {
   const [isAiAssistOpen, setAiAssistOpen] = useState(false);
   const [isXttsDialogOpen, setXttsDialogOpen] = useState(false);
   const [isXttsManageOpen, setXttsManageOpen] = useState(false);
+  const [xttsEditTarget, setXttsEditTarget] = useState<string | null>(null);
 
   const [openvoiceStyle, setOpenvoiceStyle] = useLocalStorage('kokoro:openvoiceStyle', 'default');
   const [openvoiceVoiceStyles, setOpenvoiceVoiceStyles] = useLocalStorage<Record<string, string>>('kokoro:openvoiceVoiceStyles', {});
@@ -1753,6 +1754,7 @@ function App() {
             favoritesMetaByVoice={favoritesMetaByVoiceMap}
             onCreateCustomVoice={engineId === 'xtts' ? () => setXttsDialogOpen(true) : undefined}
             onManageCustomVoices={engineId === 'xtts' ? () => setXttsManageOpen(true) : undefined}
+            onEditCustomVoice={engineId === 'xtts' ? (id) => { setXttsEditTarget(id); setXttsManageOpen(true); } : undefined}
             languages={availableLanguages}
             language={language}
             onLanguageChange={(value) => setLanguage(normaliseLanguage(value))}
@@ -1866,9 +1868,10 @@ function App() {
           isOpen={isXttsManageOpen}
           voices={voices}
           accentOptions={(metaQuery.data?.accent_groups ?? []).map((g) => ({ id: (g as any)['id'] as string, label: (g as any)['label'] as string, flag: (g as any)['flag'] as string | undefined }))}
-          onClose={() => setXttsManageOpen(false)}
+          onClose={() => { setXttsManageOpen(false); setXttsEditTarget(null); }}
           onChanged={() => { voicesQuery.refetch(); voiceGroupsQuery.refetch(); }}
           onError={(message) => setError(message)}
+          initialVoiceId={xttsEditTarget ?? undefined}
         />
       ) : null}
       {engineId === 'xtts' ? (
