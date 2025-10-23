@@ -6,6 +6,7 @@ import { TextWorkbench } from './components/TextWorkbench';
 import { SynthesisControls } from './components/SynthesisControls';
 import { EditFavoriteDialog } from './components/EditFavoriteDialog';
 import { AnnouncerControls } from './components/AnnouncerControls';
+import { CollapsiblePanel } from './components/CollapsiblePanel';
 import { SynthesisActions } from './components/SynthesisActions';
 import { AudioResultList } from './components/AudioResultList';
 import { TopContextBar } from './components/TopContextBar';
@@ -1689,19 +1690,26 @@ function App() {
               onKokoroFavoriteChange={engineId === 'kokoro' ? handleKokoroFavoriteChange : undefined}
               onManageKokoroFavorites={engineId === 'kokoro' ? handleOpenFavoritesManager : undefined}
               kokoroFavoritesCount={engineId === 'kokoro' ? kokoroFavorites.length : undefined}
+              hideLanguageSpeed={true}
             />
             {engineAvailable ? (
-              <AnnouncerControls
-                enabled={announcerEnabled}
-                onEnabledChange={setAnnouncerEnabled}
-                voices={voices}
-                selectedVoice={announcerVoice}
-                onVoiceChange={setAnnouncerVoice}
-                template={announcerTemplate}
-                onTemplateChange={setAnnouncerTemplate}
-                gapSeconds={Number(announcerGap)}
-                onGapChange={(value) => setAnnouncerGap(Number(value))}
-              />
+              <CollapsiblePanel
+                title="Announcer"
+                storageKey="kokoro:collapse:announcer"
+                defaultOpen={false}
+              >
+                <AnnouncerControls
+                  enabled={announcerEnabled}
+                  onEnabledChange={setAnnouncerEnabled}
+                  voices={voices}
+                  selectedVoice={announcerVoice}
+                  onVoiceChange={setAnnouncerVoice}
+                  template={announcerTemplate}
+                  onTemplateChange={setAnnouncerTemplate}
+                  gapSeconds={Number(announcerGap)}
+                  onGapChange={(value) => setAnnouncerGap(Number(value))}
+                />
+              </CollapsiblePanel>
             ) : null}
           </div>
         ) : activePanel === 'voices' ? (
@@ -1734,6 +1742,11 @@ function App() {
             favorites={starredVoiceIds}
             favoritesNotesByVoice={favoritesNotesByVoiceMap}
             favoritesMetaByVoice={favoritesMetaByVoiceMap}
+            languages={availableLanguages}
+            language={language}
+            onLanguageChange={(value) => setLanguage(normaliseLanguage(value))}
+            speed={Number(speed)}
+            onSpeedChange={(value) => setSpeed(Number(value))}
             onToggleFavorite={async (voiceId) => {
               setError(null);
               try {

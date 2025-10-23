@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { IconBrand, IconCaretDown, IconChatTTS, IconCog, IconCpu, IconDocument, IconMic, IconWave, IconPlay } from '../icons';
+import { IconBrand, IconCaretDown, IconCpu, IconDocument, IconMic, IconWave, IconPlay } from '../icons';
 import type { SynthesisResult, VoiceProfile } from '../types';
 
 interface TopContextBarProps {
@@ -97,6 +97,20 @@ export function TopContextBar({
   const voiceBtnRef = useRef<HTMLButtonElement | null>(null);
   const popoverPanelRef = useRef<HTMLDivElement | null>(null);
   const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
+  const toolsBtnRef = useRef<HTMLButtonElement | null>(null);
+  const toolsPopoverRef = useRef<HTMLDivElement | null>(null);
+  const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
+  const [hintQuick, setHintQuick] = useState(false);
+
+  // Brief hint pulse when quick voices become available (first time)
+  useEffect(() => {
+    const available = (quickProfiles.length + quickFavorites.length + quickRecents.length) > 0;
+    if (!available || voiceMenuOpen) return;
+    let t: number | null = null;
+    setHintQuick(true);
+    t = window.setTimeout(() => setHintQuick(false), 1600);
+    return () => { if (t) window.clearTimeout(t); };
+  }, [quickProfiles.length, quickFavorites.length, quickRecents.length, voiceMenuOpen]);
 
   useEffect(() => {
     if (!voiceMenuOpen) return;
@@ -118,6 +132,28 @@ export function TopContextBar({
       window.removeEventListener('click', onClick);
     };
   }, [voiceMenuOpen]);
+
+  // Tools popover outside click handling
+  useEffect(() => {
+    if (!toolsMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setToolsMenuOpen(false);
+    const onClick = (e: MouseEvent) => {
+      const btn = toolsBtnRef.current;
+      const panel = toolsPopoverRef.current;
+      const target = e.target as Node | null;
+      if (!target) return;
+      if ((btn && btn.contains(target)) || (panel && panel.contains(target))) {
+        return;
+      }
+      setToolsMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('click', onClick);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('click', onClick);
+    };
+  }, [toolsMenuOpen]);
 
   // Clicking the engine chip navigates to full controls rather than showing a menu.
 
@@ -151,7 +187,7 @@ export function TopContextBar({
           title="Script (1)"
         >
           <span className="topbar__chip-icon" aria-hidden><IconDocument /></span>
-          <span className="topbar__chip-label">Script</span>
+          <span className="topbar__chip-label">1&nbsp;Script</span>
           <span className="topbar__chip-value">Text</span>
         </button>
         <button
@@ -170,7 +206,7 @@ export function TopContextBar({
           title={`Engine (2) — ${statusLabel}`}
         >
           <span className="topbar__chip-icon" aria-hidden><IconCpu /></span>
-          <span className="topbar__chip-label">Engine</span>
+          <span className="topbar__chip-label">2&nbsp;Engine</span>
           <span className="topbar__chip-value">
             <span className="topbar__status-dot" aria-hidden style={{ marginRight: 6, background: engineReady ? '#22c55e' : '#eab308' }} />
             {engineLabel}
@@ -180,7 +216,7 @@ export function TopContextBar({
           type="button"
           role="tab"
           aria-selected={activePanel === 'voices'}
-          className={`topbar__chip ${activePanel === 'voices' ? 'topbar__chip--active' : ''} ${noVoiceSelected && activePanel === 'voices' ? 'topbar__chip--warn' : ''}`}
+          className={`topbar__chip ${activePanel === 'voices' ? 'topbar__chip--active' : ''} ${!engineReady ? 'topbar__chip--muted' : ''} ${noVoiceSelected && activePanel === 'voices' ? 'topbar__chip--warn' : ''}`}
           onClick={() => {
             if (onChangePanel) {
               onChangePanel('voices');
@@ -190,15 +226,15 @@ export function TopContextBar({
             }
           }}
           aria-label="Show voice palette"
-          title="Jump to voices (V)"
+          title={engineReady ? 'Jump to voices (V)' : 'Select an engine first'}
           ref={voiceBtnRef}
         >
           <span className="topbar__chip-icon" aria-hidden><IconMic /></span>
-          <span className="topbar__chip-label">Voice</span>
+          <span className="topbar__chip-label">3&nbsp;Voice</span>
           <span className="topbar__chip-value">{voiceSummary}</span>
           {(quickProfiles.length > 0 || quickFavorites.length > 0 || quickRecents.length > 0) ? (
             <span
-              className="topbar__badge"
+              className={`topbar__badge ${hintQuick ? 'topbar__badge--pulse' : ''}`}
               title="Quick voices"
               aria-label="Open quick voices"
               onClick={(e) => {
@@ -228,7 +264,7 @@ export function TopContextBar({
             title="Results (4)"
           >
             <span className="topbar__chip-icon" aria-hidden><IconWave /></span>
-            <span className="topbar__chip-label">Clips</span>
+            <span className="topbar__chip-label">4&nbsp;Clips</span>
             <span className="topbar__chip-value">{queueLabel}</span>
             {queueTotal > 0 ? (
               <span className="topbar__badge" title={`${queueTotal} in queue`} aria-label={`${queueTotal} in queue`}>
@@ -243,32 +279,15 @@ export function TopContextBar({
         <button
           type="button"
           className="topbar__button"
-          onClick={() => {
-            if (onOpenApiStatus) {
-              onOpenApiStatus();
-            }
-          }}
-          aria-label="Show API status"
-          title="API & CLI"
+          ref={toolsBtnRef}
+          onClick={() => setToolsMenuOpen((v) => !v)}
+          aria-expanded={toolsMenuOpen}
+          aria-haspopup="menu"
+          aria-label="Open tools menu"
+          title="Tools"
         >
-          <span className="topbar__button-label">API</span>
-        </button>
-        <button
-          type="button"
-          className="topbar__button"
-          onClick={() => {
-            if (onAiAssistClick) {
-              onAiAssistClick();
-            }
-          }}
-          disabled={!ollamaAvailable || !onAiAssistClick}
-          aria-label="Open AI Assist"
-          title={ollamaAvailable ? 'AI Assist (Shift + /)' : 'AI Assist unavailable'}
-        >
-          <IconChatTTS />
-        </button>
-        <button type="button" className="topbar__button" onClick={onOpenSettings} aria-label="Open settings" title="Settings (S)">
-          <IconCog />
+          ⋯
+          <span className="topbar__button-label">Tools</span>
         </button>
         <button
           type="button"
@@ -396,6 +415,54 @@ export function TopContextBar({
                   ))}
                 </div>
               ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {toolsMenuOpen ? (
+        <div className="popover" role="dialog" aria-label="Tools">
+          <div className="popover__backdrop" />
+          <div ref={toolsPopoverRef} className="popover__panel" style={{ position: 'absolute', top: 56, right: 12, width: 240 }}>
+            <div className="popover__header"><h3 className="popover__title">Tools</h3></div>
+            <div className="popover__content" role="menu">
+              <button
+                className="popover__button"
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setToolsMenuOpen(false);
+                  onOpenApiStatus && onOpenApiStatus();
+                }}
+                title="API & CLI"
+              >
+                API & CLI
+              </button>
+              <button
+                className="popover__button"
+                type="button"
+                role="menuitem"
+                disabled={!ollamaAvailable || !onAiAssistClick}
+                onClick={() => {
+                  setToolsMenuOpen(false);
+                  onAiAssistClick && onAiAssistClick();
+                }}
+                title={ollamaAvailable ? 'AI Assist (Shift + /)' : 'AI Assist unavailable'}
+              >
+                AI Assist
+              </button>
+              <button
+                className="popover__button"
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setToolsMenuOpen(false);
+                  onOpenSettings && onOpenSettings();
+                }}
+                title="Settings (S)"
+              >
+                Settings
+              </button>
             </div>
           </div>
         </div>

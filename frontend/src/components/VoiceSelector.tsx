@@ -28,6 +28,12 @@ interface VoiceSelectorProps {
   previewBusyIds?: string[];
   onBulkGeneratePreview?: (voiceIds: string[]) => void;
   enableHoverPreview?: boolean;
+  // Quick settings (optional) — inline language + speed controls
+  languages?: string[];
+  language?: string;
+  onLanguageChange?: (value: string) => void;
+  speed?: number;
+  onSpeedChange?: (value: number) => void;
 }
 
 interface GroupedVoices {
@@ -123,6 +129,11 @@ export function VoiceSelector({
   previewBusyIds = [],
   onBulkGeneratePreview,
   enableHoverPreview = true,
+  languages,
+  language,
+  onLanguageChange,
+  speed,
+  onSpeedChange,
 }: VoiceSelectorProps) {
   // Collapsible favorites (persisted)
   const [favoritesCollapsed, setFavoritesCollapsed] = useLocalStorage('kokoro:favoritesCollapsed', false);
@@ -300,13 +311,46 @@ export function VoiceSelector({
     <section className="panel">
       <header className="panel__header">
         <div className="panel__heading">
-          <h2 className="panel__title">Voices</h2>
+          <h2 className="panel__title">Voice Settings</h2>
           <span className="panel__crumb" aria-label="Step 3: Voice">3 VOICE</span>
           <p className="panel__subtitle">
             {engineLabel} · {voices.length} available
           </p>
         </div>
         <div className="panel__actions">
+          {Array.isArray(languages) && languages.length && typeof onLanguageChange === 'function' ? (
+            <label className="field" aria-label="Language">
+              <span className="field__label">Language</span>
+              <select
+                value={language ?? (languages[0] ?? 'en-us')}
+                onChange={(e) => onLanguageChange(e.target.value)}
+                disabled={disabled}
+              >
+                {languages.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+                {language && !languages.includes(language) ? <option value={language}>{language}</option> : null}
+              </select>
+            </label>
+          ) : null}
+          {typeof speed === 'number' && typeof onSpeedChange === 'function' ? (
+            <label className="field" aria-label="Speed">
+              <span className="field__label">
+                Speed <span className="field__value">{speed.toFixed(2)}×</span>
+              </span>
+              <input
+                type="range"
+                min={0.5}
+                max={2}
+                step={0.05}
+                value={speed}
+                onChange={(e) => onSpeedChange(parseFloat(e.target.value))}
+                disabled={disabled}
+              />
+            </label>
+          ) : null}
           {onBulkGeneratePreview && missingPreviewIds.length > 0 ? (
             <button
               className="panel__button"

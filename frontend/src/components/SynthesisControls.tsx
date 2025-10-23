@@ -1,4 +1,5 @@
 import type { JSX } from 'react';
+import { CollapsiblePanel } from './CollapsiblePanel';
 import { IconChatTTS, IconKokoro, IconOpenVoice, IconXTTS } from '../icons';
 
 interface EngineOption {
@@ -44,6 +45,7 @@ interface SynthesisControlsProps {
   onKokoroFavoriteChange?: (value: string) => void;
   onManageKokoroFavorites?: () => void;
   kokoroFavoritesCount?: number;
+  hideLanguageSpeed?: boolean;
 }
 
 export function SynthesisControls({
@@ -71,6 +73,7 @@ export function SynthesisControls({
   onKokoroFavoriteChange,
   onManageKokoroFavorites,
   kokoroFavoritesCount,
+  hideLanguageSpeed = false,
 }: SynthesisControlsProps) {
   const selectedEngine = engines.find((engine) => engine.id === engineId);
   const description = engineMessage ?? selectedEngine?.description;
@@ -260,42 +263,46 @@ export function SynthesisControls({
           <p className="panel__hint panel__hint--muted">Set a seed to reuse the random speaker without saving a preset.</p>
         </label>
       ) : null}
-      <div className="grid grid--two">
-        <label className="field">
-          <span className="field__label">Language</span>
-          <select value={language} onChange={(event) => onLanguageChange(event.target.value)}>
-            {languages.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-            {!languages.includes(language) ? <option value={language}>{language}</option> : null}
-          </select>
-        </label>
-        <label className="field">
-          <span className="field__label">
-            Speed <span className="field__value">{speed.toFixed(2)}×</span>
-          </span>
-          <input
-            type="range"
-            min={0.5}
-            max={2}
-            step={0.05}
-            value={speed}
-            onChange={(event) => onSpeedChange(parseFloat(event.target.value))}
-          />
-        </label>
-      </div>
-      <div className="toggle-list">
-        <label className="toggle">
-          <input type="checkbox" checked={trimSilence} onChange={(event) => onTrimSilenceChange(event.target.checked)} />
-          <span>Trim silence</span>
-        </label>
-        <label className="toggle">
-          <input type="checkbox" checked={autoPlay} onChange={(event) => onAutoPlayChange(event.target.checked)} />
-          <span>Autoplay new clips</span>
-        </label>
-      </div>
+      {!hideLanguageSpeed ? (
+        <div className="grid grid--two">
+          <label className="field">
+            <span className="field__label">Language</span>
+            <select value={language} onChange={(event) => onLanguageChange(event.target.value)}>
+              {languages.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+              {!languages.includes(language) ? <option value={language}>{language}</option> : null}
+            </select>
+          </label>
+          <label className="field">
+            <span className="field__label">
+              Speed <span className="field__value">{speed.toFixed(2)}×</span>
+            </span>
+            <input
+              type="range"
+              min={0.5}
+              max={2}
+              step={0.05}
+              value={speed}
+              onChange={(event) => onSpeedChange(parseFloat(event.target.value))}
+            />
+          </label>
+        </div>
+      ) : null}
+      <CollapsiblePanel title="Audio Options" storageKey="kokoro:collapse:audioOptions" defaultOpen>
+        <div className="toggle-list">
+          <label className="toggle">
+            <input type="checkbox" checked={trimSilence} onChange={(event) => onTrimSilenceChange(event.target.checked)} />
+            <span>Trim silence</span>
+          </label>
+          <label className="toggle">
+            <input type="checkbox" checked={autoPlay} onChange={(event) => onAutoPlayChange(event.target.checked)} />
+            <span>Autoplay new clips</span>
+          </label>
+        </div>
+      </CollapsiblePanel>
     </section>
   );
 }
