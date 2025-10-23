@@ -194,6 +194,17 @@
   opacity: 0.85;
 }
 
+/* Subtle pulse for quick-voice caret badge */
+@keyframes pulseHint {
+  0% { box-shadow: 0 0 0 0 rgba(56,189,248,0.45); }
+  70% { box-shadow: 0 0 0 10px rgba(56,189,248,0.0); }
+  100% { box-shadow: 0 0 0 0 rgba(56,189,248,0.0); }
+}
+.topbar__badge--pulse {
+  animation: pulseHint 1.2s ease-out 1;
+  border-color: rgba(56,189,248,0.6) !important;
+}
+
 .topbar__button {
   display: inline-flex;
   align-items: center;
@@ -223,6 +234,7 @@
   border: none;
   color: #0f172a;
   font-weight: 600;
+  padding: 10px 14px;
 }
 .topbar__button--primary:hover:not(:disabled) {
   transform: translateY(-1px);
