@@ -489,10 +489,31 @@ fi
 
 trap '[[ -n "${BACKEND_PID:-}" ]] && kill "$BACKEND_PID" 2>/dev/null; [[ -n "${FRONTEND_PID:-}" ]] && kill "$FRONTEND_PID" 2>/dev/null; [[ -n "${XTTS_SERVER_PID:-}" ]] && kill "$XTTS_SERVER_PID" 2>/dev/null' EXIT
 
+probe_backend() {
+  # best-effort liveness check for Flask: /api/meta then /health
+  if command -v curl >/dev/null 2>&1; then
+    curl -sS --max-time 1 "http://127.0.0.1:$BACKEND_PORT/${BACKEND_API_PREFIX}/meta" >/dev/null 2>&1 && return 0
+    curl -sS --max-time 1 "http://127.0.0.1:$BACKEND_PORT/health" >/dev/null 2>&1 && return 0
+  fi
+  return 1
+}
+
 existing_backend_pids=$(lsof -ti TCP:$BACKEND_PORT 2>/dev/null || true)
-if [[ -n "$existing_backend_pids" && ! $(should_skip_backend; echo $?) -eq 0 ]]; then
-  log "Backend detected on $BACKEND_PORT ($existing_backend_pids); reusing (auto SKIP_BACKEND)."
-  SKIP_BACKEND_FLAG=1
+if [[ -n "$existing_backend_pids" ]]; then
+  if should_take_over; then
+    log "TAKE_OVER=1 → restarting backend (killing $existing_backend_pids)"
+    echo "$existing_backend_pids" | xargs kill 2>/dev/null || true
+    sleep 1
+  else
+    if probe_backend; then
+      log "Backend detected on $BACKEND_PORT ($existing_backend_pids); reusing (auto SKIP_BACKEND)."
+      SKIP_BACKEND_FLAG=1
+    else
+      log "Backend detected on $BACKEND_PORT but not responding; restarting (killing $existing_backend_pids)"
+      echo "$existing_backend_pids" | xargs kill 2>/dev/null || true
+      sleep 1
+    fi
+  fi
 fi
 
 if ! should_skip_backend; then
