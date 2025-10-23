@@ -33,7 +33,7 @@ export function XttsManageVoicesDialog({ isOpen, voices, accentOptions = [], onC
             <input placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
         </header>
-        <div className="modal__body modal__body--scrollable">
+        <div className="modal__body modal__body--scrollable" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {filtered.length === 0 ? <p className="panel__empty">No custom voices found.</p> : null}
           {filtered.map((v) => (
             <VoiceRow
@@ -96,36 +96,38 @@ function VoiceRow({ voice, accents, busy, onSave, onDelete }: { voice: VoiceProf
     onSave(patch);
   };
   return (
-    <div className="app__banner" style={{ gap: 12, alignItems: 'flex-start' }}>
-      <div style={{ minWidth: 220 }}>
+    <div className="panel panel--compact" style={{ gap: 12 }}>
+      <div>
         <strong>{voice.label}</strong>
         <div style={{ opacity: 0.8, fontSize: 12 }}>{voice.id}</div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, flex: 1 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <label className="field">
           <span className="field__label">Language</span>
           <input type="text" value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="en-us" />
         </label>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+          <label className="field">
+            <span className="field__label">Gender</span>
+            <select value={gender} onChange={(e) => setGender(e.target.value)}>
+              <option value="unknown">unknown</option>
+              <option value="female">female</option>
+              <option value="male">male</option>
+            </select>
+          </label>
+          <label className="field">
+            <span className="field__label">Accent</span>
+            <select value={accentId} onChange={(e) => setAccentId(e.target.value)}>
+              <option value="custom">Custom Voice</option>
+              {accents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.flag ? `${a.flag} ` : ''}{a.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <label className="field">
-          <span className="field__label">Gender</span>
-          <select value={gender} onChange={(e) => setGender(e.target.value)}>
-            <option value="unknown">unknown</option>
-            <option value="female">female</option>
-            <option value="male">male</option>
-          </select>
-        </label>
-        <label className="field">
-          <span className="field__label">Accent</span>
-          <select value={accentId} onChange={(e) => setAccentId(e.target.value)}>
-            <option value="custom">Custom Voice</option>
-            {accents.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.flag ? `${a.flag} ` : ''}{a.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field" style={{ gridColumn: '1 / span 2' }}>
           <span className="field__label">Tags (comma separated)</span>
           <input type="text" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="female, british, custom" />
         </label>
@@ -134,11 +136,10 @@ function VoiceRow({ voice, accents, busy, onSave, onDelete }: { voice: VoiceProf
           <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Source or details" />
         </label>
       </div>
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
         <button className="modal__button" onClick={savePatch} disabled={busy}>Save</button>
         <button className="modal__button modal__button--danger" onClick={onDelete} disabled={busy}>Delete</button>
       </div>
     </div>
   );
 }
-

@@ -997,6 +997,19 @@ textarea:focus-visible {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
+/* Small metadata badges for voice cards */
+.voice-card__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: #cbd5e1;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
 /* Favorites compact list */
 .fav-list { display: flex; flex-direction: column; gap: 8px; }
 .fav-row {
