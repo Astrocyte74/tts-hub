@@ -14,6 +14,7 @@ import type {
   MediaTranscribeResponse,
   MediaAlignResponse,
   MediaStatsSummary,
+  MediaReplacePreviewResponse,
 } from '../types';
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
@@ -445,6 +446,20 @@ export async function mediaAlignRegion(jobId: string, start: number, end: number
 
 export async function mediaGetStats(): Promise<MediaStatsSummary> {
   return getJson<MediaStatsSummary>('media/stats');
+}
+
+export async function mediaReplacePreview(payload: {
+  jobId: string;
+  start: number;
+  end: number;
+  text: string;
+  voice?: string; // id or path; when omitted, borrow from region
+  language?: string;
+  speed?: number;
+  marginMs?: number;
+  fadeMs?: number;
+}): Promise<MediaReplacePreviewResponse> {
+  return postJson<MediaReplacePreviewResponse>('media/replace_preview', payload);
 }
 
 export async function getXttsCustomVoice(id: string): Promise<Record<string, unknown>> {

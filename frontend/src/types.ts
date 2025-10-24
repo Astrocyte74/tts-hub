@@ -204,6 +204,13 @@ export interface MediaStatsSummary {
   align_region: { avg_rtf: number | null; count: number };
 }
 
+export interface MediaReplacePreviewResponse {
+  jobId: string;
+  preview_url: string;
+  diff_url?: string;
+  stats?: { synth_elapsed?: number; fade_ms?: number };
+}
+
 export interface AuditionAnnouncerConfig {
   enabled: boolean;
   voice?: string | null;

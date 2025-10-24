@@ -2133,6 +2133,75 @@ def concatenate_clips(clips: Iterable[np.ndarray], sample_rate: int, gap_seconds
     return np.concatenate(segments)
 
 
+def _load_wav_mono(path: Path, target_sr: Optional[int] = None) -> Tuple[np.ndarray, int]:
+    import soundfile as _sf
+    import numpy as _np
+    import librosa as _lb
+    audio, sr = _sf.read(str(path), dtype='float32', always_2d=False)
+    if audio.ndim > 1:
+        audio = _np.mean(audio, axis=1).astype('float32')
+    if target_sr and sr != target_sr:
+        audio = _lb.resample(audio, orig_sr=sr, target_sr=target_sr)
+        sr = target_sr
+    return audio.astype('float32'), sr
+
+
+def _time_stretch_to_len(samples: np.ndarray, sr: int, target_len: int) -> np.ndarray:
+    import librosa as _lb
+    cur = len(samples)
+    if cur <= 1 or target_len <= 1:
+        return np.zeros(target_len, dtype='float32')
+    rate = cur / float(target_len)
+    # clamp extreme rates
+    rate = float(max(0.5, min(2.5, rate)))
+    stretched = _lb.effects.time_stretch(samples, rate=rate)
+    # Adjust to exactly target_len
+    if len(stretched) > target_len:
+        stretched = stretched[:target_len]
+    elif len(stretched) < target_len:
+        pad = target_len - len(stretched)
+        stretched = np.pad(stretched, (0, pad), mode='constant')
+    return stretched.astype('float32')
+
+
+def _rms(x: np.ndarray) -> float:
+    x = x.astype('float32')
+    return float(np.sqrt(np.mean(np.square(x) + 1e-9)))
+
+
+def _apply_replace_with_crossfade(source: np.ndarray, rep: np.ndarray, sr: int, i0: int, i1: int, fade_ms: float = 30.0) -> np.ndarray:
+    out = source.copy()
+    target_len = max(i1 - i0, 1)
+    if len(rep) != target_len:
+        rep = _time_stretch_to_len(rep, sr, target_len)
+    # Loudness match using 0.5s neighborhood
+    pre0 = max(0, i0 - int(0.5 * sr))
+    pre = source[pre0:i0]
+    post1 = min(len(source), i1 + int(0.5 * sr))
+    post = source[i1:post1]
+    ref = np.concatenate([pre, post]) if len(pre) + len(post) > 0 else None
+    if ref is not None and len(ref) > 0:
+        r_ref = _rms(ref)
+        r_rep = _rms(rep)
+        if r_rep > 0:
+            rep = rep * (r_ref / r_rep)
+    # Crossfade
+    fade = int(min(int(fade_ms / 1000.0 * sr), target_len // 4))
+    fade = max(fade, 1)
+    # Start crossfade
+    for t in range(fade):
+        a = (t + 1) / float(fade)
+        out[i0 + t] = source[i0 + t] * (1.0 - a) + rep[t] * a
+    # Middle
+    if target_len > 2 * fade:
+        out[i0 + fade : i1 - fade] = rep[fade : target_len - fade]
+    # End crossfade
+    for t in range(fade):
+        a = (t + 1) / float(fade)
+        out[i1 - fade + t] = rep[target_len - fade + t] * (1.0 - a) + source[i1 - fade + t] * a
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Flask app & routes
 # ---------------------------------------------------------------------------
@@ -2520,6 +2589,109 @@ def media_stats_endpoint():
     except Exception:
         pass
     return jsonify(summary)
+
+
+@api.route("/media/replace_preview", methods=["POST"])
+def media_replace_preview_endpoint():
+    """Synthesize replacement audio (XTTS), fit to region, and return a patched preview.
+
+    Body: { jobId, start, end, text, voice?, language?, speed?, marginMs?, fadeMs? }
+      - If 'voice' is omitted, a temporary reference is borrowed from the selected region.
+    Returns: { jobId, preview_url, diff_url, stats }
+    """
+    payload = parse_json_request()
+    job_id = str(payload.get("jobId") or "").strip()
+    if not job_id:
+        raise PlaygroundError("Field 'jobId' is required.", status=400)
+    try:
+        start = float(payload.get("start"))
+        end = float(payload.get("end"))
+    except Exception:
+        raise PlaygroundError("Fields 'start' and 'end' must be numbers (seconds).", status=400)
+    if end <= start:
+        raise PlaygroundError("'end' must be greater than 'start'.", status=400)
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        raise PlaygroundError("Field 'text' is required.", status=400)
+
+    margin_ms = float(payload.get("marginMs", 0))
+    fade_ms = float(payload.get("fadeMs", 30))
+    language = str(payload.get("language") or "")
+    speed = float(payload.get("speed") or 1.0)
+    explicit_voice = payload.get("voice")  # could be id or path
+
+    job_dir = _media_job_dir(job_id)
+    audio_wav = job_dir / "source.wav"
+    if not audio_wav.exists():
+        raise PlaygroundError("Source WAV for this job is missing.", status=404)
+
+    # Borrow voice from region if not provided
+    region_start = start - (margin_ms / 1000.0 if margin_ms > 0 else 0.0)
+    region_end = end + (margin_ms / 1000.0 if margin_ms > 0 else 0.0)
+    source_dur = _ffprobe_duration_seconds(audio_wav)
+    region_start = max(0.0, region_start)
+    region_end = min(source_dur, region_end)
+    ref_voice = None
+    if explicit_voice:
+        ref_voice = str(explicit_voice)
+    else:
+        region_wav = job_dir / f"ref-{int(region_start*1000)}-{int(region_end*1000)}.wav"
+        _extract_input_to_wav(audio_wav, region_wav, start=region_start, end=region_end)
+        ref_voice = str(region_wav)
+
+    # Determine language default from prior transcript
+    tx_path = job_dir / "transcript.json"
+    if not language and tx_path.exists():
+        try:
+            tx = json.loads(tx_path.read_text(encoding='utf-8'))
+            language = str(tx.get('language') or 'en').lower()
+        except Exception:
+            language = 'en'
+    if not language:
+        language = 'en'
+
+    # XTTS synthesize replacement
+    xtts_payload = {
+        'text': text,
+        'voice': ref_voice,
+        'language': language,
+        'speed': speed,
+        'format': 'wav',
+        'sample_rate': 24000,
+        'seed': 42,
+        'temperature': 0.6,
+    }
+    data = _xtts_prepare_payload(xtts_payload)
+    t0 = time.time()
+    synth = _xtts_synthesise(data)
+    elapsed_synth = max(time.time() - t0, 0.0)
+
+    # Build preview: overlay replacement in region with crossfades
+    src, sr = _load_wav_mono(audio_wav, target_sr=24000)
+    rep_path = OUTPUT_DIR / synth['filename']
+    rep, r_sr = _load_wav_mono(rep_path, target_sr=sr)
+    i0 = int(max(0.0, start) * sr)
+    i1 = int(min(source_dur, end) * sr)
+    preview = _apply_replace_with_crossfade(src, rep, sr, i0, i1, fade_ms=fade_ms)
+
+    # Write preview and diff
+    preview_path = job_dir / f"preview-{int(time.time())}.wav"
+    diff_path = job_dir / f"diff-{int(time.time())}.wav"
+    sf.write(preview_path, preview, sr)
+    # diff clip (for debugging): only the inserted region with fades applied
+    diff = np.zeros_like(src)
+    diff[i0:i1] = preview[i0:i1] - src[i0:i1]
+    sf.write(diff_path, diff, sr)
+
+    rel_prev = (preview_path.relative_to(OUTPUT_DIR)).as_posix()
+    rel_diff = (diff_path.relative_to(OUTPUT_DIR)).as_posix()
+    _log(f"Replace preview: job={job_id} region=({start:.2f}-{end:.2f}) synth={elapsed_synth:.2f}s preview='{rel_prev}'")
+    return jsonify({
+        'jobId': job_id,
+        'preview_url': f"/audio/{rel_prev}",
+        'diff_url': f"/audio/{rel_diff}",
+        'stats': { 'synth_elapsed': elapsed_synth, 'fade_ms': fade_ms }
+    })
 @api.route("/meta", methods=["GET"])
 def meta_endpoint():
     has_model = MODEL_PATH.exists()

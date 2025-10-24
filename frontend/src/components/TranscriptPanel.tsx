@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { mediaAlignFull, mediaAlignRegion, mediaGetStats, mediaTranscribeFromUrl, mediaTranscribeUpload } from '../api/client';
+import { mediaAlignFull, mediaAlignRegion, mediaGetStats, mediaReplacePreview, mediaTranscribeFromUrl, mediaTranscribeUpload } from '../api/client';
 import type { MediaTranscriptResult } from '../types';
 
 export function TranscriptPanel() {
@@ -15,6 +15,8 @@ export function TranscriptPanel() {
   const [regionStart, setRegionStart] = useState<string>('');
   const [regionEnd, setRegionEnd] = useState<string>('');
   const [regionMargin, setRegionMargin] = useState<string>('0.75');
+  const [replaceText, setReplaceText] = useState<string>('');
+  const [replacePreviewUrl, setReplacePreviewUrl] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<MediaTranscriptResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [avgRtf, setAvgRtf] = useState<{ full: number; region: number; transcribe: number }>({ full: 5, region: 5, transcribe: 10 });
@@ -219,6 +221,47 @@ export function TranscriptPanel() {
               >
                 {busy ? 'Aligning…' : 'Refine region'}
               </button>
+            </div>
+          ) : null}
+          {/* Replace preview (XTTS) */}
+          <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
+            <label className="field" aria-label="Replace text" style={{ minWidth: 320 }}>
+              <span className="field__label">Replace text</span>
+              <input type="text" value={replaceText} onChange={(e) => setReplaceText(e.target.value)} placeholder="New line to speak…" />
+            </label>
+            <button
+              className="panel__button panel__button--primary"
+              type="button"
+              disabled={busy || !jobId || !replaceText.trim()}
+              onClick={async () => {
+                if (!jobId) { setError('Transcribe first'); return; }
+                const s = Number(regionStart), e = Number(regionEnd);
+                if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Enter start/end seconds (end > start)'); return; }
+                try {
+                  setBusy(true);
+                  setStatus('Generating replace preview…');
+                  setError(null);
+                  setReplacePreviewUrl(null);
+                  const res = await mediaReplacePreview({ jobId, start: s, end: e, text: replaceText, marginMs: Number(regionMargin) * 1000 });
+                  setReplacePreviewUrl(res.preview_url);
+                  const se = res.stats?.synth_elapsed;
+                  if (typeof se === 'number') {
+                    setStatus(`Synthesized and patched preview in ${se.toFixed(2)}s`);
+                  }
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : 'Replace preview failed');
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {busy ? 'Working…' : 'Preview replace'}
+            </button>
+          </div>
+          {replacePreviewUrl ? (
+            <div>
+              <p className="panel__meta">Preview with replacement applied</p>
+              <audio controls src={replacePreviewUrl} style={{ width: '100%' }} />
             </div>
           ) : null}
           {audioUrl ? (
