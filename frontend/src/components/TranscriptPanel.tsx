@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { mediaAlignFull, mediaTranscribeFromUrl, mediaTranscribeUpload } from '../api/client';
+import { mediaAlignFull, mediaAlignRegion, mediaTranscribeFromUrl, mediaTranscribeUpload } from '../api/client';
 import type { MediaTranscriptResult } from '../types';
 
 export function TranscriptPanel() {
@@ -11,6 +11,9 @@ export function TranscriptPanel() {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [whisperxEnabled, setWhisperxEnabled] = useState<boolean>(false);
+  const [regionStart, setRegionStart] = useState<string>('');
+  const [regionEnd, setRegionEnd] = useState<string>('');
+  const [regionMargin, setRegionMargin] = useState<string>('0.75');
   const [transcript, setTranscript] = useState<MediaTranscriptResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -74,11 +77,46 @@ export function TranscriptPanel() {
           </div>
           {error ? <p className="panel__hint panel__hint--warning">{error}</p> : null}
           {whisperxEnabled ? (
-            <div className="panel__actions" style={{ gap: 8 }}>
+            <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
               <button className="panel__button" type="button" disabled={busy || !jobId} onClick={handleAlignFull}>
                 {busy ? 'Aligning…' : 'Refine timings (WhisperX)'}
               </button>
               {!jobId ? <p className="panel__hint panel__hint--muted">Transcribe first to create a job.</p> : null}
+              <div className="panel__meta" style={{ marginLeft: 12 }}>or refine a region:</div>
+              <label className="field" aria-label="Region start" style={{ width: 120 }}>
+                <span className="field__label">Start (s)</span>
+                <input type="number" step="0.01" value={regionStart} onChange={(e) => setRegionStart(e.target.value)} />
+              </label>
+              <label className="field" aria-label="Region end" style={{ width: 120 }}>
+                <span className="field__label">End (s)</span>
+                <input type="number" step="0.01" value={regionEnd} onChange={(e) => setRegionEnd(e.target.value)} />
+              </label>
+              <label className="field" aria-label="Margin" style={{ width: 120 }}>
+                <span className="field__label">Margin (s)</span>
+                <input type="number" step="0.01" value={regionMargin} onChange={(e) => setRegionMargin(e.target.value)} />
+              </label>
+              <button
+                className="panel__button"
+                type="button"
+                disabled={busy || !jobId}
+                onClick={async () => {
+                  if (!jobId) { setError('Transcribe first'); return; }
+                  const s = Number(regionStart), e = Number(regionEnd), m = Number(regionMargin || '0.75');
+                  if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Enter start/end seconds (end > start)'); return; }
+                  try {
+                    setBusy(true);
+                    setError(null);
+                    const res = await mediaAlignRegion(jobId, s, e, Number.isFinite(m) ? m : undefined);
+                    setTranscript(res.transcript);
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Region alignment failed');
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                {busy ? 'Aligning…' : 'Refine region'}
+              </button>
             </div>
           ) : null}
           {audioUrl ? (

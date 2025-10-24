@@ -2274,6 +2274,115 @@ def media_align_endpoint():
         "transcript": aligned,
         "whisperx": {"enabled": True}
     })
+
+
+@api.route("/media/align_region", methods=["POST"])
+def media_align_region_endpoint():
+    """Run WhisperX only on a selected region to refine timings lazily.
+
+    Body: { jobId, start: number, end: number, margin?: number }
+    Returns: { jobId, region, transcript }
+    """
+    if not (WHISPERX_ENABLE and _have_whisperx):
+        raise PlaygroundError("WhisperX alignment is not enabled on this server.", status=503)
+    payload = parse_json_request()
+    job_id = str(payload.get("jobId") or "").strip()
+    if not job_id:
+        raise PlaygroundError("Field 'jobId' is required.", status=400)
+    try:
+        start = float(payload.get("start"))
+        end = float(payload.get("end"))
+    except Exception:
+        raise PlaygroundError("Fields 'start' and 'end' must be numbers (seconds).", status=400)
+    margin = payload.get("margin")
+    try:
+        margin_s = float(margin) if margin is not None else 0.75
+    except Exception:
+        margin_s = 0.75
+    if end <= start:
+        raise PlaygroundError("'end' must be greater than 'start'.", status=400)
+
+    job_dir = _media_job_dir(job_id)
+    audio_wav = job_dir / "source.wav"
+    tx_path = job_dir / "transcript.json"
+    if not audio_wav.exists() or not tx_path.exists():
+        raise PlaygroundError("Source audio or transcript is missing for this job.", status=404)
+
+    # Load full transcript
+    transcript = json.loads(tx_path.read_text(encoding="utf-8"))
+    duration = float(transcript.get("duration") or _ffprobe_duration_seconds(audio_wav))
+    region_start = max(0.0, start - max(0.0, margin_s))
+    region_end = min(duration, end + max(0.0, margin_s))
+
+    # Build text for the region from existing segments/words
+    words = transcript.get("words") or []
+    if words:
+        region_words = [
+            w for w in words
+            if float(w.get("end", 0)) > region_start and float(w.get("start", 0)) < region_end
+        ]
+        region_text = " ".join(str(w.get("text") or "").strip() for w in region_words).strip()
+    else:
+        segs = transcript.get("segments") or []
+        region_segs = [
+            s for s in segs
+            if float(s.get("end", 0)) > region_start and float(s.get("start", 0)) < region_end
+        ]
+        region_text = " ".join(str(s.get("text") or "").strip() for s in region_segs).strip()
+    if not region_text:
+        raise PlaygroundError("No transcript content found in the selected region.", status=400)
+
+    # Trim audio for the region
+    region_wav = job_dir / f"region-{int(region_start*1000)}-{int(region_end*1000)}.wav"
+    try:
+        _extract_input_to_wav(audio_wav, region_wav, start=region_start, end=region_end)
+    except Exception:
+        # fallback call: direct trim
+        cmd = [
+            "ffmpeg", "-y", "-ss", str(region_start), "-to", str(region_end), "-i", str(audio_wav),
+            "-ac", "1", "-ar", "24000", str(region_wav)
+        ]
+        subprocess.run(cmd, check=True)
+
+    # Prepare WhisperX result input with one segment covering region_text
+    wx_result = {"language": transcript.get("language", "en"), "segments": [{"text": region_text, "start": 0.0, "end": float(region_end - region_start)}]}
+    align_model, metadata = _whisperx_get_align_model(str(transcript.get("language", "en")))
+    aligned = whisperx.align(wx_result, align_model, metadata, str(region_wav), device=WHISPERX_DEVICE, return_char_alignments=False)  # type: ignore[name-defined]
+    new_words: List[Dict[str, Any]] = []
+    for seg in aligned.get("segments", []):
+        for w in seg.get("words", []) or []:
+            if not isinstance(w, dict):
+                continue
+            abs_start = region_start + float(w.get("start") or 0)
+            abs_end = region_start + float(w.get("end") or 0)
+            new_words.append({
+                "text": str(w.get("word") or w.get("text") or "").strip(),
+                "start": abs_start,
+                "end": abs_end,
+                "confidence": float(w.get("score") or 0),
+            })
+    # Merge new words into transcript, replacing overlap area
+    existing = transcript.get("words") or []
+    kept = [w for w in existing if not (float(w.get("end", 0)) > region_start and float(w.get("start", 0)) < region_end)]
+    merged = kept + new_words
+    merged.sort(key=lambda w: float(w.get("start", 0)))
+    transcript["words"] = merged
+
+    # Persist
+    try:
+        with open(tx_path, "w", encoding="utf-8") as f:
+            json.dump(transcript, f)
+    except Exception:
+        pass
+
+    rel_audio = (audio_wav.relative_to(OUTPUT_DIR)).as_posix()
+    return jsonify({
+        "jobId": job_id,
+        "region": {"start": start, "end": end, "margin": margin_s, "used": {"start": region_start, "end": region_end}},
+        "media": {"audio_url": f"/audio/{rel_audio}", "duration": duration},
+        "transcript": transcript,
+        "whisperx": {"enabled": True}
+    })
 @api.route("/meta", methods=["GET"])
 def meta_endpoint():
     has_model = MODEL_PATH.exists()

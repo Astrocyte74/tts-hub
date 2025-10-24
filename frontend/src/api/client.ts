@@ -436,6 +436,12 @@ export async function mediaAlignFull(jobId: string): Promise<MediaAlignResponse>
   return postJson<MediaAlignResponse>('media/align', { jobId });
 }
 
+export async function mediaAlignRegion(jobId: string, start: number, end: number, margin?: number): Promise<MediaAlignResponse> {
+  const body: Record<string, unknown> = { jobId, start, end };
+  if (typeof margin === 'number') body.margin = margin;
+  return postJson<MediaAlignResponse>('media/align_region', body);
+}
+
 export async function getXttsCustomVoice(id: string): Promise<Record<string, unknown>> {
   return getJson<Record<string, unknown>>(`xtts/custom_voice/${encodeURIComponent(id)}`);
 }
