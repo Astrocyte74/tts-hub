@@ -18,6 +18,21 @@ export function TranscriptPanel() {
   const [replaceText, setReplaceText] = useState<string>('');
   const [replacePreviewUrl, setReplacePreviewUrl] = useState<string | null>(null);
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
+  const [voiceMode, setVoiceMode] = useState<'borrow' | 'select'>('borrow');
+  const [voiceList, setVoiceList] = useState<{ id: string; label: string }[]>([]);
+  const [voiceId, setVoiceId] = useState<string>('');
+
+  async function ensureVoices() {
+    if (voiceList.length) return;
+    try {
+      // Lazy import to avoid circulars
+      const { fetchVoices } = await import('../api/client');
+      const cat = await fetchVoices('xtts');
+      setVoiceList(cat.voices.map((v) => ({ id: v.id, label: v.label })));
+    } catch {
+      // ignore
+    }
+  }
   const [transcript, setTranscript] = useState<MediaTranscriptResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -285,6 +300,29 @@ export function TranscriptPanel() {
           ) : null}
           {/* Replace preview (XTTS) */}
           <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
+            <fieldset className="panel__actions" style={{ gap: 8, border: '1px dashed rgba(148,163,184,0.35)', padding: 8, borderRadius: 8 }}>
+              <legend className="panel__meta">Voice</legend>
+              <label className="field" aria-label="Borrow voice">
+                <input type="radio" name="voice-mode" checked={voiceMode === 'borrow'} onChange={() => setVoiceMode('borrow')} /> Borrow from selection
+              </label>
+              <label className="field" aria-label="Select XTTS voice">
+                <input
+                  type="radio"
+                  name="voice-mode"
+                  checked={voiceMode === 'select'}
+                  onChange={() => { setVoiceMode('select'); void ensureVoices(); }}
+                />
+                Use XTTS voice:
+              </label>
+              {voiceMode === 'select' ? (
+                <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)} aria-label="XTTS voice" style={{ minWidth: 240 }}>
+                  <option value="">Choose a voice…</option>
+                  {voiceList.map((v) => (
+                    <option key={v.id} value={v.id}>{v.label}</option>
+                  ))}
+                </select>
+              ) : null}
+            </fieldset>
             <label className="field" aria-label="Replace text" style={{ minWidth: 320 }}>
               <span className="field__label">Replace text</span>
               <input type="text" value={replaceText} onChange={(e) => setReplaceText(e.target.value)} placeholder="New line to speak…" />
@@ -302,7 +340,7 @@ export function TranscriptPanel() {
                   setStatus('Generating replace preview…');
                   setError(null);
                   setReplacePreviewUrl(null);
-                  const res = await mediaReplacePreview({ jobId, start: s, end: e, text: replaceText, marginMs: Number(regionMargin) * 1000 });
+                  const res = await mediaReplacePreview({ jobId, start: s, end: e, text: replaceText, marginMs: Number(regionMargin) * 1000, voice: voiceMode === 'select' && voiceId ? voiceId : undefined });
                   setReplacePreviewUrl(res.preview_url);
                   const se = res.stats?.synth_elapsed;
                   if (typeof se === 'number') {
