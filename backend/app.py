@@ -159,7 +159,7 @@ def _transcribe_faster_whisper(audio_wav: Path) -> Dict[str, Any]:
         raise PlaygroundError("STT 'faster-whisper' is not available on this host.", status=503)
     # Lazy init model with CPU-friendly defaults
     model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")  # type: ignore[call-arg]
-    segments, info = model.transcribe(str(audio_wav), vad_filter=True)
+    segments, info = model.transcribe(str(audio_wav), vad_filter=True, word_timestamps=True)
     words: List[Dict[str, Any]] = []
     segs: List[Dict[str, Any]] = []
     for seg in segments:
@@ -226,113 +226,7 @@ def _extract_input_to_wav(temp_src: Path, out_wav: Path, *, start: Optional[floa
     subprocess.run(cmd, check=True)
 
 
-@api.route("/media/transcribe", methods=["POST"])
-def media_transcribe_endpoint():
-    """Transcribe an uploaded media file or a YouTube URL to word timings.
-
-    Accepts either:
-      - multipart/form-data with field: file
-      - application/json: { source: 'youtube', url, start?, end? }
-    """
-    content_type = (request.content_type or "").lower()
-    job_id = uuid.uuid4().hex[:12]
-    job_dir = _media_job_dir(job_id)
-    input_path: Optional[Path] = None
-    try:
-        if content_type.startswith("multipart/form-data"):
-            up = request.files.get("file")
-            if not up or not up.filename:
-                raise PlaygroundError("No file uploaded.", status=400)
-            suffix = Path(up.filename).suffix or ".wav"
-            input_path = job_dir / f"source{suffix}"
-            up.save(str(input_path))
-        else:
-            payload = parse_json_request()
-            source = str(payload.get("source") or "").strip().lower()
-            if source != "youtube":
-                raise PlaygroundError("Provide multipart 'file' upload or JSON { source: 'youtube', url }.", status=400)
-            url = str(payload.get("url") or "").strip()
-            if not url:
-                raise PlaygroundError("Field 'url' is required for YouTube source.", status=400)
-            if not _have_tool("yt-dlp"):
-                raise PlaygroundError("yt-dlp is required for YouTube imports. Install 'yt-dlp' and try again.", status=503)
-            temp_base = job_dir / f"yt-{uuid.uuid4().hex}"
-            out_tmpl = f"{temp_base}.%(ext)s"
-            cmd = [
-                "yt-dlp",
-                "-f",
-                "bestaudio/best",
-                "--sleep-requests",
-                "1",
-                "--retry-sleep",
-                "2",
-                "--retries",
-                "3",
-                "-o",
-                out_tmpl,
-            ]
-            try:
-                if YT_DLP_COOKIES_PATH.exists():
-                    cmd += ["--cookies", str(YT_DLP_COOKIES_PATH)]
-            except Exception:
-                pass
-            if YT_DLP_EXTRACTOR_ARGS.strip():
-                cmd += ["--extractor-args", YT_DLP_EXTRACTOR_ARGS.strip()]
-            cmd.append(url)
-            subprocess.run(cmd, check=True)
-            # Pick best of produced files
-            candidates = list(job_dir.glob(f"{temp_base.name}.*"))
-            if not candidates:
-                raise PlaygroundError("yt-dlp did not produce an output file.", status=500)
-            pref_order = [".m4a", ".mp3", ".webm", ".opus", ".ogg"]
-            best = None
-            for ext in pref_order:
-                for c in candidates:
-                    if c.suffix.lower() == ext:
-                        best = c
-                        break
-                if best:
-                    break
-            input_path = best or candidates[0]
-
-        if input_path is None:
-            raise PlaygroundError("No input provided.", status=400)
-
-        # Extract/normalise to wav for STT
-        audio_wav = job_dir / "source.wav"
-        _extract_input_to_wav(input_path, audio_wav)
-
-        # STT
-        try:
-            transcript = _transcribe_faster_whisper(audio_wav)
-        except PlaygroundError:
-            if ALLOW_STUB_STT:
-                transcript = _transcribe_stub(audio_wav)
-            else:
-                raise
-
-        # Persist transcript alongside artifacts
-        try:
-            with open(job_dir / "transcript.json", "w", encoding="utf-8") as f:
-                json.dump(transcript, f)
-        except Exception:
-            pass
-
-        rel_audio = (audio_wav.relative_to(OUTPUT_DIR)).as_posix()
-        return jsonify({
-            "jobId": job_id,
-            "media": {
-                "audio_url": f"/audio/{rel_audio}",
-                "duration": transcript.get("duration", 0),
-            },
-            "transcript": transcript,
-        })
-    except PlaygroundError:
-        raise
-    except subprocess.CalledProcessError as exc:
-        raise PlaygroundError(f"Media processing failed: {exc}", status=500)
-    except Exception as exc:  # pragma: no cover
-        raise PlaygroundError(f"Unexpected error: {exc}", status=500)
+    
 
 
 # ---------------------------------------------------------------------------
@@ -2168,6 +2062,113 @@ def handle_generic_error(err: Exception):  # pragma: no cover
     return make_response(jsonify(payload), 500)
 
 
+@api.route("/media/transcribe", methods=["POST"])
+def media_transcribe_endpoint():
+    """Transcribe an uploaded media file or a YouTube URL to word timings.
+
+    Accepts either:
+      - multipart/form-data with field: file
+      - application/json: { source: 'youtube', url, start?, end? }
+    """
+    content_type = (request.content_type or "").lower()
+    job_id = uuid.uuid4().hex[:12]
+    job_dir = _media_job_dir(job_id)
+    input_path: Optional[Path] = None
+    try:
+        if content_type.startswith("multipart/form-data"):
+            up = request.files.get("file")
+            if not up or not up.filename:
+                raise PlaygroundError("No file uploaded.", status=400)
+            suffix = Path(up.filename).suffix or ".wav"
+            input_path = job_dir / f"source{suffix}"
+            up.save(str(input_path))
+        else:
+            payload = parse_json_request()
+            source = str(payload.get("source") or "").strip().lower()
+            if source != "youtube":
+                raise PlaygroundError("Provide multipart 'file' upload or JSON { source: 'youtube', url }.", status=400)
+            url = str(payload.get("url") or "").strip()
+            if not url:
+                raise PlaygroundError("Field 'url' is required for YouTube source.", status=400)
+            if not _have_tool("yt-dlp"):
+                raise PlaygroundError("yt-dlp is required for YouTube imports. Install 'yt-dlp' and try again.", status=503)
+            temp_base = job_dir / f"yt-{uuid.uuid4().hex}"
+            out_tmpl = f"{temp_base}.%(ext)s"
+            cmd = [
+                "yt-dlp",
+                "-f",
+                "bestaudio/best",
+                "--sleep-requests",
+                "1",
+                "--retry-sleep",
+                "2",
+                "--retries",
+                "3",
+                "-o",
+                out_tmpl,
+            ]
+            try:
+                if YT_DLP_COOKIES_PATH.exists():
+                    cmd += ["--cookies", str(YT_DLP_COOKIES_PATH)]
+            except Exception:
+                pass
+            if YT_DLP_EXTRACTOR_ARGS.strip():
+                cmd += ["--extractor-args", YT_DLP_EXTRACTOR_ARGS.strip()]
+            cmd.append(url)
+            subprocess.run(cmd, check=True)
+            # Pick best of produced files
+            candidates = list(job_dir.glob(f"{temp_base.name}.*"))
+            if not candidates:
+                raise PlaygroundError("yt-dlp did not produce an output file.", status=500)
+            pref_order = [".m4a", ".mp3", ".webm", ".opus", ".ogg"]
+            best = None
+            for ext in pref_order:
+                for c in candidates:
+                    if c.suffix.lower() == ext:
+                        best = c
+                        break
+                if best:
+                    break
+            input_path = best or candidates[0]
+
+        if input_path is None:
+            raise PlaygroundError("No input provided.", status=400)
+
+        # Extract/normalise to wav for STT
+        audio_wav = job_dir / "source.wav"
+        _extract_input_to_wav(input_path, audio_wav)
+
+        # STT
+        try:
+            transcript = _transcribe_faster_whisper(audio_wav)
+        except PlaygroundError:
+            if ALLOW_STUB_STT:
+                transcript = _transcribe_stub(audio_wav)
+            else:
+                raise
+
+        # Persist transcript alongside artifacts
+        try:
+            with open(job_dir / "transcript.json", "w", encoding="utf-8") as f:
+                json.dump(transcript, f)
+        except Exception:
+            pass
+
+        rel_audio = (audio_wav.relative_to(OUTPUT_DIR)).as_posix()
+        return jsonify({
+            "jobId": job_id,
+            "media": {
+                "audio_url": f"/audio/{rel_audio}",
+                "duration": transcript.get("duration", 0),
+            },
+            "transcript": transcript,
+        })
+    except PlaygroundError:
+        raise
+    except subprocess.CalledProcessError as exc:
+        raise PlaygroundError(f"Media processing failed: {exc}", status=500)
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"Unexpected error: {exc}", status=500)
 @api.route("/meta", methods=["GET"])
 def meta_endpoint():
     has_model = MODEL_PATH.exists()
