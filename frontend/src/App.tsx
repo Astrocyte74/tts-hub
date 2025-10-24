@@ -15,7 +15,7 @@ import { SettingsPopover } from './components/SettingsPopover';
 import { PresetDialog } from './components/PresetDialog';
 import { InfoDialog } from './components/InfoDialog';
 import { ApiStatusFooter } from './components/ApiStatusFooter';
-import { TranscriptPanel } from './components/TranscriptPanel';
+// Media editor is moved to its own page (#media)
 import { MediaEditorPage } from './pages/MediaEditorPage';
 import { OllamaPanel } from './components/OllamaPanel';
 import { FavoritesManagerDialog } from './components/FavoritesManagerDialog';
@@ -2006,7 +2006,6 @@ function App() {
           </div>
         )}
       </InfoDialog>
-      <TranscriptPanel />
       <ApiStatusFooter meta={metaQuery.data} />
       <OllamaPanel />
       <PresetDialog
