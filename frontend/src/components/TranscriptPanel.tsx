@@ -23,6 +23,10 @@ export function TranscriptPanel() {
   const [avgRtf, setAvgRtf] = useState<{ full: number; region: number; transcribe: number }>({ full: 5, region: 5, transcribe: 10 });
   const progressTimer = useRef<number | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
+  // Word selection state (drag to select)
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selStartIdx, setSelStartIdx] = useState<number | null>(null);
+  const [selEndIdx, setSelEndIdx] = useState<number | null>(null);
 
   // Fetch stats for ETA when panel first opens
   async function refreshStats() {
@@ -305,22 +309,75 @@ export function TranscriptPanel() {
           {transcript ? (
             <div>
               <p className="panel__meta">Language: {transcript.language || 'unknown'} · Duration: {transcript.duration?.toFixed?.(1) ?? transcript.duration}s</p>
-              <div role="list" aria-label="Transcript words" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 0' }}>
+              <div
+                role="list"
+                aria-label="Transcript words (drag to select a region)"
+                style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 0', userSelect: 'none' }}
+                onMouseUp={() => setIsSelecting(false)}
+              >
                 {transcript.words?.length ? (
-                  transcript.words.map((w, idx) => (
-                    <span
-                      key={`w-${idx}`}
-                      role="listitem"
-                      title={`t=${w.start.toFixed(2)}–${w.end.toFixed(2)}`}
-                      className="chip"
-                      style={{ background: 'rgba(148,163,184,0.15)', border: '1px solid rgba(148,163,184,0.25)', padding: '3px 6px', borderRadius: 8 }}
-                    >
-                      {w.text}
-                    </span>
-                  ))
+                  transcript.words.map((w, idx) => {
+                    const a = selStartIdx ?? -1;
+                    const b = selEndIdx ?? -1;
+                    const lo = Math.min(a, b);
+                    const hi = Math.max(a, b);
+                    const selected = a !== null && b !== null && idx >= lo && idx <= hi;
+                    return (
+                      <span
+                        key={`w-${idx}`}
+                        role="listitem"
+                        title={`t=${w.start.toFixed(2)}–${w.end.toFixed(2)}`}
+                        className="chip"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setIsSelecting(true);
+                          setSelStartIdx(idx);
+                          setSelEndIdx(idx);
+                          setRegionStart(w.start.toFixed(2));
+                          setRegionEnd(w.end.toFixed(2));
+                        }}
+                        onMouseEnter={() => {
+                          if (isSelecting) {
+                            setSelEndIdx(idx);
+                            const a2 = selStartIdx ?? idx;
+                            const lo2 = Math.min(a2, idx);
+                            const hi2 = Math.max(a2, idx);
+                            const ws = transcript.words.slice(lo2, hi2 + 1);
+                            if (ws.length) {
+                              const s = ws[0].start;
+                              const e = ws[ws.length - 1].end;
+                              setRegionStart(s.toFixed(2));
+                              setRegionEnd(e.toFixed(2));
+                            }
+                          }
+                        }}
+                        style={{
+                          background: selected ? 'rgba(96,165,250,0.35)' : 'rgba(148,163,184,0.15)',
+                          border: selected ? '1px solid rgba(96,165,250,0.8)' : '1px solid rgba(148,163,184,0.25)',
+                          padding: '3px 6px',
+                          borderRadius: 8,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {w.text}
+                      </span>
+                    );
+                  })
                 ) : (
                   <p className="panel__hint panel__hint--muted">No word timings; enable WhisperX later for alignment.</p>
                 )}
+              </div>
+              <div className="panel__actions" style={{ gap: 8 }}>
+                <button
+                  className="panel__button"
+                  type="button"
+                  onClick={() => { setSelStartIdx(null); setSelEndIdx(null); }}
+                >
+                  Clear selection
+                </button>
+                {selStartIdx !== null && selEndIdx !== null ? (
+                  <span className="panel__meta">Selection: {regionStart || '…'}s → {regionEnd || '…'}s</span>
+                ) : null}
               </div>
             </div>
           ) : null}
