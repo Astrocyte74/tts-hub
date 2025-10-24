@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { mediaAlignFull, mediaAlignRegion, mediaApply, mediaGetStats, mediaReplacePreview, mediaTranscribeFromUrl, mediaTranscribeUpload } from '../api/client';
 import type { MediaTranscriptResult } from '../types';
 
@@ -38,10 +38,13 @@ export function TranscriptPanel() {
     }
   }
 
-  if (open && !progressTimer.current) {
-    // opportunistic initial fetch when panel is opened
-    void refreshStats();
-  }
+  // Fetch stats once when panel opens
+  useEffect(() => {
+    if (open) {
+      void refreshStats();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   async function handleTranscribe(kind: 'url' | 'file') {
     try {
