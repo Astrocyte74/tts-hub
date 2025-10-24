@@ -211,6 +211,13 @@ export interface MediaReplacePreviewResponse {
   stats?: { synth_elapsed?: number; fade_ms?: number };
 }
 
+export interface MediaApplyResponse {
+  jobId: string;
+  final_url: string;
+  mode: 'video' | 'audio';
+  container: string;
+}
+
 export interface AuditionAnnouncerConfig {
   enabled: boolean;
   voice?: string | null;

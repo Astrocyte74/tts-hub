@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { mediaAlignFull, mediaAlignRegion, mediaGetStats, mediaReplacePreview, mediaTranscribeFromUrl, mediaTranscribeUpload } from '../api/client';
+import { mediaAlignFull, mediaAlignRegion, mediaApply, mediaGetStats, mediaReplacePreview, mediaTranscribeFromUrl, mediaTranscribeUpload } from '../api/client';
 import type { MediaTranscriptResult } from '../types';
 
 export function TranscriptPanel() {
@@ -17,6 +17,7 @@ export function TranscriptPanel() {
   const [regionMargin, setRegionMargin] = useState<string>('0.75');
   const [replaceText, setReplaceText] = useState<string>('');
   const [replacePreviewUrl, setReplacePreviewUrl] = useState<string | null>(null);
+  const [finalUrl, setFinalUrl] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<MediaTranscriptResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [avgRtf, setAvgRtf] = useState<{ full: number; region: number; transcribe: number }>({ full: 5, region: 5, transcribe: 10 });
@@ -262,6 +263,37 @@ export function TranscriptPanel() {
             <div>
               <p className="panel__meta">Preview with replacement applied</p>
               <audio controls src={replacePreviewUrl} style={{ width: '100%' }} />
+              <div className="panel__actions" style={{ gap: 8, marginTop: 8 }}>
+                <button
+                  className="panel__button panel__button--primary"
+                  type="button"
+                  disabled={busy || !jobId}
+                  onClick={async () => {
+                    if (!jobId) { setError('Transcribe first'); return; }
+                    try {
+                      setBusy(true);
+                      setStatus('Applying preview to final output…');
+                      const res = await mediaApply(jobId);
+                      setFinalUrl(res.final_url);
+                      setStatus(`Applied to ${res.mode === 'video' ? 'video' : 'audio'} (${res.container})`);
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Apply failed');
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  {busy ? 'Working…' : 'Apply to video'}
+                </button>
+              </div>
+              {finalUrl ? (
+                <div style={{ marginTop: 8 }}>
+                  <p className="panel__meta">Final output</p>
+                  {/* If video, let browser attempt playback; if not supported, it will offer a download */}
+                  <audio controls src={finalUrl} style={{ width: '100%' }} />
+                  <p className="panel__hint panel__hint--muted">If this is a video container, open it from the Downloads after saving.</p>
+                </div>
+              ) : null}
             </div>
           ) : null}
           {audioUrl ? (

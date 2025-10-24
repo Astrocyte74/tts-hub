@@ -2322,6 +2322,19 @@ def media_transcribe_endpoint():
         if input_path is None:
             raise PlaygroundError("No input provided.", status=400)
 
+        # Persist job meta about original input
+        try:
+            meta = {
+                "input_path": str(input_path),
+                "has_video": str(input_path).lower().endswith((
+                    '.mp4', '.mkv', '.mov', '.avi', '.webm', '.m4v'
+                )),
+            }
+            with open(job_dir / "job_meta.json", "w", encoding="utf-8") as f:
+                json.dump(meta, f)
+        except Exception:
+            pass
+
         # Extract/normalise to wav for STT
         audio_wav = job_dir / "source.wav"
         _extract_input_to_wav(input_path, audio_wav)
@@ -2683,6 +2696,22 @@ def media_replace_preview_endpoint():
     diff[i0:i1] = preview[i0:i1] - src[i0:i1]
     sf.write(diff_path, diff, sr)
 
+    # Update latest symlinks for apply step
+    try:
+        latest = job_dir / "latest_preview.wav"
+        if latest.exists() or latest.is_symlink():
+            try:
+                latest.unlink()
+            except OSError:
+                pass
+        try:
+            latest.symlink_to(preview_path)
+        except Exception:
+            # fallback: copy
+            sf.write(latest, preview, sr)
+    except Exception:
+        pass
+
     rel_prev = (preview_path.relative_to(OUTPUT_DIR)).as_posix()
     rel_diff = (diff_path.relative_to(OUTPUT_DIR)).as_posix()
     _log(f"Replace preview: job={job_id} region=({start:.2f}-{end:.2f}) synth={elapsed_synth:.2f}s preview='{rel_prev}'")
@@ -2692,6 +2721,63 @@ def media_replace_preview_endpoint():
         'diff_url': f"/audio/{rel_diff}",
         'stats': { 'synth_elapsed': elapsed_synth, 'fade_ms': fade_ms }
     })
+
+
+@api.route("/media/apply", methods=["POST"])
+def media_apply_endpoint():
+    """Mux the latest preview audio back into the original container (video if available).
+
+    Body: { jobId, format? }
+    Returns: { jobId, final_url, mode: 'video'|'audio', container: string }
+    """
+    payload = parse_json_request()
+    job_id = str(payload.get('jobId') or '').strip()
+    if not job_id:
+        raise PlaygroundError("Field 'jobId' is required.", status=400)
+    job_dir = _media_job_dir(job_id)
+    latest = job_dir / 'latest_preview.wav'
+    if not latest.exists():
+        raise PlaygroundError("No preview found for this job. Generate a replace preview first.", status=400)
+    fmt = str(payload.get('format') or '').lower()
+
+    # Read job meta
+    has_video = False
+    src_path: Optional[Path] = None
+    meta_path = job_dir / 'job_meta.json'
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding='utf-8'))
+            src_path = Path(str(meta.get('input_path') or '')) if meta.get('input_path') else None
+            has_video = bool(meta.get('has_video'))
+        except Exception:
+            pass
+
+    if has_video and src_path and src_path.exists():
+        # Produce final video with original video stream and preview audio
+        ext = src_path.suffix.lower() or '.mp4'
+        out_ext = f".{fmt}" if fmt in {'mp4','mkv','mov','webm'} else ext
+        final_path = job_dir / f"final{out_ext}"
+        cmd = [
+            'ffmpeg','-y',
+            '-i', str(src_path),
+            '-i', str(latest),
+            '-map','0:v:0','-map','1:a:0',
+            '-c:v','copy','-shortest',
+            str(final_path)
+        ]
+        _log(f"Apply: mux video src='{src_path}' audio='{latest}' out='{final_path}'")
+        subprocess.run(cmd, check=True)
+        rel = (final_path.relative_to(OUTPUT_DIR)).as_posix()
+        return jsonify({'jobId': job_id, 'final_url': f"/audio/{rel}", 'mode': 'video', 'container': out_ext.lstrip('.')})
+    else:
+        # Audio-only final
+        final_path = job_dir / 'final.wav'
+        # Copy latest to final
+        audio, sr = _load_wav_mono(latest, target_sr=None)
+        sf.write(final_path, audio, sr)
+        rel = (final_path.relative_to(OUTPUT_DIR)).as_posix()
+        _log(f"Apply: audio-only final='{final_path}'")
+        return jsonify({'jobId': job_id, 'final_url': f"/audio/{rel}", 'mode': 'audio', 'container': 'wav'})
 @api.route("/meta", methods=["GET"])
 def meta_endpoint():
     has_model = MODEL_PATH.exists()
