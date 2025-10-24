@@ -141,9 +141,6 @@ function App() {
   const [results, setResults] = useState<SynthesisResult[]>([]);
   const [isResultsDrawerOpen, setResultsDrawerOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
-  if (mediaMode) {
-    return <MediaEditorPage />;
-  }
   type QueueItem = {
     id: string;
     label: string;
@@ -1559,6 +1556,10 @@ function App() {
       setActivePanel('results');
     }
   }, [queue, autoOpenClips, results.length, setActivePanel]);
+
+  if (mediaMode) {
+    return <MediaEditorPage />;
+  }
 
   return (
     <div className="app">
