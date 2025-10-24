@@ -7,6 +7,7 @@ export function TranscriptPanel() {
   const [url, setUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -20,6 +21,7 @@ export function TranscriptPanel() {
   async function handleTranscribe(kind: 'url' | 'file') {
     try {
       setBusy(true);
+      setStatus(kind === 'url' ? 'Transcribing URL with faster‑whisper…' : 'Transcribing file with faster‑whisper…');
       setError(null);
       setTranscript(null);
       setAudioUrl(null);
@@ -48,6 +50,26 @@ export function TranscriptPanel() {
       setError(err instanceof Error ? err.message : 'Transcription failed');
     } finally {
       setBusy(false);
+      setStatus('');
+    }
+  }
+
+  async function handleAlignFull() {
+    if (!jobId) {
+      setError('Transcribe first to create a job');
+      return;
+    }
+    try {
+      setBusy(true);
+      setStatus('Aligning full transcript with WhisperX…');
+      setError(null);
+      const res = await mediaAlignFull(jobId);
+      setTranscript(res.transcript);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Alignment failed');
+    } finally {
+      setBusy(false);
+      setStatus('');
     }
   }
 
@@ -76,6 +98,7 @@ export function TranscriptPanel() {
             <button className="panel__button" type="button" disabled={busy} onClick={() => handleTranscribe('file')}>Transcribe File</button>
           </div>
           {error ? <p className="panel__hint panel__hint--warning">{error}</p> : null}
+          {status ? <p className="panel__hint panel__hint--notice" aria-live="polite">{status}</p> : null}
           {whisperxEnabled ? (
             <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
               <button className="panel__button" type="button" disabled={busy || !jobId} onClick={handleAlignFull}>
@@ -105,6 +128,7 @@ export function TranscriptPanel() {
                   if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Enter start/end seconds (end > start)'); return; }
                   try {
                     setBusy(true);
+                    setStatus(`Aligning region ${s.toFixed(2)}–${e.toFixed(2)}s with WhisperX…`);
                     setError(null);
                     const res = await mediaAlignRegion(jobId, s, e, Number.isFinite(m) ? m : undefined);
                     setTranscript(res.transcript);
@@ -112,6 +136,7 @@ export function TranscriptPanel() {
                     setError(err instanceof Error ? err.message : 'Region alignment failed');
                   } finally {
                     setBusy(false);
+                    setStatus('');
                   }
                 }}
               >
@@ -149,19 +174,3 @@ export function TranscriptPanel() {
     </div>
   );
 }
-  async function handleAlignFull() {
-    if (!jobId) {
-      setError('Transcribe first to create a job');
-      return;
-    }
-    try {
-      setBusy(true);
-      setError(null);
-      const res = await mediaAlignFull(jobId);
-      setTranscript(res.transcript);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Alignment failed');
-    } finally {
-      setBusy(false);
-    }
-  }

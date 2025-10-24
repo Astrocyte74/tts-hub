@@ -164,11 +164,16 @@ def _ffprobe_duration_seconds(path: Path) -> float:
         return 0.0
 
 
+def _log(msg: str) -> None:
+    print(f"[media] {msg}")
+
+
 def _transcribe_faster_whisper(audio_wav: Path) -> Dict[str, Any]:
     if not _have_faster_whisper or WhisperModel is None:  # type: ignore[name-defined]
         raise PlaygroundError("STT 'faster-whisper' is not available on this host.", status=503)
     # Lazy init model with CPU-friendly defaults
     model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")  # type: ignore[call-arg]
+    _log(f"STT faster-whisper: transcribing wav='{audio_wav}'")
     segments, info = model.transcribe(str(audio_wav), vad_filter=True, word_timestamps=True)
     words: List[Dict[str, Any]] = []
     segs: List[Dict[str, Any]] = []
@@ -182,12 +187,14 @@ def _transcribe_faster_whisper(audio_wav: Path) -> Dict[str, Any]:
                     "end": float(w.end or 0),
                     "confidence": float(getattr(w, "probability", 0) or 0),
                 })
-    return {
+    result = {
         "language": getattr(info, "language", "unknown"),
         "duration": _ffprobe_duration_seconds(audio_wav),
         "segments": segs,
         "words": words,
     }
+    _log(f"STT faster-whisper: done lang={result['language']} segs={len(segs)} words={len(words)}")
+    return result
 
 
 def _transcribe_stub(audio_wav: Path) -> Dict[str, Any]:
@@ -291,6 +298,7 @@ def _extract_input_to_wav(temp_src: Path, out_wav: Path, *, start: Optional[floa
         "24000",
         str(out_wav),
     ]
+    _log(f"ffmpeg normalize->wav: src='{temp_src}' out='{out_wav}' ss={start} to={end}")
     subprocess.run(cmd, check=True)
 
 
@@ -2158,46 +2166,64 @@ def media_transcribe_endpoint():
             url = str(payload.get("url") or "").strip()
             if not url:
                 raise PlaygroundError("Field 'url' is required for YouTube source.", status=400)
-            if not _have_tool("yt-dlp"):
+            # Simple cache for YouTube audio to avoid repeated downloads / 429s
+            def _yt_id(u: str) -> Optional[str]:
+                try:
+                    m = re.search(r"(?:v=|youtu\.be/|shorts/)([A-Za-z0-9_-]{6,})", u)
+                    return m.group(1) if m else None
+                except Exception:
+                    return None
+            vid = _yt_id(url)
+            cache_dir = OUTPUT_DIR / "media_cache" / "youtube"
+            cache_path: Optional[Path] = None
+            if vid:
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                candidates = list(cache_dir.glob(f"{vid}.*"))
+                if candidates:
+                    cache_path = max(candidates, key=lambda p: p.stat().st_size)
+                    _log(f"YouTube cache hit id={vid} path='{cache_path}'")
+            if not _have_tool("yt-dlp") and not cache_path:
                 raise PlaygroundError("yt-dlp is required for YouTube imports. Install 'yt-dlp' and try again.", status=503)
-            temp_base = job_dir / f"yt-{uuid.uuid4().hex}"
-            out_tmpl = f"{temp_base}.%(ext)s"
-            cmd = [
-                "yt-dlp",
-                "-f",
-                "bestaudio/best",
-                "--sleep-requests",
-                "1",
-                "--retry-sleep",
-                "2",
-                "--retries",
-                "3",
-                "-o",
-                out_tmpl,
-            ]
-            try:
-                if YT_DLP_COOKIES_PATH.exists():
-                    cmd += ["--cookies", str(YT_DLP_COOKIES_PATH)]
-            except Exception:
-                pass
-            if YT_DLP_EXTRACTOR_ARGS.strip():
-                cmd += ["--extractor-args", YT_DLP_EXTRACTOR_ARGS.strip()]
-            cmd.append(url)
-            subprocess.run(cmd, check=True)
-            # Pick best of produced files
-            candidates = list(job_dir.glob(f"{temp_base.name}.*"))
-            if not candidates:
-                raise PlaygroundError("yt-dlp did not produce an output file.", status=500)
-            pref_order = [".m4a", ".mp3", ".webm", ".opus", ".ogg"]
-            best = None
-            for ext in pref_order:
-                for c in candidates:
-                    if c.suffix.lower() == ext:
-                        best = c
+            if cache_path is None:
+                temp_base = cache_dir / (vid or f"yt-{uuid.uuid4().hex}")
+                out_tmpl = f"{temp_base}.%(ext)s"
+                cmd = [
+                    "yt-dlp",
+                    "-f",
+                    "bestaudio/best",
+                    "--sleep-requests",
+                    "1",
+                    "--retry-sleep",
+                    "2",
+                    "--retries",
+                    "3",
+                    "-o",
+                    out_tmpl,
+                ]
+                try:
+                    if YT_DLP_COOKIES_PATH.exists():
+                        cmd += ["--cookies", str(YT_DLP_COOKIES_PATH)]
+                except Exception:
+                    pass
+                if YT_DLP_EXTRACTOR_ARGS.strip():
+                    cmd += ["--extractor-args", YT_DLP_EXTRACTOR_ARGS.strip()]
+                cmd.append(url)
+                _log(f"yt-dlp download: url='{url}' out='{out_tmpl}'")
+                subprocess.run(cmd, check=True)
+                candidates = list(cache_dir.glob(f"{(vid or temp_base.name)}.*"))
+                if not candidates:
+                    raise PlaygroundError("yt-dlp did not produce an output file.", status=500)
+                pref_order = [".m4a", ".mp3", ".webm", ".opus", ".ogg"]
+                best = None
+                for ext in pref_order:
+                    for c in candidates:
+                        if c.suffix.lower() == ext:
+                            best = c
+                            break
+                    if best:
                         break
-                if best:
-                    break
-            input_path = best or candidates[0]
+                cache_path = best or candidates[0]
+            input_path = cache_path
 
         if input_path is None:
             raise PlaygroundError("No input provided.", status=400)
@@ -2223,6 +2249,7 @@ def media_transcribe_endpoint():
             pass
 
         rel_audio = (audio_wav.relative_to(OUTPUT_DIR)).as_posix()
+        _log(f"Transcribe done job={job_id} duration={transcript.get('duration', 0):.2f}s")
         return jsonify({
             "jobId": job_id,
             "media": {
@@ -2316,13 +2343,16 @@ def media_align_region_endpoint():
 
     # Build text for the region from existing segments/words
     words = transcript.get("words") or []
-    if words:
+    def _is_timed_word(obj: Any) -> bool:
+        return isinstance(obj, dict) and ("start" in obj) and ("end" in obj)
+    region_text = ""
+    if words and all(_is_timed_word(w) for w in words):
         region_words = [
             w for w in words
             if float(w.get("end", 0)) > region_start and float(w.get("start", 0)) < region_end
         ]
-        region_text = " ".join(str(w.get("text") or "").strip() for w in region_words).strip()
-    else:
+        region_text = " ".join(str((w.get("text") or w.get("word") or "")).strip()) for w in region_words).strip()
+    if not region_text:
         segs = transcript.get("segments") or []
         region_segs = [
             s for s in segs
@@ -2363,7 +2393,17 @@ def media_align_region_endpoint():
             })
     # Merge new words into transcript, replacing overlap area
     existing = transcript.get("words") or []
-    kept = [w for w in existing if not (float(w.get("end", 0)) > region_start and float(w.get("start", 0)) < region_end)]
+    kept: List[Dict[str, Any]] = []
+    for w in existing:
+        if not _is_timed_word(w):
+            continue
+        if not (float(w.get("end", 0)) > region_start and float(w.get("start", 0)) < region_end):
+            kept.append({
+                "text": str((w.get("text") or w.get("word") or "")).strip(),
+                "start": float(w.get("start") or 0),
+                "end": float(w.get("end") or 0),
+                "confidence": float(w.get("confidence") or w.get("score") or 0),
+            })
     merged = kept + new_words
     merged.sort(key=lambda w: float(w.get("start", 0)))
     transcript["words"] = merged
@@ -2375,6 +2415,7 @@ def media_align_region_endpoint():
     except Exception:
         pass
 
+    _log(f"WhisperX region align: job={job_id} request=({start:.2f}-{end:.2f}s, margin={margin_s:.2f}) used=({region_start:.2f}-{region_end:.2f}s) words={len(new_words)}")
     rel_audio = (audio_wav.relative_to(OUTPUT_DIR)).as_posix()
     return jsonify({
         "jobId": job_id,
