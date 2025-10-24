@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 import random
 import re
+import time
 
 import numpy as np
 import soundfile as sf
@@ -168,12 +169,32 @@ def _log(msg: str) -> None:
     print(f"[media] {msg}")
 
 
+def _record_stat(kind: str, sample: Dict[str, Any]) -> None:
+    """Append a small stat sample to out/media_stats.json (kept to last 100 entries per kind)."""
+    stats_path = OUTPUT_DIR / "media_stats.json"
+    try:
+        data: Dict[str, Any] = {}
+        if stats_path.exists():
+            data = json.loads(stats_path.read_text(encoding="utf-8"))
+        if kind not in data or not isinstance(data.get(kind), list):
+            data[kind] = []
+        data[kind].append(sample)
+        # Keep bounded history
+        if len(data[kind]) > 100:
+            data[kind] = data[kind][-100:]
+        stats_path.parent.mkdir(parents=True, exist_ok=True)
+        stats_path.write_text(json.dumps(data), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def _transcribe_faster_whisper(audio_wav: Path) -> Dict[str, Any]:
     if not _have_faster_whisper or WhisperModel is None:  # type: ignore[name-defined]
         raise PlaygroundError("STT 'faster-whisper' is not available on this host.", status=503)
     # Lazy init model with CPU-friendly defaults
     model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")  # type: ignore[call-arg]
     _log(f"STT faster-whisper: transcribing wav='{audio_wav}'")
+    t0 = time.time()
     segments, info = model.transcribe(str(audio_wav), vad_filter=True, word_timestamps=True)
     words: List[Dict[str, Any]] = []
     segs: List[Dict[str, Any]] = []
@@ -187,13 +208,17 @@ def _transcribe_faster_whisper(audio_wav: Path) -> Dict[str, Any]:
                     "end": float(w.end or 0),
                     "confidence": float(getattr(w, "probability", 0) or 0),
                 })
+    elapsed = max(time.time() - t0, 1e-6)
+    dur = _ffprobe_duration_seconds(audio_wav)
+    rtf = (dur / elapsed) if elapsed > 0 else 0
     result = {
         "language": getattr(info, "language", "unknown"),
-        "duration": _ffprobe_duration_seconds(audio_wav),
+        "duration": dur,
         "segments": segs,
         "words": words,
+        "stats": {"elapsed": elapsed, "rtf": rtf, "segments": len(segs), "words": len(words)},
     }
-    _log(f"STT faster-whisper: done lang={result['language']} segs={len(segs)} words={len(words)}")
+    _log(f"STT faster-whisper: done lang={result['language']} segs={len(segs)} words={len(words)} elapsed={elapsed:.2f}s rtf={rtf:.2f}x")
     return result
 
 
@@ -2249,7 +2274,22 @@ def media_transcribe_endpoint():
             pass
 
         rel_audio = (audio_wav.relative_to(OUTPUT_DIR)).as_posix()
-        _log(f"Transcribe done job={job_id} duration={transcript.get('duration', 0):.2f}s")
+        # Record/log stats
+        stats = transcript.get("stats") or {}
+        try:
+            _record_stat("transcribe", {
+                "jobId": job_id,
+                "duration": float(transcript.get("duration", 0) or 0),
+                "elapsed": float(stats.get("elapsed", 0) or 0),
+                "rtf": float(stats.get("rtf", 0) or 0),
+                "language": transcript.get("language", "unknown"),
+                "words": int(stats.get("words", len(transcript.get("words", []) or []))),
+                "segments": int(stats.get("segments", len(transcript.get("segments", []) or []))),
+                "ts": time.time(),
+            })
+        except Exception:
+            pass
+        _log(f"Transcribe done job={job_id} duration={transcript.get('duration', 0):.2f}s elapsed={stats.get('elapsed', 0):.2f}s rtf={stats.get('rtf', 0):.2f}x")
         return jsonify({
             "jobId": job_id,
             "media": {
@@ -2287,7 +2327,9 @@ def media_align_endpoint():
     # Load transcript
     transcript = json.loads(tx_path.read_text(encoding="utf-8"))
     # Align
+    t0 = time.time()
     aligned = _whisperx_align_full(audio_wav, transcript)
+    elapsed = max(time.time() - t0, 0.0)
     # Persist
     try:
         with open(tx_path, "w", encoding="utf-8") as f:
@@ -2295,10 +2337,15 @@ def media_align_endpoint():
     except Exception:
         pass
     rel_audio = (audio_wav.relative_to(OUTPUT_DIR)).as_posix()
+    try:
+        _record_stat("align_full", {"jobId": job_id, "elapsed": elapsed, "duration": float(aligned.get("duration", 0) or 0), "words": len(aligned.get("words", []) or []), "ts": time.time()})
+    except Exception:
+        pass
     return jsonify({
         "jobId": job_id,
         "media": {"audio_url": f"/audio/{rel_audio}", "duration": aligned.get("duration", 0)},
         "transcript": aligned,
+        "stats": {"elapsed": elapsed, "words": len(aligned.get("words", []) or [])},
         "whisperx": {"enabled": True}
     })
 
@@ -2380,11 +2427,13 @@ def media_align_region_endpoint():
     # Prepare WhisperX result input with one segment covering region_text
     wx_result = {"language": transcript.get("language", "en"), "segments": [{"text": region_text, "start": 0.0, "end": float(region_end - region_start)}]}
     align_model, metadata = _whisperx_get_align_model(str(transcript.get("language", "en")))
+    t0 = time.time()
     try:
         aligned = whisperx.align(wx_result["segments"], align_model, metadata, str(region_wav), device=WHISPERX_DEVICE, return_char_alignments=False)  # type: ignore[name-defined]
     except Exception as exc:
         _log(f"WhisperX align failed: {exc}")
         raise PlaygroundError(f"WhisperX alignment failed: {exc}", status=500)
+    elapsed = max(time.time() - t0, 0.0)
     new_words: List[Dict[str, Any]] = []
     for seg in aligned.get("segments", []):
         for w in seg.get("words", []) or []:
@@ -2422,13 +2471,18 @@ def media_align_region_endpoint():
     except Exception:
         pass
 
-    _log(f"WhisperX region align: job={job_id} request=({start:.2f}-{end:.2f}s, margin={margin_s:.2f}) used=({region_start:.2f}-{region_end:.2f}s) words={len(new_words)}")
+    _log(f"WhisperX region align: job={job_id} request=({start:.2f}-{end:.2f}s, margin={margin_s:.2f}) used=({region_start:.2f}-{region_end:.2f}s) words={len(new_words)} elapsed={elapsed:.2f}s rtf={(region_end-region_start)/max(elapsed,1e-6):.2f}x")
     rel_audio = (audio_wav.relative_to(OUTPUT_DIR)).as_posix()
+    try:
+        _record_stat("align_region", {"jobId": job_id, "elapsed": elapsed, "region": {"start": start, "end": end, "used": {"start": region_start, "end": region_end}}, "words": len(new_words), "duration": float(region_end-region_start), "rtf": (region_end-region_start)/max(elapsed,1e-6), "ts": time.time()})
+    except Exception:
+        pass
     return jsonify({
         "jobId": job_id,
         "region": {"start": start, "end": end, "margin": margin_s, "used": {"start": region_start, "end": region_end}},
         "media": {"audio_url": f"/audio/{rel_audio}", "duration": duration},
         "transcript": transcript,
+        "stats": {"elapsed": elapsed, "rtf": (region_end-region_start)/max(elapsed,1e-6), "words": len(new_words)},
         "whisperx": {"enabled": True}
     })
 @api.route("/meta", methods=["GET"])

@@ -193,6 +193,7 @@ export interface MediaTranscribeResponse {
   media: { audio_url: string; duration: number };
   transcript: MediaTranscriptResult;
   whisperx?: { enabled: boolean };
+  stats?: { elapsed?: number; rtf?: number; segments?: number; words?: number };
 }
 
 export interface MediaAlignResponse extends MediaTranscribeResponse {}

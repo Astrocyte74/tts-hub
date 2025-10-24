@@ -35,6 +35,11 @@ export function TranscriptPanel() {
         setAudioUrl(res.media?.audio_url ?? null);
         setJobId(res.jobId);
         setWhisperxEnabled(Boolean(res.whisperx?.enabled));
+        const elapsed = res.transcript?.stats?.elapsed ?? res.stats?.elapsed;
+        const rtf = res.transcript?.stats?.rtf ?? res.stats?.rtf;
+        if (typeof elapsed === 'number' && typeof rtf === 'number') {
+          setStatus(`Transcribed in ${elapsed.toFixed(2)}s (RTF ${rtf.toFixed(2)}×)`);
+        }
       } else {
         if (!file) {
           setError('Choose a media file to upload');
@@ -45,6 +50,11 @@ export function TranscriptPanel() {
         setAudioUrl(res.media?.audio_url ?? null);
         setJobId(res.jobId);
         setWhisperxEnabled(Boolean(res.whisperx?.enabled));
+        const elapsed = res.transcript?.stats?.elapsed ?? res.stats?.elapsed;
+        const rtf = res.transcript?.stats?.rtf ?? res.stats?.rtf;
+        if (typeof elapsed === 'number' && typeof rtf === 'number') {
+          setStatus(`Transcribed in ${elapsed.toFixed(2)}s (RTF ${rtf.toFixed(2)}×)`);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Transcription failed');
@@ -65,6 +75,11 @@ export function TranscriptPanel() {
       setError(null);
       const res = await mediaAlignFull(jobId);
       setTranscript(res.transcript);
+      const elapsed = res.stats?.elapsed;
+      if (typeof elapsed === 'number') {
+        const words = res.stats?.words ?? res.transcript?.words?.length ?? 0;
+        setStatus(`Aligned full transcript in ${elapsed.toFixed(2)}s (words ${words})`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Alignment failed');
     } finally {
@@ -136,6 +151,12 @@ export function TranscriptPanel() {
                     setError(null);
                     const res = await mediaAlignRegion(jobId, s, e, Number.isFinite(m) ? m : undefined);
                     setTranscript(res.transcript);
+                    const elapsed = res.stats?.elapsed;
+                    const rtf = res.stats?.rtf;
+                    const words = res.stats?.words ?? 0;
+                    if (typeof elapsed === 'number' && typeof rtf === 'number') {
+                      setStatus(`Aligned ${words} words in ${elapsed.toFixed(2)}s (RTF ${rtf.toFixed(2)}×)`);
+                    }
                   } catch (err) {
                     setError(err instanceof Error ? err.message : 'Region alignment failed');
                   } finally {
