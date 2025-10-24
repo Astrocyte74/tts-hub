@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { mediaTranscribeFromUrl, mediaTranscribeUpload } from '../api/client';
+import { mediaAlignFull, mediaTranscribeFromUrl, mediaTranscribeUpload } from '../api/client';
 import type { MediaTranscriptResult } from '../types';
 
 export function TranscriptPanel() {
@@ -9,6 +9,8 @@ export function TranscriptPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [whisperxEnabled, setWhisperxEnabled] = useState<boolean>(false);
   const [transcript, setTranscript] = useState<MediaTranscriptResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -26,6 +28,8 @@ export function TranscriptPanel() {
         const res = await mediaTranscribeFromUrl(url.trim());
         setTranscript(res.transcript);
         setAudioUrl(res.media?.audio_url ?? null);
+        setJobId(res.jobId);
+        setWhisperxEnabled(Boolean(res.whisperx?.enabled));
       } else {
         if (!file) {
           setError('Choose a media file to upload');
@@ -34,6 +38,8 @@ export function TranscriptPanel() {
         const res = await mediaTranscribeUpload(file);
         setTranscript(res.transcript);
         setAudioUrl(res.media?.audio_url ?? null);
+        setJobId(res.jobId);
+        setWhisperxEnabled(Boolean(res.whisperx?.enabled));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Transcription failed');
@@ -67,6 +73,14 @@ export function TranscriptPanel() {
             <button className="panel__button" type="button" disabled={busy} onClick={() => handleTranscribe('file')}>Transcribe File</button>
           </div>
           {error ? <p className="panel__hint panel__hint--warning">{error}</p> : null}
+          {whisperxEnabled ? (
+            <div className="panel__actions" style={{ gap: 8 }}>
+              <button className="panel__button" type="button" disabled={busy || !jobId} onClick={handleAlignFull}>
+                {busy ? 'Aligning…' : 'Refine timings (WhisperX)'}
+              </button>
+              {!jobId ? <p className="panel__hint panel__hint--muted">Transcribe first to create a job.</p> : null}
+            </div>
+          ) : null}
           {audioUrl ? (
             <audio controls src={audioUrl} style={{ width: '100%' }} />
           ) : null}
@@ -97,4 +111,19 @@ export function TranscriptPanel() {
     </div>
   );
 }
-
+  async function handleAlignFull() {
+    if (!jobId) {
+      setError('Transcribe first to create a job');
+      return;
+    }
+    try {
+      setBusy(true);
+      setError(null);
+      const res = await mediaAlignFull(jobId);
+      setTranscript(res.transcript);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Alignment failed');
+    } finally {
+      setBusy(false);
+    }
+  }

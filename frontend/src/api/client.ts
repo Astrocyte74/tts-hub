@@ -12,6 +12,7 @@ import type {
   VoiceCatalogue,
   GlobalProfile,
   MediaTranscribeResponse,
+  MediaAlignResponse,
 } from '../types';
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
@@ -429,6 +430,10 @@ export async function mediaTranscribeUpload(file: File): Promise<MediaTranscribe
     throw new Error(`POST media/transcribe (upload) failed (${res.status}): ${text}`);
   }
   return (await res.json()) as MediaTranscribeResponse;
+}
+
+export async function mediaAlignFull(jobId: string): Promise<MediaAlignResponse> {
+  return postJson<MediaAlignResponse>('media/align', { jobId });
 }
 
 export async function getXttsCustomVoice(id: string): Promise<Record<string, unknown>> {

@@ -192,7 +192,10 @@ export interface MediaTranscribeResponse {
   jobId: string;
   media: { audio_url: string; duration: number };
   transcript: MediaTranscriptResult;
+  whisperx?: { enabled: boolean };
 }
+
+export interface MediaAlignResponse extends MediaTranscribeResponse {}
 
 export interface AuditionAnnouncerConfig {
   enabled: boolean;

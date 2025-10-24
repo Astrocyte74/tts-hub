@@ -71,12 +71,22 @@ XTTS_MAX_REF_SECONDS = float(os.environ.get("XTTS_MAX_REF_SECONDS", "30"))
 # Media edit / STT config
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base").strip()
 ALLOW_STUB_STT = os.environ.get("ALLOW_STUB_STT", "1").strip() not in {"0", "false", "False"}
+WHISPERX_ENABLE = os.environ.get("WHISPERX_ENABLE", "0").strip() in {"1", "true", "True"}
+WHISPERX_DEVICE = os.environ.get("WHISPERX_DEVICE", "mps" if sys.platform == "darwin" else "cpu").strip()
 try:  # Optional STT dependency
     from faster_whisper import WhisperModel  # type: ignore
     _have_faster_whisper = True
 except Exception:  # pragma: no cover
     WhisperModel = None  # type: ignore
     _have_faster_whisper = False
+
+try:  # Optional alignment dependency
+    import whisperx  # type: ignore
+
+    _have_whisperx = True
+except Exception:  # pragma: no cover
+    whisperx = None  # type: ignore
+    _have_whisperx = False
 
 _xtts_voice_cache: Dict[str, Path] = {}
 _xtts_voice_lock = threading.Lock()
@@ -196,6 +206,64 @@ def _transcribe_stub(audio_wav: Path) -> Dict[str, Any]:
         "words": words,
         "note": "STT engine unavailable; returning stub for UI development.",
     }
+
+
+_whisperx_align_cache: Dict[str, Tuple[object, object]] = {}
+
+
+def _whisperx_get_align_model(language: str) -> Tuple[object, object]:
+    if not _have_whisperx or whisperx is None:  # type: ignore[name-defined]
+        raise PlaygroundError("WhisperX is not installed on this host.", status=503)
+    lang = (language or "en").split("-")[0]
+    if lang in _whisperx_align_cache:
+        return _whisperx_align_cache[lang]
+    align_model, metadata = whisperx.load_align_model(
+        language_code=lang,
+        device=WHISPERX_DEVICE,
+    )
+    _whisperx_align_cache[lang] = (align_model, metadata)
+    return align_model, metadata
+
+
+def _whisperx_align_full(audio_wav: Path, transcript: Dict[str, Any]) -> Dict[str, Any]:
+    if not _have_whisperx or whisperx is None:  # type: ignore[name-defined]
+        raise PlaygroundError("WhisperX is not installed on this host.", status=503)
+    language = str(transcript.get("language") or "en")
+    align_model, metadata = _whisperx_get_align_model(language)
+    # Convert to WhisperX format result
+    wx_result: Dict[str, Any] = {
+        "language": language,
+        "segments": [
+            {"text": s.get("text", ""), "start": float(s.get("start", 0.0)), "end": float(s.get("end", 0.0))}
+            for s in transcript.get("segments", [])
+        ],
+    }
+    aligned = whisperx.align(
+        wx_result,
+        align_model,
+        metadata,
+        str(audio_wav),
+        device=WHISPERX_DEVICE,
+        return_char_alignments=False,
+    )
+    # Flatten words across segments
+    words: List[Dict[str, Any]] = []
+    for seg in aligned.get("segments", []):
+        for w in seg.get("words", []) or []:
+            if not isinstance(w, dict):
+                continue
+            words.append(
+                {
+                    "text": str(w.get("word") or w.get("text") or "").strip(),
+                    "start": float(w.get("start") or 0),
+                    "end": float(w.get("end") or 0),
+                    "confidence": float(w.get("score") or 0),
+                }
+            )
+    out = dict(transcript)
+    out["words"] = words
+    out["aligned"] = True
+    return out
 
 
 def _extract_input_to_wav(temp_src: Path, out_wav: Path, *, start: Optional[float] = None, end: Optional[float] = None) -> None:
@@ -2162,6 +2230,7 @@ def media_transcribe_endpoint():
                 "duration": transcript.get("duration", 0),
             },
             "transcript": transcript,
+            "whisperx": {"enabled": bool(WHISPERX_ENABLE and _have_whisperx)}
         })
     except PlaygroundError:
         raise
@@ -2169,6 +2238,42 @@ def media_transcribe_endpoint():
         raise PlaygroundError(f"Media processing failed: {exc}", status=500)
     except Exception as exc:  # pragma: no cover
         raise PlaygroundError(f"Unexpected error: {exc}", status=500)
+
+
+@api.route("/media/align", methods=["POST"])
+def media_align_endpoint():
+    """WhisperX alignment on an existing media job. Currently aligns full transcript.
+
+    Body: { jobId }
+    """
+    if not (WHISPERX_ENABLE and _have_whisperx):
+        raise PlaygroundError("WhisperX alignment is not enabled on this server.", status=503)
+    payload = parse_json_request()
+    job_id = str(payload.get("jobId") or "").strip()
+    if not job_id:
+        raise PlaygroundError("Field 'jobId' is required.", status=400)
+    job_dir = _media_job_dir(job_id)
+    audio_wav = job_dir / "source.wav"
+    tx_path = job_dir / "transcript.json"
+    if not audio_wav.exists() or not tx_path.exists():
+        raise PlaygroundError("Source audio or transcript is missing for this job.", status=404)
+    # Load transcript
+    transcript = json.loads(tx_path.read_text(encoding="utf-8"))
+    # Align
+    aligned = _whisperx_align_full(audio_wav, transcript)
+    # Persist
+    try:
+        with open(tx_path, "w", encoding="utf-8") as f:
+            json.dump(aligned, f)
+    except Exception:
+        pass
+    rel_audio = (audio_wav.relative_to(OUTPUT_DIR)).as_posix()
+    return jsonify({
+        "jobId": job_id,
+        "media": {"audio_url": f"/audio/{rel_audio}", "duration": aligned.get("duration", 0)},
+        "transcript": aligned,
+        "whisperx": {"enabled": True}
+    })
 @api.route("/meta", methods=["GET"])
 def meta_endpoint():
     has_model = MODEL_PATH.exists()

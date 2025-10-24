@@ -18,6 +18,10 @@ Ingestion
 STT + Alignment (local)
 - Transcribe: faster‑whisper (CTranslate2) for Mac‑native speed/CPU.
 - Forced alignment: WhisperX on top of the faster‑whisper transcript for robust word timings.
+- Modes:
+  - Full: refine the entire transcript after first pass (one-time cost; great for multiple edits).
+  - Lazy: refine only the selected region with +/- margin on demand (fastest interactive loop).
+  - Toggle via env: `WHISPERX_ENABLE=1`, runtime UI button available when installed.
 - Optional later: diarization (pyannote) — off by default to avoid heavy deps.
 - Output shape:
   - `{ language, segments: [{text,start,end}], words: [{text,start,end,prob}], speakers? }`.
