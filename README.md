@@ -275,3 +275,7 @@ Notes
 ## Favorites
 
 - The API returns all favorites across engines; clients that want a curated subset (e.g., for a bot) should implement their own filtering.
+
+### YouTube Cookies (yt-dlp)
+
+If YouTube imports intermittently 429 or are age/consent blocked, provide a cookies.txt for yt-dlp. See docs/YOUTUBE_COOKIES.md for steps and server envs (`YT_DLP_COOKIES_PATH`, `YT_DLP_EXTRACTOR_ARGS`).

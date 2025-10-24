@@ -63,6 +63,8 @@ XTTS_OUTPUT_FORMAT = os.environ.get("XTTS_OUTPUT_FORMAT", "wav").lower()
 XTTS_TIMEOUT_SECONDS = float(os.environ.get("XTTS_TIMEOUT", "120"))
 XTTS_SUPPORTED_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg"}
 XTTS_SERVER_URL = os.environ.get("XTTS_SERVER_URL")
+YT_DLP_COOKIES_PATH = Path(os.environ.get("YT_DLP_COOKIES_PATH", str(Path.home() / ".kokoro" / "yt_cookies.txt"))).expanduser()
+YT_DLP_EXTRACTOR_ARGS = os.environ.get("YT_DLP_EXTRACTOR_ARGS", "")
 XTTS_MIN_REF_SECONDS = float(os.environ.get("XTTS_MIN_REF_SECONDS", "5"))
 XTTS_MAX_REF_SECONDS = float(os.environ.get("XTTS_MAX_REF_SECONDS", "30"))
 
@@ -2405,7 +2407,16 @@ def xtts_custom_voice_endpoint():
             # Download best audio to temp (let yt-dlp decide extension)
             temp_base = OUTPUT_DIR / f"yt-{uuid.uuid4().hex}"
             out_tmpl = f"{temp_base}.%(ext)s"
-            cmd = ["yt-dlp", "-f", "bestaudio/best", "-o", out_tmpl, url]
+            cmd = ["yt-dlp", "-f", "bestaudio/best", "--sleep-requests", "1", "--retry-sleep", "2", "--retries", "3", "-o", out_tmpl]
+            # Use cookies if available to reduce 429/age gating
+            try:
+                if YT_DLP_COOKIES_PATH.exists():
+                    cmd += ["--cookies", str(YT_DLP_COOKIES_PATH)]
+            except Exception:
+                pass
+            if YT_DLP_EXTRACTOR_ARGS.strip():
+                cmd += ["--extractor-args", YT_DLP_EXTRACTOR_ARGS.strip()]
+            cmd.append(url)
             try:
                 subprocess.run(cmd, check=True)
             except subprocess.CalledProcessError as exc:
