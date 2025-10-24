@@ -20,6 +20,7 @@ export function TranscriptPanel() {
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<MediaTranscriptResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [avgRtf, setAvgRtf] = useState<{ full: number; region: number; transcribe: number }>({ full: 5, region: 5, transcribe: 10 });
   const progressTimer = useRef<number | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
@@ -27,6 +28,57 @@ export function TranscriptPanel() {
   const [isSelecting, setIsSelecting] = useState(false);
   const [selStartIdx, setSelStartIdx] = useState<number | null>(null);
   const [selEndIdx, setSelEndIdx] = useState<number | null>(null);
+  const [isPreviewingSel, setIsPreviewingSel] = useState(false);
+
+  function clearSelection() {
+    setSelStartIdx(null);
+    setSelEndIdx(null);
+  }
+
+  function updateRegionFromIdxRange(aIdx: number, bIdx: number) {
+    if (!transcript?.words?.length) return;
+    const lo = Math.max(0, Math.min(aIdx, bIdx));
+    const hi = Math.min(transcript.words.length - 1, Math.max(aIdx, bIdx));
+    const ws = transcript.words.slice(lo, hi + 1);
+    if (ws.length) {
+      setRegionStart(ws[0].start.toFixed(2));
+      setRegionEnd(ws[ws.length - 1].end.toFixed(2));
+    }
+  }
+
+  async function previewSelectionOnce() {
+    const start = Number(regionStart);
+    const end = Number(regionEnd);
+    if (!audioRef.current || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
+    const audio = audioRef.current;
+    const stopAt = end - 0.02;
+    const playFrom = () => {
+      try {
+        audio.currentTime = start;
+      } catch { /* ignore seek issues */ }
+      const onTime = () => {
+        if (audio.currentTime >= stopAt) {
+          audio.pause();
+          audio.removeEventListener('timeupdate', onTime);
+          setIsPreviewingSel(false);
+        }
+      };
+      audio.addEventListener('timeupdate', onTime);
+      setIsPreviewingSel(true);
+      void audio.play().catch(() => setIsPreviewingSel(false));
+    };
+    if (Number.isNaN(audio.duration) || audio.readyState < 1) {
+      const onMeta = () => {
+        audio.removeEventListener('loadedmetadata', onMeta);
+        playFrom();
+      };
+      audio.addEventListener('loadedmetadata', onMeta);
+      // force load by (re)assigning src if needed
+      // no-op here because the tag already has src
+    } else {
+      playFrom();
+    }
+  }
 
   // Fetch stats for ETA when panel first opens
   async function refreshStats() {
@@ -304,7 +356,7 @@ export function TranscriptPanel() {
             </div>
           ) : null}
           {audioUrl ? (
-            <audio controls src={audioUrl} style={{ width: '100%' }} />
+            <audio ref={audioRef} controls src={audioUrl} style={{ width: '100%' }} />
           ) : null}
           {transcript ? (
             <div>
@@ -314,6 +366,12 @@ export function TranscriptPanel() {
                 aria-label="Transcript words (drag to select a region)"
                 style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 0', userSelect: 'none' }}
                 onMouseUp={() => setIsSelecting(false)}
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    clearSelection();
+                  }
+                }}
               >
                 {transcript.words?.length ? (
                   transcript.words.map((w, idx) => {
@@ -330,25 +388,31 @@ export function TranscriptPanel() {
                         className="chip"
                         onMouseDown={(e) => {
                           e.preventDefault();
-                          setIsSelecting(true);
+                          if (e.shiftKey && selStartIdx !== null) {
+                            // Extend selection to this word
+                            setSelEndIdx(idx);
+                            updateRegionFromIdxRange(selStartIdx, idx);
+                          } else {
+                            setIsSelecting(true);
+                            setSelStartIdx(idx);
+                            setSelEndIdx(idx);
+                            setRegionStart(w.start.toFixed(2));
+                            setRegionEnd(w.end.toFixed(2));
+                          }
+                        }}
+                        onDoubleClick={(e) => {
+                          e.preventDefault();
                           setSelStartIdx(idx);
                           setSelEndIdx(idx);
                           setRegionStart(w.start.toFixed(2));
                           setRegionEnd(w.end.toFixed(2));
+                          void previewSelectionOnce();
                         }}
                         onMouseEnter={() => {
                           if (isSelecting) {
                             setSelEndIdx(idx);
                             const a2 = selStartIdx ?? idx;
-                            const lo2 = Math.min(a2, idx);
-                            const hi2 = Math.max(a2, idx);
-                            const ws = transcript.words.slice(lo2, hi2 + 1);
-                            if (ws.length) {
-                              const s = ws[0].start;
-                              const e = ws[ws.length - 1].end;
-                              setRegionStart(s.toFixed(2));
-                              setRegionEnd(e.toFixed(2));
-                            }
+                            updateRegionFromIdxRange(a2, idx);
                           }
                         }}
                         style={{
@@ -371,12 +435,17 @@ export function TranscriptPanel() {
                 <button
                   className="panel__button"
                   type="button"
-                  onClick={() => { setSelStartIdx(null); setSelEndIdx(null); }}
+                  onClick={() => { clearSelection(); }}
                 >
                   Clear selection
                 </button>
                 {selStartIdx !== null && selEndIdx !== null ? (
-                  <span className="panel__meta">Selection: {regionStart || '…'}s → {regionEnd || '…'}s</span>
+                  <>
+                    <span className="panel__meta">Selection: {regionStart || '…'}s → {regionEnd || '…'}s</span>
+                    <button className="panel__button" type="button" disabled={!audioUrl || isPreviewingSel} onClick={() => void previewSelectionOnce()}>
+                      {isPreviewingSel ? 'Playing…' : 'Preview selection'}
+                    </button>
+                  </>
                 ) : null}
               </div>
             </div>
