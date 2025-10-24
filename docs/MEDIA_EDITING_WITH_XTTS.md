@@ -62,6 +62,13 @@ Configuration
 - `WHISPERX_ENABLE` — `1` to enable forced alignment; otherwise fallback to segment timings.
 - `DIARIZATION_ENABLE` — optional; off by default.
 
+Backends and fallbacks (planned)
+- `STT_PREFERRED` — `faster-whisper` | `whispercpp` | `auto` (default `auto`).
+- `STT_FALLBACK` — `whispercpp` | `stub` (default `stub`).
+- `WHISPER_CPP_BIN` — path to whisper.cpp CLI (e.g., `~/bin/whisper-cpp`).
+- `WHISPER_CPP_MODEL` — path to .ggml / CoreML model.
+  - Behavior: prefer `faster-whisper`; on failure, try `whisper.cpp`; otherwise stub (if enabled).
+
 Dependencies
 - Required: ffmpeg, yt-dlp, faster‑whisper (CTranslate2 models), numpy.
 - Optional: WhisperX (+ torch), pyannote diarization later; pydub as convenience wrapper (still backed by ffmpeg).
@@ -77,7 +84,27 @@ Phased delivery
 - P3: Full video mux export; temp voice from selection; Favorites integration.
 - P4: Optional diarization; background bed preservation; batch edits and undo stack.
 
+Enhancements under consideration
+- Transcription fallback chain
+  - Configurable preference/fallback (prefer faster‑whisper, fall back to whisper.cpp, then stub for UI dev).
+  - Env knobs: `STT_PREFERRED`, `STT_FALLBACK`, `WHISPER_CPP_BIN`, `WHISPER_CPP_MODEL`.
+
+- Output formats and auditability
+  - Export diff‑only audio (the synthesized replacement clip) per edit.
+  - Export subtitles in `.srt` and JSON (words + timings before/after edits).
+  - Keep an edit audit log: `{ jobId, edits:[{start,end,oldText,newText,voice,params,timestamp}] }`.
+
+- Multi‑language handling
+  - Auto‑detect from STT; pass language to XTTS.
+  - UI override for language token when auto is wrong; persist per job.
+
+- Structured job tree (refine)
+  - `out/media_edits/<jobId>/`
+    - `source.ext`, `source.wav`
+    - `stt/transcript.json`, `stt/subtitles.srt`
+    - `edits/edit-001/selection.json`, `tts.wav`, `tts_fit.wav`, `diff.wav`, `preview.wav`, `log.json`
+    - `final.mp4` (when muxed)
+
 Notes
 - The existing XTTS custom voice creation/management flows are reused for voice borrowing.
 - Queue integration mirrors synthesis jobs; long steps surface progress in the Results drawer.
-
