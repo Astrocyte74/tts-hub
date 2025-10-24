@@ -79,6 +79,20 @@ def macos_open_chrome(user_data_dir: str, url: str) -> None:
         print(f'  Google Chrome --user-data-dir="{user_data_dir}" "{url}"')
         raise
 
+def kill_profile_processes(profile_dir: str) -> None:
+    # Best-effort: kill the Chrome instance started with this --user-data-dir only
+    try:
+        if sys.platform == "darwin":
+            # macOS: match the temp profile; tolerate absence
+            run(["bash", "-lc", f"pgrep -fl 'Google Chrome.*--user-data-dir={profile_dir}' || true"], capture=True)
+            run(["bash", "-lc", f"pkill -f 'Google Chrome.*--user-data-dir={profile_dir}'"], check=False)
+        else:
+            # Linux: try pkill by profile dir arg
+            run(["pkill", "-f", profile_dir], check=False)
+    except Exception:
+        # Non-fatal; directory cleanup may still succeed
+        pass
+
 
 def export_cookies_from_browser(browser: str, profile_dir: str, url: str, cookies_out: str) -> None:
     # Use yt-dlp to export cookies from the temporary browser profile and probe subs (network request)
@@ -141,6 +155,9 @@ def main() -> None:
     ap.add_argument("--browser", default="chrome", choices=["chrome", "firefox", "edge", "safari"], help="Browser to export cookies from (default: chrome)")
     ap.add_argument("--timeout", type=int, default=600, help="Timeout in seconds waiting for login (default 600)")
     ap.add_argument("--no-clean", action="store_true", help="Retain the temporary profile directory on disk")
+    ap.add_argument("--secondary-dir", default="/Volumes/Docker/YTV2/data/cookies", help="Optional secondary directory to also write cookies (if mounted). Set to empty string to disable.")
+    ap.add_argument("--secondary-name", default="cookies.txt", help="Filename to use for the secondary copy (default: cookies.txt)")
+    ap.add_argument("--non-interactive-secondary", action="store_true", help="If secondary dir is unavailable, do not prompt to retry; just print copy instructions.")
     args = ap.parse_args()
 
     ensure_yt_dlp()
@@ -148,8 +165,10 @@ def main() -> None:
     cookies_out = os.path.expanduser(args.cookies_out)
     Path(cookies_out).parent.mkdir(parents=True, exist_ok=True)
 
-    with TemporaryDirectory(prefix="chrome-temp-") as tmpdir:
-        profile_dir = os.path.abspath(tmpdir)
+    # Manage temp dir manually so we can suppress cleanup errors on 3.10
+    tmpdir_obj = TemporaryDirectory(prefix="chrome-temp-")
+    try:
+        profile_dir = os.path.abspath(tmpdir_obj.name)
         print("Temporary user-data-dir:", profile_dir)
 
         if sys.platform == "darwin":
@@ -179,21 +198,71 @@ def main() -> None:
 
         if os.path.exists(cookies_out):
             os.chmod(cookies_out, 0o600)
-            print("\nCookies saved to:", os.path.abspath(cookies_out))
+            print("\nPrimary cookies saved to:", os.path.abspath(cookies_out))
             ok = verify_cookies(args.url, cookies_out)
             if ok:
-                print("Verification succeeded. You can copy this file to the NAS and set YT_DLP_COOKIES_PATH.")
+                print("Verification succeeded.")
         else:
             print("\nCookies file not found at expected path:", cookies_out)
 
+        # Mirror to secondary location if available/mounted
+        def _mirror_secondary() -> None:
+            sec_dir = (args.secondary_dir or "").strip()
+            if not sec_dir:
+                return
+            dest = os.path.join(sec_dir, args.secondary_name or "cookies.txt")
+            if os.path.isdir(sec_dir) and os.access(sec_dir, os.W_OK):
+                try:
+                    import shutil as _sh
+                    _sh.copy2(cookies_out, dest)
+                    try:
+                        os.chmod(dest, 0o600)
+                    except Exception:
+                        pass
+                    print(f"Secondary copy written: {dest}")
+                except Exception as exc:
+                    print(f"Warning: failed to write secondary copy to {dest}: {exc}")
+            else:
+                print(f"Secondary cookies dir not available: {sec_dir}")
+                print("If this volume should be mounted, mount it and ")
+                print(f"then copy with: cp '{os.path.abspath(cookies_out)}' '{dest}'")
+                if not args.non_interactive_secondary:
+                    try:
+                        ans = input("\nMount now and press ENTER to retry copying (or type 'skip'): ").strip().lower()
+                    except KeyboardInterrupt:
+                        ans = "skip"
+                    if ans != "skip":
+                        if os.path.isdir(sec_dir) and os.access(sec_dir, os.W_OK):
+                            try:
+                                import shutil as _sh
+                                _sh.copy2(cookies_out, dest)
+                                try:
+                                    os.chmod(dest, 0o600)
+                                except Exception:
+                                    pass
+                                print(f"Secondary copy written: {dest}")
+                            except Exception as exc:  # pragma: no cover
+                                print(f"Failed again to write secondary copy: {exc}")
+                        else:
+                            print("Still not available; you can copy later using the command above.")
+
+        if os.path.exists(cookies_out):
+            _mirror_secondary()
+
+        # Attempt to close the temp Chrome instance to allow cleanup
+        kill_profile_processes(profile_dir)
+        time.sleep(0.5)  # give Chrome a moment to release locks
+    finally:
         if args.no_clean:
-            print("Temp profile retained at:", profile_dir)
-            print("Remove it manually with: rm -rf", profile_dir)
+            print("Temp profile retained at:", os.path.abspath(tmpdir_obj.name))
+            print("Remove it manually with: rm -rf", os.path.abspath(tmpdir_obj.name))
         else:
-            # TemporaryDirectory cleans up automatically
-            pass
+            # Suppress cleanup errors if Chrome still holds some files
+            try:
+                tmpdir_obj.cleanup()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
     main()
-

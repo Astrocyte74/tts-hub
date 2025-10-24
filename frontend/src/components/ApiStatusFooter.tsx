@@ -19,6 +19,7 @@ function hostnameOf(url: string): string | null {
 
 export function ApiStatusFooter({ meta }: { meta: MetaResponse | undefined }) {
   const [open, setOpen] = useState(false);
+  const [cookiesOpen, setCookiesOpen] = useState(false);
 
   const apiBase = useMemo(() => (meta ? computeApiBase(meta) : ''), [meta]);
   const port = meta?.port ?? 7860;
@@ -70,6 +71,39 @@ curl -X POST -H "Content-Type: application/json" \\
   -d '{"favoriteSlug":"my-voice","text":"Hello from NAS"}' \\
   "${wgUrl ?? lanUrl ?? bindUrl}/synthesise"`}
             </pre>
+          </div>
+
+          {/* YouTube Cookies helper (collapsible) */}
+          <div className="panel panel--compact" style={{ marginTop: 6 }}>
+            <div className="panel__header panel__header--dense" style={{ cursor: 'pointer' }} onClick={() => setCookiesOpen((v) => !v)}>
+              <h4 className="panel__title" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+                <span style={{ display: 'inline-block', transform: cookiesOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s ease' }}>▶</span>
+                YouTube Cookies (yt-dlp)
+              </h4>
+              <p className="panel__meta">For XTTS YouTube imports</p>
+            </div>
+            {cookiesOpen ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div>
+                  <p className="panel__meta">Run this on your Mac to export cookies and verify access. The script saves to <code>~/.kokoro/yt_cookies.txt</code> and also writes a copy to <code>/Volumes/Docker/YTV2/data/cookies/cookies.txt</code> when mounted.</p>
+                  <pre style={{ whiteSpace: 'pre-wrap', background: 'rgba(2,6,23,0.6)', padding: 12, borderRadius: 10, border: '1px solid rgba(148,163,184,0.25)' }}>
+{`python3 cli/create_youtube_cookies.py
+# Optional: run without prompting for mount retry
+# python3 cli/create_youtube_cookies.py --non-interactive-secondary`}
+                  </pre>
+                </div>
+                <div>
+                  <p className="panel__meta">Backend picks up <code>~/.kokoro/yt_cookies.txt</code> by default. Override with:</p>
+                  <pre style={{ whiteSpace: 'pre-wrap', background: 'rgba(2,6,23,0.6)', padding: 12, borderRadius: 10, border: '1px solid rgba(148,163,184,0.25)' }}>
+{`export YT_DLP_COOKIES_PATH=/path/to/cookies.txt
+# Restart the hub launcher after changing this.`}
+                  </pre>
+                </div>
+                <div>
+                  <p className="panel__meta">Docs: See <code>docs/YOUTUBE_COOKIES.md</code> for details and troubleshooting.</p>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

@@ -1883,19 +1883,6 @@ function App() {
         onAutoApplyDefaultsChange={(value) => setAutoApplyDefaults(Boolean(value))}
       />
       {engineId === 'xtts' ? (
-        <XttsCustomVoiceDialog
-          isOpen={isXttsDialogOpen}
-          onClose={() => setXttsDialogOpen(false)}
-          onCreated={({ id }) => {
-            setSelectedVoices([id]);
-            voicesQuery.refetch();
-            voiceGroupsQuery.refetch();
-            setActivePanel('voices');
-          }}
-          onError={(message) => setError(message)}
-        />
-      ) : null}
-      {engineId === 'xtts' ? (
         <XttsManageVoicesDialog
           isOpen={isXttsManageOpen}
           voices={voices}
