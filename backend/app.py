@@ -246,7 +246,7 @@ def _whisperx_align_full(audio_wav: Path, transcript: Dict[str, Any]) -> Dict[st
         ],
     }
     aligned = whisperx.align(
-        wx_result,
+        wx_result["segments"],
         align_model,
         metadata,
         str(audio_wav),
@@ -2351,9 +2351,8 @@ def media_align_region_endpoint():
             w for w in words
             if float(w.get("end", 0)) > region_start and float(w.get("start", 0)) < region_end
         ]
-        region_text = " ".join(
-            (str((w.get("text") or w.get("word") or "")).strip()) for w in region_words)
-        ).strip()
+        words_txt = [str((w.get("text") or w.get("word") or "")).strip() for w in region_words]
+        region_text = " ".join(words_txt).strip()
     if not region_text:
         segs = transcript.get("segments") or []
         region_segs = [
@@ -2364,6 +2363,7 @@ def media_align_region_endpoint():
     if not region_text:
         raise PlaygroundError("No transcript content found in the selected region.", status=400)
 
+    _log(f"WhisperX region requested: job={job_id} start={start:.2f} end={end:.2f} margin={margin_s:.2f} -> window {region_start:.2f}-{region_end:.2f}")
     # Trim audio for the region
     region_wav = job_dir / f"region-{int(region_start*1000)}-{int(region_end*1000)}.wav"
     try:
@@ -2374,12 +2374,17 @@ def media_align_region_endpoint():
             "ffmpeg", "-y", "-ss", str(region_start), "-to", str(region_end), "-i", str(audio_wav),
             "-ac", "1", "-ar", "24000", str(region_wav)
         ]
+        _log(f"ffmpeg region trim fallback: ss={region_start} to={region_end} src='{audio_wav}' out='{region_wav}'")
         subprocess.run(cmd, check=True)
 
     # Prepare WhisperX result input with one segment covering region_text
     wx_result = {"language": transcript.get("language", "en"), "segments": [{"text": region_text, "start": 0.0, "end": float(region_end - region_start)}]}
     align_model, metadata = _whisperx_get_align_model(str(transcript.get("language", "en")))
-    aligned = whisperx.align(wx_result, align_model, metadata, str(region_wav), device=WHISPERX_DEVICE, return_char_alignments=False)  # type: ignore[name-defined]
+    try:
+        aligned = whisperx.align(wx_result["segments"], align_model, metadata, str(region_wav), device=WHISPERX_DEVICE, return_char_alignments=False)  # type: ignore[name-defined]
+    except Exception as exc:
+        _log(f"WhisperX align failed: {exc}")
+        raise PlaygroundError(f"WhisperX alignment failed: {exc}", status=500)
     new_words: List[Dict[str, Any]] = []
     for seg in aligned.get("segments", []):
         for w in seg.get("words", []) or []:
