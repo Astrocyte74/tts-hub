@@ -18,9 +18,11 @@ export function TranscriptPanel() {
   const [replaceText, setReplaceText] = useState<string>('');
   const [replacePreviewUrl, setReplacePreviewUrl] = useState<string | null>(null);
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
-  const [voiceMode, setVoiceMode] = useState<'borrow' | 'select'>('borrow');
+  const [voiceMode, setVoiceMode] = useState<'borrow' | 'xtts' | 'favorite'>('borrow');
   const [voiceList, setVoiceList] = useState<{ id: string; label: string }[]>([]);
   const [voiceId, setVoiceId] = useState<string>('');
+  const [favList, setFavList] = useState<{ id: string; label: string; voiceId: string }[]>([]);
+  const [favVoiceId, setFavVoiceId] = useState<string>('');
 
   async function ensureVoices() {
     if (voiceList.length) return;
@@ -29,6 +31,18 @@ export function TranscriptPanel() {
       const { fetchVoices } = await import('../api/client');
       const cat = await fetchVoices('xtts');
       setVoiceList(cat.voices.map((v) => ({ id: v.id, label: v.label })));
+    } catch {
+      // ignore
+    }
+  }
+
+  async function ensureFavorites() {
+    if (favList.length) return;
+    try {
+      const { listProfiles } = await import('../api/client');
+      const data = await listProfiles();
+      const xtts = (data.profiles || []).filter((p) => p.engine === 'xtts');
+      setFavList(xtts.map((p) => ({ id: p.id, label: p.label, voiceId: p.voiceId })));
     } catch {
       // ignore
     }
@@ -210,7 +224,8 @@ export function TranscriptPanel() {
         <p className="panel__meta">Transcribe and preview word timings</p>
       </div>
       {open ? (
-        <div className="dialog-stack" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div className="dialog-stack" style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 460px) 1fr', gap: 16, alignItems: 'start' }}>
+        <div>
           <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
             <label className="field" style={{ minWidth: 280 }}>
               <span className="field__label">YouTube URL</span>
@@ -306,19 +321,24 @@ export function TranscriptPanel() {
                 <input type="radio" name="voice-mode" checked={voiceMode === 'borrow'} onChange={() => setVoiceMode('borrow')} /> Borrow from selection
               </label>
               <label className="field" aria-label="Select XTTS voice">
-                <input
-                  type="radio"
-                  name="voice-mode"
-                  checked={voiceMode === 'select'}
-                  onChange={() => { setVoiceMode('select'); void ensureVoices(); }}
-                />
-                Use XTTS voice:
+                <input type="radio" name="voice-mode" checked={voiceMode === 'xtts'} onChange={() => { setVoiceMode('xtts'); void ensureVoices(); }} /> Use XTTS voice:
               </label>
-              {voiceMode === 'select' ? (
+              {voiceMode === 'xtts' ? (
                 <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)} aria-label="XTTS voice" style={{ minWidth: 240 }}>
                   <option value="">Choose a voice…</option>
                   {voiceList.map((v) => (
                     <option key={v.id} value={v.id}>{v.label}</option>
+                  ))}
+                </select>
+              ) : null}
+              <label className="field" aria-label="Select Favorite">
+                <input type="radio" name="voice-mode" checked={voiceMode === 'favorite'} onChange={() => { setVoiceMode('favorite'); void ensureFavorites(); }} /> Use Favorite:
+              </label>
+              {voiceMode === 'favorite' ? (
+                <select value={favVoiceId} onChange={(e) => setFavVoiceId(e.target.value)} aria-label="Favorite voice" style={{ minWidth: 240 }}>
+                  <option value="">Choose a favorite…</option>
+                  {favList.map((f) => (
+                    <option key={f.id} value={f.voiceId}>{f.label}</option>
                   ))}
                 </select>
               ) : null}
@@ -340,7 +360,8 @@ export function TranscriptPanel() {
                   setStatus('Generating replace preview…');
                   setError(null);
                   setReplacePreviewUrl(null);
-                  const res = await mediaReplacePreview({ jobId, start: s, end: e, text: replaceText, marginMs: Number(regionMargin) * 1000, voice: voiceMode === 'select' && voiceId ? voiceId : undefined });
+                  const chosen = voiceMode === 'xtts' ? (voiceId || undefined) : voiceMode === 'favorite' ? (favVoiceId || undefined) : undefined;
+                  const res = await mediaReplacePreview({ jobId, start: s, end: e, text: replaceText, marginMs: Number(regionMargin) * 1000, voice: chosen });
                   setReplacePreviewUrl(res.preview_url);
                   const se = res.stats?.synth_elapsed;
                   if (typeof se === 'number') {
@@ -356,6 +377,11 @@ export function TranscriptPanel() {
               {busy ? 'Working…' : 'Preview replace'}
             </button>
           </div>
+        </div>
+        <div>
+          {audioUrl ? (
+            <audio ref={audioRef} controls src={audioUrl} style={{ width: '100%' }} />
+          ) : null}
           {replacePreviewUrl ? (
             <div>
               <p className="panel__meta">Preview with replacement applied</p>
@@ -392,9 +418,6 @@ export function TranscriptPanel() {
                 </div>
               ) : null}
             </div>
-          ) : null}
-          {audioUrl ? (
-            <audio ref={audioRef} controls src={audioUrl} style={{ width: '100%' }} />
           ) : null}
           {transcript ? (
             <div>
@@ -488,6 +511,7 @@ export function TranscriptPanel() {
               </div>
             </div>
           ) : null}
+        </div>
         </div>
       ) : null}
     </div>
