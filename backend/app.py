@@ -2351,7 +2351,9 @@ def media_align_region_endpoint():
             w for w in words
             if float(w.get("end", 0)) > region_start and float(w.get("start", 0)) < region_end
         ]
-        region_text = " ".join(str((w.get("text") or w.get("word") or "")).strip()) for w in region_words).strip()
+        region_text = " ".join(
+            (str((w.get("text") or w.get("word") or "")).strip()) for w in region_words)
+        ).strip()
     if not region_text:
         segs = transcript.get("segments") or []
         region_segs = [

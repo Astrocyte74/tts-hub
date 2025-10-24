@@ -98,7 +98,11 @@ export function TranscriptPanel() {
             <button className="panel__button" type="button" disabled={busy} onClick={() => handleTranscribe('file')}>Transcribe File</button>
           </div>
           {error ? <p className="panel__hint panel__hint--warning">{error}</p> : null}
-          {status ? <p className="panel__hint panel__hint--notice" aria-live="polite">{status}</p> : null}
+          {status ? (
+            <p className="panel__hint panel__hint--notice" aria-live="polite">
+              {busy ? '⏳ ' : ''}{status}
+            </p>
+          ) : null}
           {whisperxEnabled ? (
             <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
               <button className="panel__button" type="button" disabled={busy || !jobId} onClick={handleAlignFull}>
