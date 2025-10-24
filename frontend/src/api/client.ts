@@ -11,6 +11,7 @@ import type {
   VoiceProfile,
   VoiceCatalogue,
   GlobalProfile,
+  MediaTranscribeResponse,
 } from '../types';
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
@@ -410,6 +411,24 @@ export async function createXttsCustomVoiceFromYouTube(
   if (opts?.start !== undefined) body.start = opts.start;
   if (opts?.end !== undefined) body.end = opts.end;
   return postJson<CreateXttsCustomVoiceResponse>('xtts/custom_voice', body);
+}
+
+// -------------------- Media editing --------------------
+
+export async function mediaTranscribeFromUrl(url: string): Promise<MediaTranscribeResponse> {
+  const body = { source: 'youtube', url };
+  return postJson<MediaTranscribeResponse>('media/transcribe', body);
+}
+
+export async function mediaTranscribeUpload(file: File): Promise<MediaTranscribeResponse> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(buildUrl('media/transcribe'), { method: 'POST', body: fd });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`POST media/transcribe (upload) failed (${res.status}): ${text}`);
+  }
+  return (await res.json()) as MediaTranscribeResponse;
 }
 
 export async function getXttsCustomVoice(id: string): Promise<Record<string, unknown>> {

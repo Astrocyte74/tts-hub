@@ -163,6 +163,37 @@ export interface GlobalProfile {
   updatedAt?: string;
 }
 
+// -------------------- Media editing --------------------
+
+export interface MediaTranscriptWord {
+  text: string;
+  start: number;
+  end: number;
+  confidence?: number;
+  speaker?: string;
+}
+
+export interface MediaTranscriptSegment {
+  text: string;
+  start: number;
+  end: number;
+  speaker?: string;
+}
+
+export interface MediaTranscriptResult {
+  language: string;
+  duration: number;
+  segments: MediaTranscriptSegment[];
+  words: MediaTranscriptWord[];
+  note?: string;
+}
+
+export interface MediaTranscribeResponse {
+  jobId: string;
+  media: { audio_url: string; duration: number };
+  transcript: MediaTranscriptResult;
+}
+
 export interface AuditionAnnouncerConfig {
   enabled: boolean;
   voice?: string | null;

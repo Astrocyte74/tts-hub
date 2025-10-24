@@ -15,6 +15,7 @@ import { SettingsPopover } from './components/SettingsPopover';
 import { PresetDialog } from './components/PresetDialog';
 import { InfoDialog } from './components/InfoDialog';
 import { ApiStatusFooter } from './components/ApiStatusFooter';
+import { TranscriptPanel } from './components/TranscriptPanel';
 import { OllamaPanel } from './components/OllamaPanel';
 import { FavoritesManagerDialog } from './components/FavoritesManagerDialog';
 import { XttsCustomVoiceDialog } from './components/XttsCustomVoiceDialog';
@@ -1995,6 +1996,7 @@ function App() {
           </div>
         )}
       </InfoDialog>
+      <TranscriptPanel />
       <ApiStatusFooter meta={metaQuery.data} />
       <OllamaPanel />
       <PresetDialog
