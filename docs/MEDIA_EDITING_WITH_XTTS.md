@@ -21,7 +21,8 @@ STT + Alignment (local)
 - Modes:
   - Full: refine the entire transcript after first pass (one-time cost; great for multiple edits).
   - Lazy: refine only the selected region with +/- margin on demand (fastest interactive loop).
-  - Toggle via env: `WHISPERX_ENABLE=1`, runtime UI button available when installed.
+- Toggle via env: `WHISPERX_ENABLE=1`, runtime UI button available when installed.
+ - The launcher now asks at startup whether to enable WhisperX; override by exporting `WHISPERX_ENABLE`/`WHISPERX_DEVICE`, or skip prompts with `SKIP_ASK=1`.
 - Optional later: diarization (pyannote) — off by default to avoid heavy deps.
 - Output shape:
   - `{ language, segments: [{text,start,end}], words: [{text,start,end,prob}], speakers? }`.

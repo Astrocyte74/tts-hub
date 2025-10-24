@@ -75,6 +75,9 @@ OPENVOICE_VENV="${OPENVOICE_VENV:-$OPENVOICE_ROOT/.venv}"
 CHATTT_ROOT="${CHATTT_ROOT:-$TTS_HUB_ROOT/chattts}"
 CHATTT_VENV="${CHATTT_VENV:-$CHATTT_ROOT/.venv}"
 
+# Interactive options (can be skipped with SKIP_ASK=1)
+SKIP_ASK="${SKIP_ASK:-0}"
+
 # WireGuard integration (optional)
 # WG_MODE: off | auto | bind-wg | bind-all
 #  - auto: detect WG IP; bind to 0.0.0.0 and advertise WG IP as public host
@@ -86,6 +89,15 @@ PUBLIC_HOST="${PUBLIC_HOST:-}"
 
 log() {
   printf '[Kokoro SPA] %s\n' "$*"
+}
+
+yesno_default_no() {
+  local prompt="$1"; local ans
+  read -r -p "$prompt [y/N] " ans || ans=""
+  case "$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')" in
+    y|yes) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 open_in_browser() {
@@ -377,6 +389,28 @@ export KOKORO_MODEL="${KOKORO_MODEL:-$MODEL_PATH_DEFAULT}"
 export KOKORO_VOICES="${KOKORO_VOICES:-$VOICES_PATH_DEFAULT}"
 export KOKORO_OUT="${KOKORO_OUT:-$ROOT_DIR/out}"
 export API_PREFIX="$BACKEND_API_PREFIX"
+# STT/Alignment toggles (prompt if not set and interactive)
+if [[ "$SKIP_ASK" != "1" ]]; then
+  if [[ -z "${WHISPERX_ENABLE:-}" ]]; then
+    if yesno_default_no "Enable WhisperX alignment for tighter word timings? (slower, requires torch/whisperx)"; then
+      export WHISPERX_ENABLE=1
+    else
+      export WHISPERX_ENABLE=0
+    fi
+  fi
+  if [[ "${WHISPERX_ENABLE:-0}" =~ ^(1|true|yes)$ ]]; then
+    if [[ -z "${WHISPERX_DEVICE:-}" ]]; then
+      # Default device: mps on macOS, else cpu
+      case "$OSTYPE" in
+        darwin*) export WHISPERX_DEVICE="mps" ;;
+        *)       export WHISPERX_DEVICE="cpu" ;;
+      esac
+      echo "[Kokoro SPA] WhisperX device not set; using $WHISPERX_DEVICE (set WHISPERX_DEVICE to override)."
+    fi
+  fi
+fi
+# Allow stub STT unless explicitly disabled
+export ALLOW_STUB_STT="${ALLOW_STUB_STT:-1}"
 # Export host hints for backend meta endpoint
 export PUBLIC_HOST
 export LAN_IP
@@ -563,6 +597,11 @@ if [[ "$DEV_PORT" != "$ORIG_DEV_PORT" ]]; then
 fi
 
 log "Status summary: backend=$BACKEND_MODE, xtts=$XTTS_MODE, ui=$DEV_HOST:$DEV_PORT, mode=$MODE_LOWER"
+if [[ "${WHISPERX_ENABLE:-0}" =~ ^(1|true|yes)$ ]]; then
+  log "STT: faster-whisper enabled; WhisperX alignment ENABLED (device=${WHISPERX_DEVICE:-auto})."
+else
+  log "STT: faster-whisper enabled; WhisperX alignment DISABLED."
+fi
 
 log "Starting Vite dev server on $DEV_URL"
 
