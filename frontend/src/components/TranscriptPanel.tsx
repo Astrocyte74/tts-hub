@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { mediaAlignFull, mediaAlignRegion, mediaTranscribeFromUrl, mediaTranscribeUpload } from '../api/client';
+import { mediaAlignFull, mediaAlignRegion, mediaGetStats, mediaTranscribeFromUrl, mediaTranscribeUpload } from '../api/client';
 import type { MediaTranscriptResult } from '../types';
 
 export function TranscriptPanel() {
@@ -17,6 +17,28 @@ export function TranscriptPanel() {
   const [regionMargin, setRegionMargin] = useState<string>('0.75');
   const [transcript, setTranscript] = useState<MediaTranscriptResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [avgRtf, setAvgRtf] = useState<{ full: number; region: number; transcribe: number }>({ full: 5, region: 5, transcribe: 10 });
+  const progressTimer = useRef<number | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+
+  // Fetch stats for ETA when panel first opens
+  async function refreshStats() {
+    try {
+      const s = await mediaGetStats();
+      setAvgRtf({
+        transcribe: typeof s.transcribe?.avg_rtf === 'number' && s.transcribe.avg_rtf > 0 ? s.transcribe.avg_rtf : 10,
+        full: typeof s.align_full?.avg_rtf === 'number' && s.align_full.avg_rtf > 0 ? s.align_full.avg_rtf : 5,
+        region: typeof s.align_region?.avg_rtf === 'number' && s.align_region.avg_rtf > 0 ? s.align_region.avg_rtf : 5,
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  if (open && !progressTimer.current) {
+    // opportunistic initial fetch when panel is opened
+    void refreshStats();
+  }
 
   async function handleTranscribe(kind: 'url' | 'file') {
     try {
@@ -73,6 +95,16 @@ export function TranscriptPanel() {
       setBusy(true);
       setStatus('Aligning full transcript with WhisperX…');
       setError(null);
+      // ETA progress: estimate using avgRtf.full and transcript duration
+      if (transcript?.duration && avgRtf.full > 0) {
+        const total = transcript.duration / avgRtf.full;
+        const start = Date.now();
+        setProgress(0);
+        progressTimer.current = window.setInterval(() => {
+          const elapsed = (Date.now() - start) / 1000;
+          setProgress(Math.max(0, Math.min(1, elapsed / total)));
+        }, 1000);
+      }
       const res = await mediaAlignFull(jobId);
       setTranscript(res.transcript);
       const elapsed = res.stats?.elapsed;
@@ -85,6 +117,9 @@ export function TranscriptPanel() {
     } finally {
       setBusy(false);
       setStatus('');
+      if (progressTimer.current) { window.clearInterval(progressTimer.current); progressTimer.current = null; }
+      setProgress(null);
+      void refreshStats();
     }
   }
 
@@ -118,6 +153,11 @@ export function TranscriptPanel() {
               {busy ? '⏳ ' : ''}{status}
             </p>
           ) : null}
+          {progress !== null ? (
+            <div style={{ height: 6, background: 'rgba(148,163,184,0.2)', borderRadius: 6, overflow: 'hidden' }} aria-label="Estimated progress">
+              <div style={{ width: `${Math.round(progress * 100)}%`, height: '100%', background: 'linear-gradient(90deg, #60a5fa, #22d3ee)' }} />
+            </div>
+          ) : null}
           {whisperxEnabled ? (
             <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
               <button className="panel__button" type="button" disabled={busy || !jobId} onClick={handleAlignFull}>
@@ -149,6 +189,15 @@ export function TranscriptPanel() {
                     setBusy(true);
                     setStatus(`Aligning region ${s.toFixed(2)}–${e.toFixed(2)}s with WhisperX…`);
                     setError(null);
+                    // ETA progress for region: include margin
+                    const dur = (e - s) + (Number.isFinite(m) ? Number(m) * 2 : 1.5);
+                    const total = dur / (avgRtf.region > 0 ? avgRtf.region : 5);
+                    const startAt = Date.now();
+                    setProgress(0);
+                    progressTimer.current = window.setInterval(() => {
+                      const elapsed = (Date.now() - startAt) / 1000;
+                      setProgress(Math.max(0, Math.min(1, elapsed / total)));
+                    }, 1000);
                     const res = await mediaAlignRegion(jobId, s, e, Number.isFinite(m) ? m : undefined);
                     setTranscript(res.transcript);
                     const elapsed = res.stats?.elapsed;
@@ -162,6 +211,9 @@ export function TranscriptPanel() {
                   } finally {
                     setBusy(false);
                     setStatus('');
+                    if (progressTimer.current) { window.clearInterval(progressTimer.current); progressTimer.current = null; }
+                    setProgress(null);
+                    void refreshStats();
                   }
                 }}
               >

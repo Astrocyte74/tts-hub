@@ -2485,6 +2485,41 @@ def media_align_region_endpoint():
         "stats": {"elapsed": elapsed, "rtf": (region_end-region_start)/max(elapsed,1e-6), "words": len(new_words)},
         "whisperx": {"enabled": True}
     })
+
+
+@api.route("/media/stats", methods=["GET"])
+def media_stats_endpoint():
+    """Return aggregate timing summaries for recent media operations (for ETA)."""
+    stats_path = OUTPUT_DIR / "media_stats.json"
+    summary: Dict[str, Any] = {"transcribe": {"avg_rtf": None, "count": 0}, "align_full": {"avg_rtf": None, "count": 0}, "align_region": {"avg_rtf": None, "count": 0}}
+    try:
+        if stats_path.exists():
+            data = json.loads(stats_path.read_text(encoding="utf-8"))
+            # transcribe: rtf directly
+            trans = data.get("transcribe", []) or []
+            rtf_vals = [float(s.get("rtf", 0)) for s in trans if isinstance(s, dict) and float(s.get("rtf", 0) or 0) > 0]
+            if rtf_vals:
+                summary["transcribe"] = {"avg_rtf": sum(rtf_vals) / len(rtf_vals), "count": len(rtf_vals)}
+            # align_full: derive rtf=duration/elapsed
+            full = data.get("align_full", []) or []
+            rtf_full = []
+            for s in full:
+                if not isinstance(s, dict):
+                    continue
+                dur = float(s.get("duration", 0) or 0)
+                el = float(s.get("elapsed", 0) or 0)
+                if el > 0 and dur > 0:
+                    rtf_full.append(dur / el)
+            if rtf_full:
+                summary["align_full"] = {"avg_rtf": sum(rtf_full) / len(rtf_full), "count": len(rtf_full)}
+            # align_region: rtf directly
+            reg = data.get("align_region", []) or []
+            rtf_reg = [float(s.get("rtf", 0)) for s in reg if isinstance(s, dict) and float(s.get("rtf", 0) or 0) > 0]
+            if rtf_reg:
+                summary["align_region"] = {"avg_rtf": sum(rtf_reg) / len(rtf_reg), "count": len(rtf_reg)}
+    except Exception:
+        pass
+    return jsonify(summary)
 @api.route("/meta", methods=["GET"])
 def meta_endpoint():
     has_model = MODEL_PATH.exists()

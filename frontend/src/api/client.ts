@@ -13,6 +13,7 @@ import type {
   GlobalProfile,
   MediaTranscribeResponse,
   MediaAlignResponse,
+  MediaStatsSummary,
 } from '../types';
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
@@ -440,6 +441,10 @@ export async function mediaAlignRegion(jobId: string, start: number, end: number
   const body: Record<string, unknown> = { jobId, start, end };
   if (typeof margin === 'number') body.margin = margin;
   return postJson<MediaAlignResponse>('media/align_region', body);
+}
+
+export async function mediaGetStats(): Promise<MediaStatsSummary> {
+  return getJson<MediaStatsSummary>('media/stats');
 }
 
 export async function getXttsCustomVoice(id: string): Promise<Record<string, unknown>> {

@@ -198,6 +198,12 @@ export interface MediaTranscribeResponse {
 
 export interface MediaAlignResponse extends MediaTranscribeResponse {}
 
+export interface MediaStatsSummary {
+  transcribe: { avg_rtf: number | null; count: number };
+  align_full: { avg_rtf: number | null; count: number };
+  align_region: { avg_rtf: number | null; count: number };
+}
+
 export interface AuditionAnnouncerConfig {
   enabled: boolean;
   voice?: string | null;
