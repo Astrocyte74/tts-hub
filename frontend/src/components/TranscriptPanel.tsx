@@ -428,6 +428,29 @@ export function TranscriptPanel() {
   const canStep2 = Boolean((jobId && audioUrl) || transcript);
   const canStep3 = canStep2 && selectionValid;
 
+  // Guard against blank state if a persisted step is not yet unlocked
+  useEffect(() => {
+    // Normalise invalid values
+    if (currentStep !== '1' && currentStep !== '2' && currentStep !== '3') {
+      setCurrentStep('1');
+      return;
+    }
+    if (currentStep === '2' && !canStep2) {
+      setCurrentStep('1');
+      return;
+    }
+    if (currentStep === '3') {
+      if (!canStep2) {
+        setCurrentStep('1');
+        return;
+      }
+      if (!selectionValid) {
+        setCurrentStep('2');
+        return;
+      }
+    }
+  }, [currentStep, canStep2, selectionValid, setCurrentStep]);
+
   function selectSegment(seg: { start: number; end: number }) {
     if (!transcript?.words?.length) return;
     let lo = 0, hi = transcript.words.length - 1;
