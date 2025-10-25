@@ -30,6 +30,7 @@ export function TranscriptPanel() {
   const [replaceStatus, setReplaceStatus] = useState<string>('');
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
   const [playbackTrack, setPlaybackTrack] = useState<'original' | 'diff' | 'preview'>('original');
+  const [viewMode, setViewMode] = useState<'sentences' | 'words'>('sentences');
   const [voiceMode, setVoiceMode] = useState<'borrow' | 'xtts' | 'favorite'>('borrow');
   const [voiceList, setVoiceList] = useState<{ id: string; label: string }[]>([]);
   const [xttsAvailable, setXttsAvailable] = useState<boolean>(false);
@@ -379,6 +380,24 @@ export function TranscriptPanel() {
     setRegionEnd(e2.toFixed(2));
   }
 
+  // Helpers derived from selection
+  const selectionValid = (() => {
+    const s = Number(regionStart); const e = Number(regionEnd);
+    return Number.isFinite(s) && Number.isFinite(e) && e > s;
+  })();
+
+  function selectSegment(seg: { start: number; end: number }) {
+    if (!transcript?.words?.length) return;
+    let lo = 0, hi = transcript.words.length - 1;
+    for (let i = 0; i < transcript.words.length; i += 1) { if (transcript.words[i].start >= seg.start) { lo = i; break; } }
+    for (let j = transcript.words.length - 1; j >= 0; j -= 1) { if (transcript.words[j].end <= seg.end) { hi = j; break; } }
+    setSelStartIdx(lo);
+    setSelEndIdx(hi);
+    setRegionStart(seg.start.toFixed(2));
+    setRegionEnd(seg.end.toFixed(2));
+    setCursorIdx(hi);
+  }
+
   return (
     <div className="panel panel--compact" style={{ marginTop: 12 }}>
       <div className="media-editor">
@@ -442,23 +461,17 @@ export function TranscriptPanel() {
             {whisperxEnabled ? (
               <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
                 <button className="panel__button" type="button" disabled={busy || !jobId} onClick={handleAlignFull} title="Align transcript to audio for precise word timings using WhisperX">
-                  {busy ? 'Aligning…' : 'Refine word timings (WhisperX)'}
+                  {busy ? 'Aligning…' : 'Improve full timing (WhisperX)'}
                 </button>
                 {!jobId ? <p className="panel__hint panel__hint--muted">Transcribe first to create a job.</p> : null}
-                <div className="panel__meta" style={{ marginLeft: 12 }}>or refine a region:</div>
-                <div className="subpanel" style={{ width: '100%' }}>
-                  <div className="row spaced">
-                    <span className="panel__meta" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                      <IconWave size={14} /> Selection
-                    </span>
-                    <span className="inline-hint">Chips or nudgers · drag handles on timeline.</span>
-                  </div>
-                  <div className="row">
+                <details className="subpanel" style={{ width: '100%' }}>
+                  <summary className="panel__meta" style={{ cursor: 'pointer' }}>Precise adjust (advanced)</summary>
+                  <div className="row" style={{ marginTop: 6 }}>
                     <label className="field field--sm" aria-label="Region start">
                       <span className="field__label">Start (s)</span>
                       <div className="row" style={{ gap: 6 }}>
                         <button className="panel__button" type="button" onClick={() => setRegionStart((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
-                        <input type="number" step="0.01" value={regionStart} onChange={(e) => setRegionStart(e.target.value)} className="grow" />
+                        <input type="number" step="0.01" min={0} value={regionStart} onChange={(e) => setRegionStart(e.target.value)} className="grow" />
                         <button className="panel__button" type="button" onClick={() => setRegionStart((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
                       </div>
                     </label>
@@ -466,7 +479,7 @@ export function TranscriptPanel() {
                       <span className="field__label">End (s)</span>
                       <div className="row" style={{ gap: 6 }}>
                         <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
-                        <input type="number" step="0.01" value={regionEnd} onChange={(e) => setRegionEnd(e.target.value)} className="grow" />
+                        <input type="number" step="0.01" min={0} value={regionEnd} onChange={(e) => setRegionEnd(e.target.value)} className="grow" />
                         <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
                       </div>
                     </label>
@@ -475,49 +488,49 @@ export function TranscriptPanel() {
                       <input type="number" step="0.01" value={regionMargin} onChange={(e) => setRegionMargin(e.target.value)} />
                     </label>
                   </div>
-                </div>
-                <button
-                  className="panel__button"
-                  type="button"
-                  disabled={busy || !jobId}
-                  onClick={async () => {
-                  if (!jobId) { setError('Transcribe first'); return; }
-                  const s = Number(regionStart), e = Number(regionEnd), m = Number(regionMargin || '0.75');
-                  if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Enter start/end seconds (end > start)'); return; }
-                  try {
-                    setBusy(true);
-                    setStatus(`Aligning region ${s.toFixed(2)}–${e.toFixed(2)}s with WhisperX…`);
-                    setError(null);
-                    // ETA progress for region: include margin
-                    const dur = (e - s) + (Number.isFinite(m) ? Number(m) * 2 : 1.5);
-                    const total = dur / (avgRtf.region > 0 ? avgRtf.region : 5);
-                    const startAt = Date.now();
-                    setProgress(0);
-                    progressTimer.current = window.setInterval(() => {
-                      const elapsed = (Date.now() - startAt) / 1000;
-                      setProgress(Math.max(0, Math.min(1, elapsed / total)));
-                    }, 1000);
-                    const res = await mediaAlignRegion(jobId, s, e, Number.isFinite(m) ? m : undefined);
-                    setTranscript(res.transcript);
-                    const elapsed = res.stats?.elapsed;
-                    const rtf = res.stats?.rtf;
-                    const words = res.stats?.words ?? 0;
-                    if (typeof elapsed === 'number' && typeof rtf === 'number') {
-                      setStatus(`Aligned ${words} words in ${elapsed.toFixed(2)}s (RTF ${rtf.toFixed(2)}×)`);
+                  <button
+                    className="panel__button"
+                    type="button"
+                    disabled={busy || !jobId}
+                    onClick={async () => {
+                    if (!jobId) { setError('Transcribe first'); return; }
+                    const s = Number(regionStart), e = Number(regionEnd), m = Number(regionMargin || '0.75');
+                    if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Enter start/end seconds (end > start)'); return; }
+                    try {
+                      setBusy(true);
+                      setStatus(`Aligning region ${s.toFixed(2)}–${e.toFixed(2)}s with WhisperX…`);
+                      setError(null);
+                      // ETA progress for region: include margin
+                      const dur = (e - s) + (Number.isFinite(m) ? Number(m) * 2 : 1.5);
+                      const total = dur / (avgRtf.region > 0 ? avgRtf.region : 5);
+                      const startAt = Date.now();
+                      setProgress(0);
+                      progressTimer.current = window.setInterval(() => {
+                        const elapsed = (Date.now() - startAt) / 1000;
+                        setProgress(Math.max(0, Math.min(1, elapsed / total)));
+                      }, 1000);
+                      const res = await mediaAlignRegion(jobId, s, e, Number.isFinite(m) ? m : undefined);
+                      setTranscript(res.transcript);
+                      const elapsed = res.stats?.elapsed;
+                      const rtf = res.stats?.rtf;
+                      const words = res.stats?.words ?? 0;
+                      if (typeof elapsed === 'number' && typeof rtf === 'number') {
+                        setStatus(`Aligned ${words} words in ${elapsed.toFixed(2)}s (RTF ${rtf.toFixed(2)}×)`);
+                      }
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Region alignment failed');
+                    } finally {
+                      setBusy(false);
+                      setStatus('');
+                      if (progressTimer.current) { window.clearInterval(progressTimer.current); progressTimer.current = null; }
+                      setProgress(null);
+                      void refreshStats();
                     }
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : 'Region alignment failed');
-                  } finally {
-                    setBusy(false);
-                    setStatus('');
-                    if (progressTimer.current) { window.clearInterval(progressTimer.current); progressTimer.current = null; }
-                    setProgress(null);
-                    void refreshStats();
-                  }
-                }}
-                >
-                  {busy ? 'Aligning…' : 'Refine region'}
-                </button>
+                  }}
+                  >
+                    {busy ? 'Aligning…' : 'Refine region'}
+                  </button>
+                </details>
               </div>
             ) : (
               <p className="panel__hint panel__hint--muted">WhisperX not enabled on this host. Install and enable to refine word timings.</p>
@@ -604,7 +617,7 @@ export function TranscriptPanel() {
               <button
                 className="panel__button panel__button--primary"
                 type="button"
-                disabled={busy || !jobId || !replaceText.trim()}
+                disabled={busy || !jobId || !replaceText.trim() || !(Number(regionEnd) > Number(regionStart))}
                 onClick={async () => {
                   if (!jobId) { setError('Transcribe first'); return; }
                   const s = Number(regionStart), e = Number(regionEnd);
@@ -804,6 +817,112 @@ export function TranscriptPanel() {
           {transcript ? (
             <div className="media-editor__words">
               <p className="panel__meta">Language: {transcript.language || 'unknown'} · Duration: {transcript.duration?.toFixed?.(1) ?? transcript.duration}s</p>
+              <div className="row" style={{ alignItems: 'flex-end', gap: 8 }}>
+                <div className="segmented segmented--sm" role="radiogroup" aria-label="View">
+                  <label className={`segmented__option ${viewMode === 'sentences' ? 'is-selected' : ''}`}>
+                    <input type="radio" name="view" value="sentences" checked={viewMode === 'sentences'} onChange={() => setViewMode('sentences')} />
+                    Sentences
+                  </label>
+                  <label className={`segmented__option ${viewMode === 'words' ? 'is-selected' : ''}`}>
+                    <input type="radio" name="view" value="words" checked={viewMode === 'words'} onChange={() => setViewMode('words')} />
+                    Words (advanced)
+                  </label>
+                </div>
+                <div style={{ flex: 1 }} />
+                <label className="field field--lg">
+                  <span className="field__label">Find</span>
+                  <input type="text" value={findQuery} onChange={(e) => setFindQuery(e.target.value)} placeholder="Type phrase to select…" />
+                </label>
+                <button
+                  className="panel__button"
+                  type="button"
+                  onClick={() => {
+                    if (!transcript?.words?.length || !findQuery.trim()) return;
+                    const words = transcript.words.map((w) => w.text.toLowerCase());
+                    const tokens = findQuery.toLowerCase().split(/\s+/).filter(Boolean);
+                    if (!tokens.length) return;
+                    let matchLo = -1, matchHi = -1;
+                    for (let i = findStartFrom; i <= words.length - tokens.length; i += 1) {
+                      let ok = true;
+                      for (let j = 0; j < tokens.length; j += 1) { if (words[i + j] !== tokens[j]) { ok = false; break; } }
+                      if (ok) { matchLo = i; matchHi = i + tokens.length - 1; break; }
+                    }
+                    if (matchLo === -1) { setFindStartFrom(0); return; }
+                    setSelStartIdx(matchLo); setSelEndIdx(matchHi); updateRegionFromIdxRange(matchLo, matchHi); setCursorIdx(matchHi); setFindStartFrom(matchHi + 1);
+                  }}
+                >
+                  Find
+                </button>
+                <button className="panel__button" type="button" onClick={() => { setFindStartFrom(0); }}>
+                  Reset
+                </button>
+              </div>
+              <div className="panel__actions" style={{ gap: 8 }}>
+                <span className="panel__meta">Selection: {regionStart || '…'}s → {regionEnd || '…'}s {selectionValid ? `(${(Number(regionEnd) - Number(regionStart)).toFixed(2)}s)` : ''}</span>
+                <button className="panel__button" type="button" onClick={() => { clearSelection(); }}>
+                  Clear
+                </button>
+                <button className="panel__button" type="button" disabled={!audioUrl || isPreviewingSel || !selectionValid} onClick={() => void previewSelectionOnce()}>
+                  {isPreviewingSel ? 'Playing…' : 'Preview selection'}
+                </button>
+                {whisperxEnabled ? (
+                  <button className="panel__button" type="button" disabled={busy || !jobId || !selectionValid} onClick={async () => {
+                    if (!jobId) { setError('Transcribe first'); return; }
+                    const s = Number(regionStart), e = Number(regionEnd), m = Number(regionMargin || '0.75');
+                    if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Enter start/end seconds (end > start)'); return; }
+                    try {
+                      setBusy(true);
+                      setStatus(`Aligning region ${s.toFixed(2)}–${e.toFixed(2)}s with WhisperX…`);
+                      setError(null);
+                      const dur = (e - s) + (Number.isFinite(m) ? Number(m) * 2 : 1.5);
+                      const total = dur / (avgRtf.region > 0 ? avgRtf.region : 5);
+                      const startAt = Date.now();
+                      setProgress(0);
+                      progressTimer.current = window.setInterval(() => {
+                        const elapsed = (Date.now() - startAt) / 1000;
+                        setProgress(Math.max(0, Math.min(1, elapsed / total)));
+                      }, 1000);
+                      const res = await mediaAlignRegion(jobId, s, e, Number.isFinite(m) ? m : undefined);
+                      setTranscript(res.transcript);
+                      const elapsed = res.stats?.elapsed;
+                      const rtf = res.stats?.rtf;
+                      const words = res.stats?.words ?? 0;
+                      if (typeof elapsed === 'number' && typeof rtf === 'number') {
+                        setStatus(`Aligned ${words} words in ${elapsed.toFixed(2)}s (RTF ${rtf.toFixed(2)}×)`);
+                      }
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Region alignment failed');
+                    } finally {
+                      setBusy(false);
+                      setStatus('');
+                      if (progressTimer.current) { window.clearInterval(progressTimer.current); progressTimer.current = null; }
+                      setProgress(null);
+                      void refreshStats();
+                    }
+                  }}>
+                    {busy ? 'Aligning…' : 'Refine region'}
+                  </button>
+                ) : null}
+              </div>
+
+              {viewMode === 'sentences' && transcript.segments?.length ? (
+                <div role="list" aria-label="Transcript sentences" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {transcript.segments.map((seg, i) => (
+                    <button
+                      key={`seg-${i}`}
+                      type="button"
+                      className="chip-button"
+                      title={`${seg.start.toFixed(2)}–${seg.end.toFixed(2)}s`}
+                      onClick={() => selectSegment(seg)}
+                      style={{ justifyContent: 'flex-start', whiteSpace: 'normal' }}
+                    >
+                      {seg.text}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              {viewMode === 'words' ? (
               <div
                 role="list"
                 aria-label="Transcript words (drag to select a region)"
@@ -848,35 +967,6 @@ export function TranscriptPanel() {
                   }
                 }}
               >
-                <div className="row" style={{ gap: 8, marginBottom: 6 }}>
-                  <label className="field field--lg">
-                    <span className="field__label">Find</span>
-                    <input type="text" value={findQuery} onChange={(e) => setFindQuery(e.target.value)} placeholder="Type phrase to select…" />
-                  </label>
-                  <button
-                    className="panel__button"
-                    type="button"
-                    onClick={() => {
-                      if (!transcript?.words?.length || !findQuery.trim()) return;
-                      const words = transcript.words.map((w) => w.text.toLowerCase());
-                      const tokens = findQuery.toLowerCase().split(/\s+/).filter(Boolean);
-                      if (!tokens.length) return;
-                      let matchLo = -1, matchHi = -1;
-                      for (let i = findStartFrom; i <= words.length - tokens.length; i += 1) {
-                        let ok = true;
-                        for (let j = 0; j < tokens.length; j += 1) { if (words[i + j] !== tokens[j]) { ok = false; break; } }
-                        if (ok) { matchLo = i; matchHi = i + tokens.length - 1; break; }
-                      }
-                      if (matchLo === -1) { setFindStartFrom(0); return; }
-                      setSelStartIdx(matchLo); setSelEndIdx(matchHi); updateRegionFromIdxRange(matchLo, matchHi); setCursorIdx(matchHi); setFindStartFrom(matchHi + 1);
-                    }}
-                  >
-                    Find
-                  </button>
-                  <button className="panel__button" type="button" onClick={() => { setFindStartFrom(0); }}>
-                    Reset
-                  </button>
-                </div>
                 {transcript.words?.length ? (
                   transcript.words.map((w, idx) => {
                     const a = selStartIdx ?? -1;
@@ -938,23 +1028,7 @@ export function TranscriptPanel() {
                   <p className="panel__hint panel__hint--muted">No word timings; enable WhisperX later for alignment.</p>
                 )}
               </div>
-              <div className="panel__actions" style={{ gap: 8 }}>
-                <button
-                  className="panel__button"
-                  type="button"
-                  onClick={() => { clearSelection(); }}
-                >
-                  Clear selection
-                </button>
-                {selStartIdx !== null && selEndIdx !== null ? (
-                  <>
-                    <span className="panel__meta">Selection: {regionStart || '…'}s → {regionEnd || '…'}s</span>
-                    <button className="panel__button" type="button" disabled={!audioUrl || isPreviewingSel} onClick={() => void previewSelectionOnce()}>
-                      {isPreviewingSel ? 'Playing…' : 'Preview selection'}
-                    </button>
-                  </>
-                ) : null}
-              </div>
+              ) : null}
             </div>
           ) : null}
         </div>
