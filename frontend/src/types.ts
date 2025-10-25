@@ -228,6 +228,8 @@ export interface MediaEstimateInfo {
   view_count?: number | null;
   thumbnail_url?: string | null;
   webpage_url?: string | null;
+  channel_url?: string | null;
+  like_count?: number | null;
 }
 
 export interface MediaProbeInfo {

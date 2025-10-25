@@ -2873,7 +2873,9 @@ def media_estimate_endpoint():
       upload_date?: string,
       view_count?: int,
       thumbnail_url?: string,
-      webpage_url?: string
+      webpage_url?: string,
+      channel_url?: string,
+      like_count?: int
     }
     """
     # Opportunistic cleanup of old media artifacts
@@ -2901,6 +2903,8 @@ def media_estimate_endpoint():
                     'view_count': cached_meta.get('view_count') or None,
                     'thumbnail_url': cached_meta.get('thumbnail') or None,
                     'webpage_url': cached_meta.get('webpage_url') or url,
+                    'channel_url': cached_meta.get('channel_url') or None,
+                    'like_count': cached_meta.get('like_count') or None,
                 })
                 return jsonify(out)
             # If no meta cache yet, try to fetch once and save
@@ -2915,6 +2919,8 @@ def media_estimate_endpoint():
                         'view_count': data.get('view_count') or None,
                         'thumbnail_url': data.get('thumbnail') or None,
                         'webpage_url': data.get('webpage_url') or url,
+                        'channel_url': data.get('channel_url') or None,
+                        'like_count': data.get('like_count') or None,
                     })
                 except Exception:
                     pass
@@ -2936,6 +2942,8 @@ def media_estimate_endpoint():
             'view_count': data.get('view_count') or None,
             'thumbnail_url': data.get('thumbnail') or None,
             'webpage_url': data.get('webpage_url') or url,
+            'channel_url': data.get('channel_url') or None,
+            'like_count': data.get('like_count') or None,
         }
         if vid:
             _youtube_meta_save(vid, data)

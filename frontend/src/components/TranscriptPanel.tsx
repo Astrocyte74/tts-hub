@@ -717,9 +717,25 @@ export function TranscriptPanel() {
                     <img src={ytInfo.thumbnail_url} alt="Video thumbnail" className="media-info__thumb" />
                   ) : null}
                   <div className="media-info__meta">
-                    <p className="media-info__title">{ytInfo.title || 'YouTube video'}</p>
-                    <p className="media-info__line">{ytInfo.uploader || 'Unknown uploader'}</p>
-                    <p className="media-info__line">Duration: {ytInfo.duration ? `${ytInfo.duration.toFixed(1)}s` : '—'} {ytInfo.cached ? '· cached' : ''}</p>
+                    <div className="media-info__row">
+                      <a href={ytInfo.webpage_url || undefined} target="_blank" rel="noreferrer" className="media-info__title">{ytInfo.title || 'YouTube video'}</a>
+                      <span className={`media-info__badge ${ytInfo.cached ? 'media-info__badge--cached' : 'media-info__badge--live'}`}>{ytInfo.cached ? 'Cached' : 'Live'}</span>
+                    </div>
+                    <div className="media-info__row">
+                      <a href={ytInfo.channel_url || undefined} target="_blank" rel="noreferrer" className="media-info__line">{ytInfo.uploader || 'Unknown channel'}</a>
+                      {ytInfo.upload_date ? (
+                        <span className="media-info__line">· Published {(() => { const d = String(ytInfo.upload_date); return d.length===8 ? `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}` : d; })()}</span>
+                      ) : null}
+                    </div>
+                    <div className="media-info__row">
+                      <span className="media-info__line">Duration: {ytInfo.duration ? `${ytInfo.duration.toFixed(1)}s` : '—'}</span>
+                      {typeof ytInfo.view_count === 'number' ? (
+                        <span className="media-info__line">· {ytInfo.view_count.toLocaleString()} views</span>
+                      ) : null}
+                      {typeof ytInfo.like_count === 'number' ? (
+                        <span className="media-info__line">· {ytInfo.like_count.toLocaleString()} likes</span>
+                      ) : null}
+                    </div>
                     {avgRtf.transcribe > 0 && ytInfo.duration ? (
                       <p className="media-info__hint">Est. transcribe time: {(ytInfo.duration / avgRtf.transcribe).toFixed(0)}s</p>
                     ) : null}
