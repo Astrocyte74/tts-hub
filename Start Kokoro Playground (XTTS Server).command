@@ -100,6 +100,24 @@ yesno_default_no() {
   esac
 }
 
+# Prompt that auto-selects 'yes' after a timeout (default 3s)
+yesno_auto_yes_after() {
+  local prompt="$1"; local timeout="${2:-3}"; local ans
+  # Use timed read; do not exit on timeout even with set -e
+  if ! read -t "$timeout" -r -p "$prompt [y/N] (auto Y in ${timeout}s) " ans; then
+    ans=""
+    echo  # newline after timed prompt
+  fi
+  # No response → auto-yes
+  if [[ -z "$ans" ]]; then
+    return 0
+  fi
+  case "$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')" in
+    y|yes) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 open_in_browser() {
   local url="$1"
   if command -v open >/dev/null 2>&1; then
@@ -392,7 +410,7 @@ export API_PREFIX="$BACKEND_API_PREFIX"
 # STT/Alignment toggles (prompt if not set and interactive)
 if [[ "$SKIP_ASK" != "1" ]]; then
   if [[ -z "${WHISPERX_ENABLE:-}" ]]; then
-    if yesno_default_no "Enable WhisperX alignment for tighter word timings? (slower, requires torch/whisperx)"; then
+    if yesno_auto_yes_after "Enable WhisperX alignment for tighter word timings? (slower, requires torch/whisperx)" 3; then
       export WHISPERX_ENABLE=1
     else
       export WHISPERX_ENABLE=0
