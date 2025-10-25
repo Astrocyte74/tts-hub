@@ -28,7 +28,12 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
   const [zoom, setZoom] = useState<number>(Math.max(1, defaultZoom || 1)); // 1 = fit all
   const [viewStart, setViewStart] = useState<number>(0); // seconds
   const [isHot, setIsHot] = useState<boolean>(false); // keyboard scope when hovered
-  const [styleMode, setStyleMode] = useState<'bars' | 'line'>('bars');
+  const [styleMode, setStyleMode] = useState<'bars' | 'line' | 'filled'>('bars');
+  const [showTicks, setShowTicks] = useState<boolean>(true);
+  const [showWhiskers, setShowWhiskers] = useState<boolean>(true);
+  const [showBlocks, setShowBlocks] = useState<boolean>(false);
+  const [showRepl, setShowRepl] = useState<boolean>(true);
+  const [blockGap, setBlockGap] = useState<number>(0.25); // seconds gap to split blocks
 
   // Resize observer to keep canvas crisp
   useEffect(() => {
@@ -64,6 +69,22 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
     }
   ), [duration, width, viewStart, viewDuration]);
 
+  // Derived speech blocks from words
+  const blocks = useMemo(() => {
+    if (!words || !words.length) return [] as { start: number; end: number }[];
+    const out: { start: number; end: number }[] = [];
+    let s = Number(words[0]!.start) || 0;
+    let e = Number(words[0]!.end) || 0;
+    for (let i = 1; i < words.length; i += 1) {
+      const w = words[i]!;
+      const ws = Number(w.start) || 0; const we = Number(w.end) || 0;
+      if (ws - e > blockGap) { out.push({ start: s, end: e }); s = ws; e = we; }
+      else { e = Math.max(e, we); }
+    }
+    out.push({ start: s, end: e });
+    return out;
+  }, [words, blockGap]);
+
   // Draw
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -92,6 +113,17 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
       ctx.fillRect(x0, 0, Math.max(1, x1 - x0), h);
     }
 
+    // Speech blocks overlay (behind envelope)
+    if (showBlocks && blocks.length && duration) {
+      ctx.fillStyle = 'rgba(96,165,250,0.18)';
+      for (const b of blocks) {
+        if (b.end < viewStart || b.start > (viewStart + viewDuration)) continue;
+        const xs = Math.floor(timeToX(Math.max(b.start, viewStart)) * dpr);
+        const xe = Math.floor(timeToX(Math.min(b.end, viewStart + viewDuration)) * dpr);
+        ctx.fillRect(xs, 0, Math.max(1, xe - xs), h);
+      }
+    }
+
     // Envelope — render only the visible subset
     if (peaks && peaks.length && duration) {
       const center = Math.floor(h / 2);
@@ -108,7 +140,7 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
           const y = Math.floor(v * (h / 2 - 2));
           ctx.fillRect(x, center - y, 1, y * 2);
         }
-      } else {
+      } else if (styleMode === 'line') {
         // line mode
         ctx.strokeStyle = 'rgba(59,130,246,0.95)';
         ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
@@ -135,11 +167,39 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
           else ctx.lineTo(x, yy);
         }
         ctx.stroke();
+      } else {
+        // filled area mode (top and bottom mirrored)
+        ctx.fillStyle = 'rgba(59,130,246,0.35)';
+        const topPath = new Path2D();
+        for (let i = startIdx; i <= endIdx; i += 1) {
+          const v = peaks[i];
+          const rel = (i - startIdx) / span;
+          const x = Math.floor(rel * w);
+          const y = Math.floor(v * (h / 2 - 2));
+          const yy = center - y;
+          if (i === startIdx) topPath.moveTo(x, yy);
+          else topPath.lineTo(x, yy);
+        }
+        const botPath = new Path2D();
+        for (let i = endIdx; i >= startIdx; i -= 1) {
+          const v = peaks[i];
+          const rel = (i - startIdx) / span;
+          const x = Math.floor(rel * w);
+          const y = Math.floor(v * (h / 2 - 2));
+          const yy = center + y;
+          if (i === endIdx) botPath.moveTo(x, yy);
+          else botPath.lineTo(x, yy);
+        }
+        // Combine paths and fill
+        const path = new Path2D();
+        path.addPath(topPath);
+        path.addPath(botPath);
+        ctx.fill(path);
       }
     }
 
     // Word boundary ticks
-    if (words && words.length && duration) {
+    if (showTicks && words && words.length && duration) {
       ctx.fillStyle = 'rgba(226,232,240,0.55)';
       for (const wd of words) {
         // only draw when inside view
@@ -152,7 +212,7 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
     }
 
     // Whiskers for boundary adjustments (last alignment)
-    if (diffMarkers && diffMarkers.length && duration) {
+    if (showWhiskers && diffMarkers && diffMarkers.length && duration) {
       ctx.strokeStyle = 'rgba(237,137,54,0.9)'; // orange
       ctx.fillStyle = 'rgba(237,137,54,0.9)';
       ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
@@ -179,7 +239,7 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
     }
 
     // Replacement words overlay (lane under ticks)
-    if (replaceWords && replaceWords.length && duration) {
+    if (showRepl && replaceWords && replaceWords.length && duration) {
       ctx.fillStyle = 'rgba(250,204,21,0.6)'; // amber lane
       const laneTop = Math.floor(h * 0.70);
       const laneH = Math.floor(h * 0.20);
@@ -390,6 +450,13 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
         <div className="wf-seg" role="radiogroup" aria-label="Waveform style">
           <button type="button" className={`wf-btn ${styleMode === 'bars' ? 'is-active' : ''}`} onClick={() => setStyleMode('bars')} title="Bars">Bars</button>
           <button type="button" className={`wf-btn ${styleMode === 'line' ? 'is-active' : ''}`} onClick={() => setStyleMode('line')} title="Line">Line</button>
+          <button type="button" className={`wf-btn ${styleMode === 'filled' ? 'is-active' : ''}`} onClick={() => setStyleMode('filled')} title="Filled">Filled</button>
+        </div>
+        <div className="wf-seg" role="group" aria-label="Overlays">
+          <button type="button" className={`wf-btn ${showTicks ? 'is-active' : ''}`} onClick={() => setShowTicks(v => !v)} title="Word boundary ticks">Ticks</button>
+          <button type="button" className={`wf-btn ${showWhiskers ? 'is-active' : ''}`} onClick={() => setShowWhiskers(v => !v)} title="Alignment adjustments">Adj</button>
+          <button type="button" className={`wf-btn ${showBlocks ? 'is-active' : ''}`} onClick={() => setShowBlocks(v => !v)} title="Speech blocks">Blocks</button>
+          <button type="button" className={`wf-btn ${showRepl ? 'is-active' : ''}`} onClick={() => setShowRepl(v => !v)} title="Replacement overlay">Repl</button>
         </div>
       </div>
       {/* Footer: shortcuts and legend */}
