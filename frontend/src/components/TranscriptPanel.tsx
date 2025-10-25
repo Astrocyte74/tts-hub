@@ -355,18 +355,18 @@ export function TranscriptPanel() {
     <div className="panel panel--compact" style={{ marginTop: 12 }}>
       <div className="media-editor">
         <div className="media-editor__left">
-          <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
+          <div className="form-grid">
             <label className="field" style={{ minWidth: 280 }}>
               <span className="field__label">YouTube URL</span>
               <input type="url" placeholder="https://www.youtube.com/watch?v=..." value={url} onChange={(e) => setUrl(e.target.value)} />
             </label>
-            <button className="panel__button" type="button" disabled={busy} onClick={() => handleTranscribe('url')}>Transcribe URL</button>
-            <span className="panel__meta">or</span>
+            <button className="panel__button action" type="button" disabled={busy} onClick={() => handleTranscribe('url')}>Transcribe URL</button>
+            <div className="inline-or">or</div>
             <label className="field">
               <span className="field__label">Upload file</span>
               <input ref={fileInputRef} type="file" accept="audio/*,video/*,.mp4,.mkv,.mov,.mp3,.wav,.flac,.ogg" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
             </label>
-            <button className="panel__button" type="button" disabled={busy} onClick={() => handleTranscribe('file')}>Transcribe File</button>
+            <button className="panel__button action" type="button" disabled={busy} onClick={() => handleTranscribe('file')}>Transcribe File</button>
           </div>
           {error ? <p className="panel__hint panel__hint--warning">{error}</p> : null}
           {status ? (
