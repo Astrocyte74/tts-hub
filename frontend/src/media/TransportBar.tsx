@@ -34,6 +34,81 @@ export function TransportBar({ audioUrl, selection, onSetSelection }: TransportB
     try { audioRef.current.currentTime = pct * duration; } catch {}
   }
 
+  function hasValidSelection(): boolean {
+    return (
+      selection.start !== null && selection.end !== null &&
+      Number.isFinite(selection.start) && Number.isFinite(selection.end) &&
+      (selection.start as number) < (selection.end as number)
+    );
+  }
+
+  function playSelectionOnce() {
+    if (!hasValidSelection() || !audioRef.current) return;
+    const start = selection.start as number;
+    const end = selection.end as number;
+    const audio = audioRef.current;
+    try { audio.currentTime = start; } catch {}
+    const stopAt = Math.max(start, end - 0.02);
+    const onTime = () => {
+      if (audio.currentTime >= stopAt) {
+        audio.pause();
+        audio.removeEventListener('timeupdate', onTime);
+      }
+    };
+    audio.addEventListener('timeupdate', onTime);
+    void audio.play().catch(() => audio.removeEventListener('timeupdate', onTime));
+  }
+
+  // Global keyboard shortcuts: Space = preview selection; Esc = clear; Alt/Shift + Arrows = nudge edges
+  useEffect(() => {
+    function isTypingTarget(el: EventTarget | null): boolean {
+      const node = el as HTMLElement | null;
+      if (!node) return false;
+      const tag = node.tagName?.toLowerCase();
+      return (
+        tag === 'input' || tag === 'textarea' || tag === 'select' ||
+        (node as HTMLElement).isContentEditable === true
+      );
+    }
+    const handler = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target)) return;
+      if (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar') {
+        if (hasValidSelection()) {
+          e.preventDefault();
+          playSelectionOnce();
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        onSetSelection(null, null);
+        return;
+      }
+      if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && hasValidSelection()) {
+        const step = e.shiftKey ? 0.5 : 0.05; // s
+        const start = selection.start as number;
+        const end = selection.end as number;
+        if (e.altKey) {
+          // Adjust start edge
+          const delta = e.key === 'ArrowLeft' ? -step : step;
+          const nextStart = Math.max(0, Math.min(end - 0.01, start + delta));
+          onSetSelection(nextStart, end);
+          e.preventDefault();
+          return;
+        }
+        if (e.shiftKey) {
+          // Adjust end edge
+          const delta = e.key === 'ArrowLeft' ? -step : step;
+          const nextEnd = Math.min(duration || Infinity, Math.max(start + 0.01, end + delta));
+          onSetSelection(start, nextEnd);
+          e.preventDefault();
+          return;
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [selection.start, selection.end, duration]);
+
   useEffect(() => {
     function onMove(e: MouseEvent) {
       if (!dragRef.current || !timelineRef.current || !duration) return;
@@ -80,6 +155,21 @@ export function TransportBar({ audioUrl, selection, onSetSelection }: TransportB
                 title="Drag to adjust start"
                 role="slider"
                 aria-label="Selection start"
+                tabIndex={0}
+                aria-valuemin={0}
+                aria-valuemax={duration || 0}
+                aria-valuenow={selection.start ?? 0}
+                onKeyDown={(e) => {
+                  const step = e.shiftKey ? 0.5 : 0.05;
+                  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                    const dir = e.key === 'ArrowLeft' ? -1 : 1;
+                    const start = selection.start ?? 0;
+                    const end = selection.end ?? (duration || 0);
+                    const next = Math.max(0, Math.min(end - 0.01, start + dir * step));
+                    onSetSelection(next, end);
+                    e.preventDefault();
+                  }
+                }}
                 onMouseDown={(e) => { e.preventDefault(); dragRef.current = 'start'; }}
                 style={{ position: 'absolute', left, top: -4, width: 10, height: 16, background: '#60a5fa', borderRadius: 3, cursor: 'ew-resize', transform: 'translateX(-50%)' }}
               />
@@ -87,6 +177,21 @@ export function TransportBar({ audioUrl, selection, onSetSelection }: TransportB
                 title="Drag to adjust end"
                 role="slider"
                 aria-label="Selection end"
+                tabIndex={0}
+                aria-valuemin={0}
+                aria-valuemax={duration || 0}
+                aria-valuenow={selection.end ?? 0}
+                onKeyDown={(e) => {
+                  const step = e.shiftKey ? 0.5 : 0.05;
+                  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                    const dir = e.key === 'ArrowLeft' ? -1 : 1;
+                    const start = selection.start ?? 0;
+                    const end = selection.end ?? (duration || 0);
+                    const next = Math.min(duration || Infinity, Math.max(start + 0.01, end + dir * step));
+                    onSetSelection(start, next);
+                    e.preventDefault();
+                  }
+                }}
                 onMouseDown={(e) => { e.preventDefault(); dragRef.current = 'end'; }}
                 style={{ position: 'absolute', left: `calc(${left} + ${width})`, top: -4, width: 10, height: 16, background: '#22d3ee', borderRadius: 3, cursor: 'ew-resize', transform: 'translateX(-50%)' }}
               />

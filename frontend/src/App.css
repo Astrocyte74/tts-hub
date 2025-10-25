@@ -1062,6 +1062,12 @@ textarea:focus-visible {
 .media-timeline__playhead { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #93c5fd; }
 .media-transport__meta { display: flex; justify-content: space-between; font-size: 12px; opacity: .8; }
 
+/* Focus ring for timeline handles */
+.media-timeline [role="slider"]:focus {
+  outline: 2px solid rgba(59,130,246,.7);
+  outline-offset: 2px;
+}
+
 .media-surface { display: flex; flex-direction: column; gap: 8px; }
 
 
