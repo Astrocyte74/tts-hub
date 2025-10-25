@@ -15,6 +15,8 @@ import { SettingsPopover } from './components/SettingsPopover';
 import { PresetDialog } from './components/PresetDialog';
 import { InfoDialog } from './components/InfoDialog';
 import { ApiStatusFooter } from './components/ApiStatusFooter';
+// Media editor is moved to its own page (#media)
+import { MediaEditorPage } from './pages/MediaEditorPage';
 import { OllamaPanel } from './components/OllamaPanel';
 import { FavoritesManagerDialog } from './components/FavoritesManagerDialog';
 import { XttsCustomVoiceDialog } from './components/XttsCustomVoiceDialog';
@@ -115,6 +117,12 @@ type SaveDraft =
     };
 
 function App() {
+  const [mediaMode, setMediaMode] = useState<boolean>(typeof window !== 'undefined' && window.location.hash === '#media');
+  useEffect(() => {
+    const onHash = () => setMediaMode(window.location.hash === '#media');
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
   const [text, setText] = useLocalStorage('kokoro:text', DEFAULT_TEXT);
   const [selectedVoices, setSelectedVoices] = useLocalStorage<string[]>('kokoro:selectedVoices', []);
   const [language, setLanguage] = useLocalStorage('kokoro:language', DEFAULT_LANGUAGE);
@@ -1548,6 +1556,10 @@ function App() {
       setActivePanel('results');
     }
   }, [queue, autoOpenClips, results.length, setActivePanel]);
+
+  if (mediaMode) {
+    return <MediaEditorPage />;
+  }
 
   return (
     <div className="app">

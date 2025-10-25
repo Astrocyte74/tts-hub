@@ -442,6 +442,20 @@ export function TopContextBar({
                 className="popover__button"
                 type="button"
                 role="menuitem"
+                onClick={() => {
+                  setToolsMenuOpen(false);
+                  try {
+                    window.location.hash = '#media';
+                  } catch {}
+                }}
+                title="Open Media Editor"
+              >
+                Media Editor
+              </button>
+              <button
+                className="popover__button"
+                type="button"
+                role="menuitem"
                 disabled={!ollamaAvailable || !onAiAssistClick}
                 onClick={() => {
                   setToolsMenuOpen(false);

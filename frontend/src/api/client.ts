@@ -11,6 +11,11 @@ import type {
   VoiceProfile,
   VoiceCatalogue,
   GlobalProfile,
+  MediaTranscribeResponse,
+  MediaAlignResponse,
+  MediaStatsSummary,
+  MediaReplacePreviewResponse,
+  MediaApplyResponse,
 } from '../types';
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
@@ -175,7 +180,7 @@ function coerceChatttsPreset(entry: unknown, index: number): ChatttsPreset | nul
   return preset;
 }
 
-function resolveAudioUrl(candidate: string | undefined): string {
+export function resolveAudioUrl(candidate: string | undefined): string {
   if (!candidate) {
     throw new Error('No audio URL provided by the server response');
   }
@@ -410,6 +415,62 @@ export async function createXttsCustomVoiceFromYouTube(
   if (opts?.start !== undefined) body.start = opts.start;
   if (opts?.end !== undefined) body.end = opts.end;
   return postJson<CreateXttsCustomVoiceResponse>('xtts/custom_voice', body);
+}
+
+// -------------------- Media editing --------------------
+
+export async function mediaTranscribeFromUrl(url: string): Promise<MediaTranscribeResponse> {
+  const body = { source: 'youtube', url };
+  return postJson<MediaTranscribeResponse>('media/transcribe', body);
+}
+
+export async function mediaTranscribeUpload(file: File): Promise<MediaTranscribeResponse> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(buildUrl('media/transcribe'), { method: 'POST', body: fd });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`POST media/transcribe (upload) failed (${res.status}): ${text}`);
+  }
+  return (await res.json()) as MediaTranscribeResponse;
+}
+
+export async function mediaAlignFull(jobId: string): Promise<MediaAlignResponse> {
+  return postJson<MediaAlignResponse>('media/align', { jobId });
+}
+
+export async function mediaAlignRegion(jobId: string, start: number, end: number, margin?: number): Promise<MediaAlignResponse> {
+  const body: Record<string, unknown> = { jobId, start, end };
+  if (typeof margin === 'number') body.margin = margin;
+  return postJson<MediaAlignResponse>('media/align_region', body);
+}
+
+export async function mediaGetStats(): Promise<MediaStatsSummary> {
+  return getJson<MediaStatsSummary>('media/stats');
+}
+
+export async function mediaEstimateUrl(url: string): Promise<{ duration: number; cached?: boolean }> {
+  return postJson<{ duration: number; cached?: boolean }>('media/estimate', { source: 'youtube', url });
+}
+
+export async function mediaReplacePreview(payload: {
+  jobId: string;
+  start: number;
+  end: number;
+  text: string;
+  voice?: string; // id or path; when omitted, borrow from region
+  language?: string;
+  speed?: number;
+  marginMs?: number;
+  fadeMs?: number;
+}): Promise<MediaReplacePreviewResponse> {
+  return postJson<MediaReplacePreviewResponse>('media/replace_preview', payload);
+}
+
+export async function mediaApply(jobId: string, opts?: { format?: string }): Promise<MediaApplyResponse> {
+  const body: Record<string, unknown> = { jobId };
+  if (opts?.format) body.format = opts.format;
+  return postJson<MediaApplyResponse>('media/apply', body);
 }
 
 export async function getXttsCustomVoice(id: string): Promise<Record<string, unknown>> {

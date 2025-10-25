@@ -163,6 +163,61 @@ export interface GlobalProfile {
   updatedAt?: string;
 }
 
+// -------------------- Media editing --------------------
+
+export interface MediaTranscriptWord {
+  text: string;
+  start: number;
+  end: number;
+  confidence?: number;
+  speaker?: string;
+}
+
+export interface MediaTranscriptSegment {
+  text: string;
+  start: number;
+  end: number;
+  speaker?: string;
+}
+
+export interface MediaTranscriptResult {
+  language: string;
+  duration: number;
+  segments: MediaTranscriptSegment[];
+  words: MediaTranscriptWord[];
+  note?: string;
+}
+
+export interface MediaTranscribeResponse {
+  jobId: string;
+  media: { audio_url: string; duration: number };
+  transcript: MediaTranscriptResult;
+  whisperx?: { enabled: boolean };
+  stats?: { elapsed?: number; rtf?: number; segments?: number; words?: number };
+}
+
+export interface MediaAlignResponse extends MediaTranscribeResponse {}
+
+export interface MediaStatsSummary {
+  transcribe: { avg_rtf: number | null; count: number };
+  align_full: { avg_rtf: number | null; count: number };
+  align_region: { avg_rtf: number | null; count: number };
+}
+
+export interface MediaReplacePreviewResponse {
+  jobId: string;
+  preview_url: string;
+  diff_url?: string;
+  stats?: { synth_elapsed?: number; fade_ms?: number };
+}
+
+export interface MediaApplyResponse {
+  jobId: string;
+  final_url: string;
+  mode: 'video' | 'audio';
+  container: string;
+}
+
 export interface AuditionAnnouncerConfig {
   enabled: boolean;
   voice?: string | null;

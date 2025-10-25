@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 import random
 import re
+import time
 
 import numpy as np
 import soundfile as sf
@@ -68,6 +69,26 @@ YT_DLP_EXTRACTOR_ARGS = os.environ.get("YT_DLP_EXTRACTOR_ARGS", "")
 XTTS_MIN_REF_SECONDS = float(os.environ.get("XTTS_MIN_REF_SECONDS", "5"))
 XTTS_MAX_REF_SECONDS = float(os.environ.get("XTTS_MAX_REF_SECONDS", "30"))
 
+# Media edit / STT config
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base").strip()
+ALLOW_STUB_STT = os.environ.get("ALLOW_STUB_STT", "1").strip() not in {"0", "false", "False"}
+WHISPERX_ENABLE = os.environ.get("WHISPERX_ENABLE", "0").strip() in {"1", "true", "True"}
+WHISPERX_DEVICE = os.environ.get("WHISPERX_DEVICE", "mps" if sys.platform == "darwin" else "cpu").strip()
+try:  # Optional STT dependency
+    from faster_whisper import WhisperModel  # type: ignore
+    _have_faster_whisper = True
+except Exception:  # pragma: no cover
+    WhisperModel = None  # type: ignore
+    _have_faster_whisper = False
+
+try:  # Optional alignment dependency
+    import whisperx  # type: ignore
+
+    _have_whisperx = True
+except Exception:  # pragma: no cover
+    whisperx = None  # type: ignore
+    _have_whisperx = False
+
 _xtts_voice_cache: Dict[str, Path] = {}
 _xtts_voice_lock = threading.Lock()
 
@@ -104,6 +125,235 @@ class PlaygroundError(Exception):
     def __init__(self, message: str, status: int = 400) -> None:
         super().__init__(message)
         self.status = status
+
+
+# ---------------------------------------------------------------------------
+# Media edit helpers (extract + STT)
+# ---------------------------------------------------------------------------
+
+
+def _ensure_dir(p: Path) -> None:
+    p.mkdir(parents=True, exist_ok=True)
+
+
+def _media_job_dir(job_id: str) -> Path:
+    d = OUTPUT_DIR / "media_edits" / job_id
+    _ensure_dir(d)
+    return d
+
+
+
+def _ffprobe_duration_seconds(path: Path) -> float:
+    try:
+        proc = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return float((proc.stdout or "0").strip() or 0)
+    except Exception:
+        return 0.0
+
+
+def _ffprobe_has_video(path: Path) -> bool:
+    """Return True if the media file contains at least one video stream."""
+    try:
+        proc = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "csv=p=0",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        out = (proc.stdout or "").strip()
+        return bool(out)
+    except Exception:
+        return False
+
+
+def _log(msg: str) -> None:
+    print(f"[media] {msg}")
+
+
+def _record_stat(kind: str, sample: Dict[str, Any]) -> None:
+    """Append a small stat sample to out/media_stats.json (kept to last 100 entries per kind)."""
+    stats_path = OUTPUT_DIR / "media_stats.json"
+    try:
+        data: Dict[str, Any] = {}
+        if stats_path.exists():
+            data = json.loads(stats_path.read_text(encoding="utf-8"))
+        if kind not in data or not isinstance(data.get(kind), list):
+            data[kind] = []
+        data[kind].append(sample)
+        # Keep bounded history
+        if len(data[kind]) > 100:
+            data[kind] = data[kind][-100:]
+        stats_path.parent.mkdir(parents=True, exist_ok=True)
+        stats_path.write_text(json.dumps(data), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _transcribe_faster_whisper(audio_wav: Path) -> Dict[str, Any]:
+    if not _have_faster_whisper or WhisperModel is None:  # type: ignore[name-defined]
+        raise PlaygroundError("STT 'faster-whisper' is not available on this host.", status=503)
+    # Lazy init model with CPU-friendly defaults
+    model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")  # type: ignore[call-arg]
+    _log(f"STT faster-whisper: transcribing wav='{audio_wav}'")
+    t0 = time.time()
+    segments, info = model.transcribe(str(audio_wav), vad_filter=True, word_timestamps=True)
+    words: List[Dict[str, Any]] = []
+    segs: List[Dict[str, Any]] = []
+    for seg in segments:
+        segs.append({"text": seg.text, "start": float(seg.start or 0), "end": float(seg.end or 0)})
+        if getattr(seg, "words", None):
+            for w in seg.words or []:
+                words.append({
+                    "text": w.word.strip(),
+                    "start": float(w.start or 0),
+                    "end": float(w.end or 0),
+                    "confidence": float(getattr(w, "probability", 0) or 0),
+                })
+    elapsed = max(time.time() - t0, 1e-6)
+    dur = _ffprobe_duration_seconds(audio_wav)
+    rtf = (dur / elapsed) if elapsed > 0 else 0
+    result = {
+        "language": getattr(info, "language", "unknown"),
+        "duration": dur,
+        "segments": segs,
+        "words": words,
+        "stats": {"elapsed": elapsed, "rtf": rtf, "segments": len(segs), "words": len(words)},
+    }
+    _log(f"STT faster-whisper: done lang={result['language']} segs={len(segs)} words={len(words)} elapsed={elapsed:.2f}s rtf={rtf:.2f}x")
+    return result
+
+
+def _transcribe_stub(audio_wav: Path) -> Dict[str, Any]:
+    dur = _ffprobe_duration_seconds(audio_wav)
+    # Create 10 evenly-spaced placeholder words as a stub
+    n = 10 if dur > 0 else 0
+    words = []
+    for i in range(n):
+        start = (dur * i) / max(n, 1)
+        end = (dur * (i + 1)) / max(n, 1)
+        words.append({"text": f"word{i+1}", "start": start, "end": end, "confidence": 0})
+    return {
+        "language": "unknown",
+        "duration": dur,
+        "segments": [{"text": "(stub transcript)", "start": 0, "end": dur}],
+        "words": words,
+        "note": "STT engine unavailable; returning stub for UI development.",
+    }
+
+
+_whisperx_align_cache: Dict[str, Tuple[object, object]] = {}
+
+
+def _whisperx_get_align_model(language: str) -> Tuple[object, object]:
+    if not _have_whisperx or whisperx is None:  # type: ignore[name-defined]
+        raise PlaygroundError("WhisperX is not installed on this host.", status=503)
+    lang = (language or "en").split("-")[0]
+    if lang in _whisperx_align_cache:
+        return _whisperx_align_cache[lang]
+    align_model, metadata = whisperx.load_align_model(
+        language_code=lang,
+        device=WHISPERX_DEVICE,
+    )
+    _whisperx_align_cache[lang] = (align_model, metadata)
+    return align_model, metadata
+
+
+def _whisperx_align_full(audio_wav: Path, transcript: Dict[str, Any]) -> Dict[str, Any]:
+    if not _have_whisperx or whisperx is None:  # type: ignore[name-defined]
+        raise PlaygroundError("WhisperX is not installed on this host.", status=503)
+    language = str(transcript.get("language") or "en")
+    align_model, metadata = _whisperx_get_align_model(language)
+    # Convert to WhisperX format result
+    wx_result: Dict[str, Any] = {
+        "language": language,
+        "segments": [
+            {"text": s.get("text", ""), "start": float(s.get("start", 0.0)), "end": float(s.get("end", 0.0))}
+            for s in transcript.get("segments", [])
+        ],
+    }
+    aligned = whisperx.align(
+        wx_result["segments"],
+        align_model,
+        metadata,
+        str(audio_wav),
+        device=WHISPERX_DEVICE,
+        return_char_alignments=False,
+    )
+    # Flatten words across segments
+    words: List[Dict[str, Any]] = []
+    for seg in aligned.get("segments", []):
+        for w in seg.get("words", []) or []:
+            if not isinstance(w, dict):
+                continue
+            words.append(
+                {
+                    "text": str(w.get("word") or w.get("text") or "").strip(),
+                    "start": float(w.get("start") or 0),
+                    "end": float(w.get("end") or 0),
+                    "confidence": float(w.get("score") or 0),
+                }
+            )
+    out = dict(transcript)
+    out["words"] = words
+    out["aligned"] = True
+    return out
+
+
+def _extract_input_to_wav(temp_src: Path, out_wav: Path, *, start: Optional[float] = None, end: Optional[float] = None) -> None:
+    # Reuse existing normalisation helper if present; fall back to ffmpeg call
+    try:
+        _ffmpeg_normalise_to_wav(temp_src, out_wav, start=start, end=end)  # type: ignore[name-defined]
+        return
+    except Exception:
+        pass
+    # Fallback normalise: mono 24kHz wav, trim optional
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(temp_src),
+    ]
+    if start is not None:
+        cmd += ["-ss", str(start)]
+    if end is not None:
+        cmd += ["-to", str(end)]
+    cmd += [
+        "-ac",
+        "1",
+        "-ar",
+        "24000",
+        str(out_wav),
+    ]
+    _log(f"ffmpeg normalize->wav: src='{temp_src}' out='{out_wav}' ss={start} to={end}")
+    subprocess.run(cmd, check=True)
+
+
+    
 
 
 # ---------------------------------------------------------------------------
@@ -1909,6 +2159,121 @@ def concatenate_clips(clips: Iterable[np.ndarray], sample_rate: int, gap_seconds
     return np.concatenate(segments)
 
 
+def _load_wav_mono(path: Path, target_sr: Optional[int] = None) -> Tuple[np.ndarray, int]:
+    import soundfile as _sf
+    import numpy as _np
+    import librosa as _lb
+    audio, sr = _sf.read(str(path), dtype='float32', always_2d=False)
+    if audio.ndim > 1:
+        audio = _np.mean(audio, axis=1).astype('float32')
+    if target_sr and sr != target_sr:
+        audio = _lb.resample(audio, orig_sr=sr, target_sr=target_sr)
+        sr = target_sr
+    return audio.astype('float32'), sr
+
+
+def _time_stretch_to_len(samples: np.ndarray, sr: int, target_len: int) -> np.ndarray:
+    """High-quality time stretch using ffmpeg atempo chain, fallback to librosa.
+
+    Keeps pitch. Builds a chain of atempo steps within [0.5, 2.0] to reach the desired ratio.
+    """
+    import tempfile as _tf
+    import soundfile as _sf
+    cur = len(samples)
+    if cur <= 1 or target_len <= 1:
+        return np.zeros(target_len, dtype='float32')
+    ratio = cur / float(target_len)  # playback rate needed
+    try:
+        # Decompose into steps in [0.5, 2.0]
+        steps: list[float] = []
+        r = ratio
+        while r > 2.0:
+            steps.append(2.0)
+            r /= 2.0
+        while r < 0.5:
+            steps.append(0.5)
+            r /= 0.5
+        steps.append(r)
+        filt = ",".join([f"atempo={s:.6f}" for s in steps])
+        with _tf.TemporaryDirectory(prefix="ffts-") as td:
+            inp = Path(td) / "in.wav"
+            outp = Path(td) / "out.wav"
+            _sf.write(inp, samples.astype('float32'), sr)
+            cmd = ["ffmpeg","-hide_banner","-nostdin","-loglevel","error","-y","-i", str(inp), "-filter:a", filt, "-ar", str(sr), str(outp)]
+            subprocess.run(cmd, check=True)
+            stretched, _ = _sf.read(outp, dtype='float32', always_2d=False)
+        stretched = stretched.astype('float32')
+    except Exception:
+        # Fallback: librosa
+        import librosa as _lb
+        rate = float(max(0.5, min(2.5, ratio)))
+        stretched = _lb.effects.time_stretch(samples, rate=rate).astype('float32')
+    # Adjust to exactly target_len
+    if len(stretched) > target_len:
+        stretched = stretched[:target_len]
+    elif len(stretched) < target_len:
+        pad = target_len - len(stretched)
+        stretched = np.pad(stretched, (0, pad), mode='constant')
+    return stretched
+
+
+def _rms(x: np.ndarray) -> float:
+    x = x.astype('float32')
+    return float(np.sqrt(np.mean(np.square(x) + 1e-9)))
+
+
+def _apply_replace_with_crossfade(source: np.ndarray, rep: np.ndarray, sr: int, i0: int, i1: int, fade_ms: float = 30.0) -> np.ndarray:
+    out = source.copy()
+    target_len = max(i1 - i0, 1)
+    if len(rep) != target_len:
+        rep = _time_stretch_to_len(rep, sr, target_len)
+    # Loudness match using 0.5s neighborhood
+    pre0 = max(0, i0 - int(0.5 * sr))
+    pre = source[pre0:i0]
+    post1 = min(len(source), i1 + int(0.5 * sr))
+    post = source[i1:post1]
+    ref = np.concatenate([pre, post]) if len(pre) + len(post) > 0 else None
+    if ref is not None and len(ref) > 0:
+        r_ref = _rms(ref)
+        r_rep = _rms(rep)
+        if r_rep > 0:
+            rep = rep * (r_ref / r_rep)
+    # Crossfade
+    fade = int(min(int(fade_ms / 1000.0 * sr), target_len // 4))
+    fade = max(fade, 1)
+    # Start crossfade
+    for t in range(fade):
+        a = (t + 1) / float(fade)
+        out[i0 + t] = source[i0 + t] * (1.0 - a) + rep[t] * a
+    # Middle
+    if target_len > 2 * fade:
+        out[i0 + fade : i1 - fade] = rep[fade : target_len - fade]
+    # End crossfade
+    for t in range(fade):
+        a = (t + 1) / float(fade)
+        out[i1 - fade + t] = rep[target_len - fade + t] * (1.0 - a) + source[i1 - fade + t] * a
+    return out
+
+
+def _trim_silence(samples: np.ndarray, *, top_db: float = 40.0, sr: int = 24000, prepad_ms: float = 10.0, postpad_ms: float = 10.0) -> np.ndarray:
+    """Energy-based trimming for leading/trailing silence.
+
+    Uses librosa.effects.trim; adds small pre/post padding to avoid hard cuts.
+    """
+    import librosa as _lb
+    if samples.size == 0:
+        return samples
+    try:
+        trimmed, idx = _lb.effects.trim(samples, top_db=top_db)
+        if idx is not None and len(idx) == 2:
+            start = max(0, idx[0] - int(prepad_ms / 1000.0 * sr))
+            end = min(len(samples), idx[1] + int(postpad_ms / 1000.0 * sr))
+            return samples[start:end].astype('float32')
+    except Exception:
+        pass
+    return samples.astype('float32')
+
+
 # ---------------------------------------------------------------------------
 # Flask app & routes
 # ---------------------------------------------------------------------------
@@ -1939,6 +2304,642 @@ def handle_generic_error(err: Exception):  # pragma: no cover
     return make_response(jsonify(payload), 500)
 
 
+@api.route("/media/transcribe", methods=["POST"])
+def media_transcribe_endpoint():
+    """Transcribe an uploaded media file or a YouTube URL to word timings.
+
+    Accepts either:
+      - multipart/form-data with field: file
+      - application/json: { source: 'youtube', url, start?, end? }
+    """
+    content_type = (request.content_type or "").lower()
+    job_id = uuid.uuid4().hex[:12]
+    job_dir = _media_job_dir(job_id)
+    input_path: Optional[Path] = None
+    try:
+        if content_type.startswith("multipart/form-data"):
+            up = request.files.get("file")
+            if not up or not up.filename:
+                raise PlaygroundError("No file uploaded.", status=400)
+            suffix = Path(up.filename).suffix or ".wav"
+            input_path = job_dir / f"source{suffix}"
+            up.save(str(input_path))
+        else:
+            payload = parse_json_request()
+            source = str(payload.get("source") or "").strip().lower()
+            if source != "youtube":
+                raise PlaygroundError("Provide multipart 'file' upload or JSON { source: 'youtube', url }.", status=400)
+            url = str(payload.get("url") or "").strip()
+            if not url:
+                raise PlaygroundError("Field 'url' is required for YouTube source.", status=400)
+            # Simple cache for YouTube audio to avoid repeated downloads / 429s
+            def _yt_id(u: str) -> Optional[str]:
+                try:
+                    m = re.search(r"(?:v=|youtu\.be/|shorts/)([A-Za-z0-9_-]{6,})", u)
+                    return m.group(1) if m else None
+                except Exception:
+                    return None
+            vid = _yt_id(url)
+            cache_dir = OUTPUT_DIR / "media_cache" / "youtube"
+            cache_path: Optional[Path] = None
+            if vid:
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                candidates = list(cache_dir.glob(f"{vid}.*"))
+                if candidates:
+                    cache_path = max(candidates, key=lambda p: p.stat().st_size)
+                    _log(f"YouTube cache hit id={vid} path='{cache_path}'")
+            if not _have_tool("yt-dlp") and not cache_path:
+                raise PlaygroundError("yt-dlp is required for YouTube imports. Install 'yt-dlp' and try again.", status=503)
+            if cache_path is None:
+                temp_base = cache_dir / (vid or f"yt-{uuid.uuid4().hex}")
+                out_tmpl = f"{temp_base}.%(ext)s"
+                cmd = [
+                    "yt-dlp",
+                    "-f",
+                    "bestaudio/best",
+                    "--sleep-requests",
+                    "1",
+                    "--retry-sleep",
+                    "2",
+                    "--retries",
+                    "3",
+                    "-o",
+                    out_tmpl,
+                ]
+                try:
+                    if YT_DLP_COOKIES_PATH.exists():
+                        cmd += ["--cookies", str(YT_DLP_COOKIES_PATH)]
+                except Exception:
+                    pass
+                if YT_DLP_EXTRACTOR_ARGS.strip():
+                    cmd += ["--extractor-args", YT_DLP_EXTRACTOR_ARGS.strip()]
+                cmd.append(url)
+                _log(f"yt-dlp download: url='{url}' out='{out_tmpl}'")
+                subprocess.run(cmd, check=True)
+                candidates = list(cache_dir.glob(f"{(vid or temp_base.name)}.*"))
+                if not candidates:
+                    raise PlaygroundError("yt-dlp did not produce an output file.", status=500)
+                pref_order = [".m4a", ".mp3", ".webm", ".opus", ".ogg"]
+                best = None
+                for ext in pref_order:
+                    for c in candidates:
+                        if c.suffix.lower() == ext:
+                            best = c
+                            break
+                    if best:
+                        break
+                cache_path = best or candidates[0]
+            input_path = cache_path
+
+        if input_path is None:
+            raise PlaygroundError("No input provided.", status=400)
+
+        # Persist job meta about original input
+        try:
+            meta = {
+                "input_path": str(input_path),
+                "has_video": _ffprobe_has_video(input_path),
+            }
+            with open(job_dir / "job_meta.json", "w", encoding="utf-8") as f:
+                json.dump(meta, f)
+        except Exception:
+            pass
+
+        # Extract/normalise to wav for STT
+        audio_wav = job_dir / "source.wav"
+        _extract_input_to_wav(input_path, audio_wav)
+
+        # STT
+        try:
+            transcript = _transcribe_faster_whisper(audio_wav)
+        except PlaygroundError:
+            if ALLOW_STUB_STT:
+                transcript = _transcribe_stub(audio_wav)
+            else:
+                raise
+
+        # Persist transcript alongside artifacts
+        try:
+            with open(job_dir / "transcript.json", "w", encoding="utf-8") as f:
+                json.dump(transcript, f)
+        except Exception:
+            pass
+
+        rel_audio = (audio_wav.relative_to(OUTPUT_DIR)).as_posix()
+        # Record/log stats
+        stats = transcript.get("stats") or {}
+        try:
+            _record_stat("transcribe", {
+                "jobId": job_id,
+                "duration": float(transcript.get("duration", 0) or 0),
+                "elapsed": float(stats.get("elapsed", 0) or 0),
+                "rtf": float(stats.get("rtf", 0) or 0),
+                "language": transcript.get("language", "unknown"),
+                "words": int(stats.get("words", len(transcript.get("words", []) or []))),
+                "segments": int(stats.get("segments", len(transcript.get("segments", []) or []))),
+                "ts": time.time(),
+            })
+        except Exception:
+            pass
+        _log(f"Transcribe done job={job_id} duration={transcript.get('duration', 0):.2f}s elapsed={stats.get('elapsed', 0):.2f}s rtf={stats.get('rtf', 0):.2f}x")
+        return jsonify({
+            "jobId": job_id,
+            "media": {
+                "audio_url": f"/audio/{rel_audio}",
+                "duration": transcript.get("duration", 0),
+            },
+            "transcript": transcript,
+            "whisperx": {"enabled": bool(WHISPERX_ENABLE and _have_whisperx)}
+        })
+    except PlaygroundError:
+        raise
+    except subprocess.CalledProcessError as exc:
+        raise PlaygroundError(f"Media processing failed: {exc}", status=500)
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"Unexpected error: {exc}", status=500)
+
+
+@api.route("/media/align", methods=["POST"])
+def media_align_endpoint():
+    """WhisperX alignment on an existing media job. Currently aligns full transcript.
+
+    Body: { jobId }
+    """
+    if not (WHISPERX_ENABLE and _have_whisperx):
+        raise PlaygroundError("WhisperX alignment is not enabled on this server.", status=503)
+    payload = parse_json_request()
+    job_id = str(payload.get("jobId") or "").strip()
+    if not job_id:
+        raise PlaygroundError("Field 'jobId' is required.", status=400)
+    job_dir = _media_job_dir(job_id)
+    audio_wav = job_dir / "source.wav"
+    tx_path = job_dir / "transcript.json"
+    if not audio_wav.exists() or not tx_path.exists():
+        raise PlaygroundError("Source audio or transcript is missing for this job.", status=404)
+    # Load transcript
+    transcript = json.loads(tx_path.read_text(encoding="utf-8"))
+    # Align
+    t0 = time.time()
+    aligned = _whisperx_align_full(audio_wav, transcript)
+    elapsed = max(time.time() - t0, 0.0)
+    # Persist
+    try:
+        with open(tx_path, "w", encoding="utf-8") as f:
+            json.dump(aligned, f)
+    except Exception:
+        pass
+    rel_audio = (audio_wav.relative_to(OUTPUT_DIR)).as_posix()
+    try:
+        _record_stat("align_full", {"jobId": job_id, "elapsed": elapsed, "duration": float(aligned.get("duration", 0) or 0), "words": len(aligned.get("words", []) or []), "ts": time.time()})
+    except Exception:
+        pass
+    return jsonify({
+        "jobId": job_id,
+        "media": {"audio_url": f"/audio/{rel_audio}", "duration": aligned.get("duration", 0)},
+        "transcript": aligned,
+        "stats": {"elapsed": elapsed, "words": len(aligned.get("words", []) or [])},
+        "whisperx": {"enabled": True}
+    })
+
+
+@api.route("/media/align_region", methods=["POST"])
+def media_align_region_endpoint():
+    """Run WhisperX only on a selected region to refine timings lazily.
+
+    Body: { jobId, start: number, end: number, margin?: number }
+    Returns: { jobId, region, transcript }
+    """
+    if not (WHISPERX_ENABLE and _have_whisperx):
+        raise PlaygroundError("WhisperX alignment is not enabled on this server.", status=503)
+    payload = parse_json_request()
+    job_id = str(payload.get("jobId") or "").strip()
+    if not job_id:
+        raise PlaygroundError("Field 'jobId' is required.", status=400)
+    try:
+        start = float(payload.get("start"))
+        end = float(payload.get("end"))
+    except Exception:
+        raise PlaygroundError("Fields 'start' and 'end' must be numbers (seconds).", status=400)
+    margin = payload.get("margin")
+    try:
+        margin_s = float(margin) if margin is not None else 0.75
+    except Exception:
+        margin_s = 0.75
+    if end <= start:
+        raise PlaygroundError("'end' must be greater than 'start'.", status=400)
+
+    job_dir = _media_job_dir(job_id)
+    audio_wav = job_dir / "source.wav"
+    tx_path = job_dir / "transcript.json"
+    if not audio_wav.exists() or not tx_path.exists():
+        raise PlaygroundError("Source audio or transcript is missing for this job.", status=404)
+
+    # Load full transcript
+    transcript = json.loads(tx_path.read_text(encoding="utf-8"))
+    duration = float(transcript.get("duration") or _ffprobe_duration_seconds(audio_wav))
+    region_start = max(0.0, start - max(0.0, margin_s))
+    region_end = min(duration, end + max(0.0, margin_s))
+
+    # Build text for the region from existing segments/words
+    words = transcript.get("words") or []
+    def _is_timed_word(obj: Any) -> bool:
+        return isinstance(obj, dict) and ("start" in obj) and ("end" in obj)
+    region_text = ""
+    if words and all(_is_timed_word(w) for w in words):
+        region_words = [
+            w for w in words
+            if float(w.get("end", 0)) > region_start and float(w.get("start", 0)) < region_end
+        ]
+        words_txt = [str((w.get("text") or w.get("word") or "")).strip() for w in region_words]
+        region_text = " ".join(words_txt).strip()
+    if not region_text:
+        segs = transcript.get("segments") or []
+        region_segs = [
+            s for s in segs
+            if float(s.get("end", 0)) > region_start and float(s.get("start", 0)) < region_end
+        ]
+        region_text = " ".join(str(s.get("text") or "").strip() for s in region_segs).strip()
+    if not region_text:
+        raise PlaygroundError("No transcript content found in the selected region.", status=400)
+
+    _log(f"WhisperX region requested: job={job_id} start={start:.2f} end={end:.2f} margin={margin_s:.2f} -> window {region_start:.2f}-{region_end:.2f}")
+    # Trim audio for the region
+    region_wav = job_dir / f"region-{int(region_start*1000)}-{int(region_end*1000)}.wav"
+    try:
+        _extract_input_to_wav(audio_wav, region_wav, start=region_start, end=region_end)
+    except Exception:
+        # fallback call: direct trim
+        cmd = [
+            "ffmpeg", "-y", "-ss", str(region_start), "-to", str(region_end), "-i", str(audio_wav),
+            "-ac", "1", "-ar", "24000", str(region_wav)
+        ]
+        _log(f"ffmpeg region trim fallback: ss={region_start} to={region_end} src='{audio_wav}' out='{region_wav}'")
+        subprocess.run(cmd, check=True)
+
+    # Prepare WhisperX result input with one segment covering region_text
+    wx_result = {"language": transcript.get("language", "en"), "segments": [{"text": region_text, "start": 0.0, "end": float(region_end - region_start)}]}
+    align_model, metadata = _whisperx_get_align_model(str(transcript.get("language", "en")))
+    t0 = time.time()
+    try:
+        aligned = whisperx.align(wx_result["segments"], align_model, metadata, str(region_wav), device=WHISPERX_DEVICE, return_char_alignments=False)  # type: ignore[name-defined]
+    except Exception as exc:
+        _log(f"WhisperX align failed: {exc}")
+        raise PlaygroundError(f"WhisperX alignment failed: {exc}", status=500)
+    elapsed = max(time.time() - t0, 0.0)
+    new_words: List[Dict[str, Any]] = []
+    for seg in aligned.get("segments", []):
+        for w in seg.get("words", []) or []:
+            if not isinstance(w, dict):
+                continue
+            abs_start = region_start + float(w.get("start") or 0)
+            abs_end = region_start + float(w.get("end") or 0)
+            new_words.append({
+                "text": str(w.get("word") or w.get("text") or "").strip(),
+                "start": abs_start,
+                "end": abs_end,
+                "confidence": float(w.get("score") or 0),
+            })
+    # Merge new words into transcript, replacing overlap area
+    existing = transcript.get("words") or []
+    kept: List[Dict[str, Any]] = []
+    for w in existing:
+        if not _is_timed_word(w):
+            continue
+        if not (float(w.get("end", 0)) > region_start and float(w.get("start", 0)) < region_end):
+            kept.append({
+                "text": str((w.get("text") or w.get("word") or "")).strip(),
+                "start": float(w.get("start") or 0),
+                "end": float(w.get("end") or 0),
+                "confidence": float(w.get("confidence") or w.get("score") or 0),
+            })
+    merged = kept + new_words
+    merged.sort(key=lambda w: float(w.get("start", 0)))
+    transcript["words"] = merged
+
+    # Persist
+    try:
+        with open(tx_path, "w", encoding="utf-8") as f:
+            json.dump(transcript, f)
+    except Exception:
+        pass
+
+    _log(f"WhisperX region align: job={job_id} request=({start:.2f}-{end:.2f}s, margin={margin_s:.2f}) used=({region_start:.2f}-{region_end:.2f}s) words={len(new_words)} elapsed={elapsed:.2f}s rtf={(region_end-region_start)/max(elapsed,1e-6):.2f}x")
+    rel_audio = (audio_wav.relative_to(OUTPUT_DIR)).as_posix()
+    try:
+        _record_stat("align_region", {"jobId": job_id, "elapsed": elapsed, "region": {"start": start, "end": end, "used": {"start": region_start, "end": region_end}}, "words": len(new_words), "duration": float(region_end-region_start), "rtf": (region_end-region_start)/max(elapsed,1e-6), "ts": time.time()})
+    except Exception:
+        pass
+    return jsonify({
+        "jobId": job_id,
+        "region": {"start": start, "end": end, "margin": margin_s, "used": {"start": region_start, "end": region_end}},
+        "media": {"audio_url": f"/audio/{rel_audio}", "duration": duration},
+        "transcript": transcript,
+        "stats": {"elapsed": elapsed, "rtf": (region_end-region_start)/max(elapsed,1e-6), "words": len(new_words)},
+        "whisperx": {"enabled": True}
+    })
+
+
+@api.route("/media/stats", methods=["GET"])
+def media_stats_endpoint():
+    """Return aggregate timing summaries for recent media operations (for ETA)."""
+    stats_path = OUTPUT_DIR / "media_stats.json"
+    summary: Dict[str, Any] = {"transcribe": {"avg_rtf": None, "count": 0}, "align_full": {"avg_rtf": None, "count": 0}, "align_region": {"avg_rtf": None, "count": 0}}
+    try:
+        if stats_path.exists():
+            data = json.loads(stats_path.read_text(encoding="utf-8"))
+            # transcribe: rtf directly
+            trans = data.get("transcribe", []) or []
+            rtf_vals = [float(s.get("rtf", 0)) for s in trans if isinstance(s, dict) and float(s.get("rtf", 0) or 0) > 0]
+            if rtf_vals:
+                summary["transcribe"] = {"avg_rtf": sum(rtf_vals) / len(rtf_vals), "count": len(rtf_vals)}
+            # align_full: derive rtf=duration/elapsed
+            full = data.get("align_full", []) or []
+            rtf_full = []
+            for s in full:
+                if not isinstance(s, dict):
+                    continue
+                dur = float(s.get("duration", 0) or 0)
+                el = float(s.get("elapsed", 0) or 0)
+                if el > 0 and dur > 0:
+                    rtf_full.append(dur / el)
+            if rtf_full:
+                summary["align_full"] = {"avg_rtf": sum(rtf_full) / len(rtf_full), "count": len(rtf_full)}
+            # align_region: rtf directly
+            reg = data.get("align_region", []) or []
+            rtf_reg = [float(s.get("rtf", 0)) for s in reg if isinstance(s, dict) and float(s.get("rtf", 0) or 0) > 0]
+            if rtf_reg:
+                summary["align_region"] = {"avg_rtf": sum(rtf_reg) / len(rtf_reg), "count": len(rtf_reg)}
+    except Exception:
+        pass
+    return jsonify(summary)
+
+
+def _yt_id_from_url(u: str) -> Optional[str]:
+    try:
+        m = re.search(r"(?:v=|youtu\.be/|shorts/)([A-Za-z0-9_-]{6,})", u)
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
+def _youtube_cache_find(vid: str) -> Optional[Path]:
+    try:
+        cache_dir = OUTPUT_DIR / "media_cache" / "youtube"
+        if not cache_dir.exists():
+            return None
+        candidates = list(cache_dir.glob(f"{vid}.*"))
+        if not candidates:
+            return None
+        return max(candidates, key=lambda p: p.stat().st_size)
+    except Exception:
+        return None
+
+@api.route("/media/estimate", methods=["POST"])
+def media_estimate_endpoint():
+    """Estimate media duration for ETA.
+
+    Body: { source: 'youtube', url }
+    Returns: { duration, cached?: boolean }
+    """
+    payload = parse_json_request()
+    source = str(payload.get('source') or '').strip().lower()
+    if source != 'youtube':
+        raise PlaygroundError("Only YouTube source is supported for estimate.", status=400)
+    url = str(payload.get('url') or '').strip()
+    if not url:
+        raise PlaygroundError("Field 'url' is required.", status=400)
+    vid = _yt_id_from_url(url)
+    # Try from cache first
+    if vid:
+        cached = _youtube_cache_find(vid)
+        if cached and cached.exists():
+            return jsonify({ 'duration': _ffprobe_duration_seconds(cached), 'cached': True })
+    # Fallback: yt-dlp JSON
+    if not _have_tool('yt-dlp'):
+        raise PlaygroundError("yt-dlp is required to estimate duration.", status=503)
+    try:
+        proc = subprocess.run(['yt-dlp','-j', url], capture_output=True, text=True, check=True)
+        data = json.loads(proc.stdout.splitlines()[0]) if proc.stdout else {}
+        dur = float(data.get('duration') or 0)
+        if dur <= 0:
+            # fallback to ffprobe if webpage_url_basename exists in cache path
+            raise ValueError('No duration from yt-dlp')
+        return jsonify({ 'duration': dur, 'cached': False })
+    except Exception as exc:
+        raise PlaygroundError(f"Could not estimate duration: {exc}", status=500)
+
+
+@api.route("/media/replace_preview", methods=["POST"])
+def media_replace_preview_endpoint():
+    """Synthesize replacement audio (XTTS), fit to region, and return a patched preview.
+
+    Body: { jobId, start, end, text, voice?, language?, speed?, marginMs?, fadeMs? }
+      - If 'voice' is omitted, a temporary reference is borrowed from the selected region.
+    Returns: { jobId, preview_url, diff_url, stats }
+    """
+    payload = parse_json_request()
+    job_id = str(payload.get("jobId") or "").strip()
+    if not job_id:
+        raise PlaygroundError("Field 'jobId' is required.", status=400)
+    try:
+        start = float(payload.get("start"))
+        end = float(payload.get("end"))
+    except Exception:
+        raise PlaygroundError("Fields 'start' and 'end' must be numbers (seconds).", status=400)
+    if end <= start:
+        raise PlaygroundError("'end' must be greater than 'start'.", status=400)
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        raise PlaygroundError("Field 'text' is required.", status=400)
+
+    margin_ms = float(payload.get("marginMs", 0))
+    fade_ms = float(payload.get("fadeMs", 30))
+    language = str(payload.get("language") or "")
+    speed = float(payload.get("speed") or 1.0)
+    explicit_voice = payload.get("voice")  # could be id or path
+
+    job_dir = _media_job_dir(job_id)
+    audio_wav = job_dir / "source.wav"
+    if not audio_wav.exists():
+        raise PlaygroundError("Source WAV for this job is missing.", status=404)
+
+    # Borrow voice from region if not provided
+    region_start = start - (margin_ms / 1000.0 if margin_ms > 0 else 0.0)
+    region_end = end + (margin_ms / 1000.0 if margin_ms > 0 else 0.0)
+    source_dur = _ffprobe_duration_seconds(audio_wav)
+    region_start = max(0.0, region_start)
+    region_end = min(source_dur, region_end)
+    ref_voice = None
+    if explicit_voice:
+        ref_voice = str(explicit_voice)
+    else:
+        region_wav = job_dir / f"ref-{int(region_start*1000)}-{int(region_end*1000)}.wav"
+        _extract_input_to_wav(audio_wav, region_wav, start=region_start, end=region_end)
+        ref_voice = str(region_wav)
+
+    # Determine language default from prior transcript
+    tx_path = job_dir / "transcript.json"
+    if not language and tx_path.exists():
+        try:
+            tx = json.loads(tx_path.read_text(encoding='utf-8'))
+            language = str(tx.get('language') or 'en').lower()
+        except Exception:
+            language = 'en'
+    if not language:
+        language = 'en'
+
+    # XTTS synthesize replacement
+    xtts_payload = {
+        'text': text,
+        'voice': ref_voice,
+        'language': language,
+        'speed': speed,
+        'format': 'wav',
+        'sample_rate': 24000,
+        'seed': 42,
+        'temperature': 0.6,
+    }
+    data = _xtts_prepare_payload(xtts_payload)
+    t0 = time.time()
+    synth = _xtts_synthesise(data)
+    elapsed_synth = max(time.time() - t0, 0.0)
+
+    # Build preview: overlay replacement in region with crossfades
+    src, sr = _load_wav_mono(audio_wav, target_sr=24000)
+    rep_path = OUTPUT_DIR / synth['filename']
+    rep, r_sr = _load_wav_mono(rep_path, target_sr=sr)
+    # Optional: trim silence of synthesized segment to improve boundary precision
+    trim_enable = bool(payload.get('trimEnable', True))
+    trim_top_db = float(payload.get('trimTopDb', 40.0))
+    trim_pre_ms = float(payload.get('trimPrepadMs', 8.0))
+    trim_post_ms = float(payload.get('trimPostpadMs', 8.0))
+    if trim_enable:
+        rep = _trim_silence(rep, top_db=trim_top_db, sr=sr, prepad_ms=trim_pre_ms, postpad_ms=trim_post_ms)
+    i0 = int(max(0.0, start) * sr)
+    i1 = int(min(source_dur, end) * sr)
+    preview = _apply_replace_with_crossfade(src, rep, sr, i0, i1, fade_ms=fade_ms)
+
+    # Write preview and diff
+    ts = int(time.time())
+    preview_path = job_dir / f"preview-{ts}.wav"
+    diff_path = job_dir / f"diff-{ts}.wav"
+    sf.write(preview_path, preview, sr)
+    # diff clip (for debugging): only the inserted region with fades applied
+    diff = np.zeros_like(src)
+    diff[i0:i1] = preview[i0:i1] - src[i0:i1]
+    sf.write(diff_path, diff, sr)
+
+    # Update latest symlinks for apply step
+    try:
+        latest = job_dir / "latest_preview.wav"
+        if latest.exists() or latest.is_symlink():
+            try:
+                latest.unlink()
+            except OSError:
+                pass
+        try:
+            latest.symlink_to(preview_path)
+        except Exception:
+            # fallback: copy
+            sf.write(latest, preview, sr)
+    except Exception:
+        pass
+
+    rel_prev = (preview_path.relative_to(OUTPUT_DIR)).as_posix()
+    rel_diff = (diff_path.relative_to(OUTPUT_DIR)).as_posix()
+    _log(f"Replace preview: job={job_id} region=({start:.2f}-{end:.2f}) synth={elapsed_synth:.2f}s preview='{rel_prev}'")
+    return jsonify({
+        'jobId': job_id,
+        'preview_url': f"/audio/{rel_prev}",
+        'diff_url': f"/audio/{rel_diff}",
+        'stats': { 'synth_elapsed': elapsed_synth, 'fade_ms': fade_ms }
+    })
+
+
+@api.route("/media/apply", methods=["POST"])
+def media_apply_endpoint():
+    """Mux the latest preview audio back into the original container (video if available).
+
+    Body: { jobId, format? }
+    Returns: { jobId, final_url, mode: 'video'|'audio', container: string }
+    """
+    payload = parse_json_request()
+    job_id = str(payload.get('jobId') or '').strip()
+    if not job_id:
+        raise PlaygroundError("Field 'jobId' is required.", status=400)
+    job_dir = _media_job_dir(job_id)
+    latest = job_dir / 'latest_preview.wav'
+    if not latest.exists():
+        raise PlaygroundError("No preview found for this job. Generate a replace preview first.", status=400)
+    fmt = str(payload.get('format') or '').lower()
+
+    # Read job meta
+    has_video = False
+    src_path: Optional[Path] = None
+    meta_path = job_dir / 'job_meta.json'
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding='utf-8'))
+            src_path = Path(str(meta.get('input_path') or '')) if meta.get('input_path') else None
+            has_video = bool(meta.get('has_video'))
+        except Exception:
+            pass
+
+    # Re-probe to be robust in case meta was wrong or stale
+    if src_path and src_path.exists():
+        has_video = _ffprobe_has_video(src_path)
+    if has_video and src_path and src_path.exists():
+        # Produce final video with original video stream and preview audio
+        src_ext = src_path.suffix.lower() or '.mp4'
+        out_ext = f".{fmt}" if fmt in {'mp4','mkv','mov','webm'} else src_ext
+        final_path = job_dir / f"final{out_ext}"
+        # Choose audio codec by container
+        if out_ext in {'.webm'}:
+            # WebM requires Opus/Vorbis; use Opus at 160 kbps and 48 kHz
+            acodec = ['-c:a','libopus','-b:a','160k','-ar','48000']
+        elif out_ext in {'.mp4','.m4v','.mov'}:
+            # MP4/MOV commonly uses AAC
+            acodec = ['-c:a','aac','-b:a','192k']
+        else:
+            # Fallback to AAC
+            acodec = ['-c:a','aac','-b:a','192k']
+        cmd = [
+            'ffmpeg','-y',
+            '-i', str(src_path),
+            '-i', str(latest),
+            '-map','0:v:0','-map','1:a:0',
+            '-c:v','copy',
+            *acodec,
+            '-shortest',
+            str(final_path)
+        ]
+        _log(f"Apply: mux video src='{src_path}' audio='{latest}' out='{final_path}'")
+        try:
+            # Capture stderr for diagnostics
+            res = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as exc:
+            _log(f"ffmpeg mux error: {exc.stderr or exc.stdout}")
+            # Fallback: if copy fails, try re-encode video to a compatible codec (vp9 for webm, h264 for mp4/mov)
+            if out_ext == '.webm':
+                vcodec = ['-c:v', 'libvpx-vp9', '-b:v', '1M']
+                acodec = ['-c:a','libopus','-b:a','160k','-ar','48000']
+            else:
+                vcodec = ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23']
+                acodec = ['-c:a','aac','-b:a','192k']
+            cmd2 = ['ffmpeg','-y','-i', str(src_path), '-i', str(latest), '-map','0:v:0','-map','1:a:0', *vcodec, *acodec, '-shortest', str(final_path)]
+            _log(f"Apply fallback: re-encode video src='{src_path}' out='{final_path}'")
+            res2 = subprocess.run(cmd2, check=True, capture_output=True, text=True)
+        rel = (final_path.relative_to(OUTPUT_DIR)).as_posix()
+        return jsonify({'jobId': job_id, 'final_url': f"/audio/{rel}", 'mode': 'video', 'container': out_ext.lstrip('.')})
+    else:
+        # Audio-only final
+        final_path = job_dir / 'final.wav'
+        # Copy latest to final
+        audio, sr = _load_wav_mono(latest, target_sr=None)
+        sf.write(final_path, audio, sr)
+        rel = (final_path.relative_to(OUTPUT_DIR)).as_posix()
+        _log(f"Apply: audio-only final='{final_path}'")
+        return jsonify({'jobId': job_id, 'final_url': f"/audio/{rel}", 'mode': 'audio', 'container': 'wav'})
 @api.route("/meta", methods=["GET"])
 def meta_endpoint():
     has_model = MODEL_PATH.exists()
