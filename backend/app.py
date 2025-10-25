@@ -2792,7 +2792,39 @@ def media_replace_preview_endpoint():
     region_end = min(source_dur, region_end)
     ref_voice = None
     if explicit_voice:
-        ref_voice = str(explicit_voice)
+        # Validate explicit voice input: allow known voice ids, or paths under job_dir or XTTS_VOICE_DIR
+        ev = str(explicit_voice)
+        # Heuristic: treat as path if it looks like one (absolute or contains a separator or has an audio extension)
+        looks_path = False
+        try:
+            cand = Path(ev).expanduser()
+            if cand.is_absolute() or os.sep in ev or cand.suffix.lower() in XTTS_SUPPORTED_EXTENSIONS:
+                looks_path = True
+        except Exception:
+            looks_path = False
+        if looks_path:
+            try:
+                real = cand.resolve()
+            except Exception:
+                raise PlaygroundError("Invalid 'voice' path provided.", status=400)
+            allowed = False
+            try:
+                real.relative_to(job_dir.resolve())
+                allowed = True
+            except Exception:
+                try:
+                    real.relative_to(XTTS_VOICE_DIR.resolve())
+                    allowed = True
+                except Exception:
+                    allowed = False
+            if not allowed:
+                raise PlaygroundError("'voice' path must be inside the current job folder or XTTS voices directory.", status=400)
+            if not real.exists():
+                raise PlaygroundError("Provided 'voice' path does not exist.", status=400)
+            ref_voice = str(real)
+        else:
+            # Assume an XTTS voice identifier; let XTTS resolver validate later
+            ref_voice = ev
     else:
         region_wav = job_dir / f"ref-{int(region_start*1000)}-{int(region_end*1000)}.wav"
         _extract_input_to_wav(audio_wav, region_wav, start=region_start, end=region_end)
