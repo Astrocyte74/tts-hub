@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { mediaAlignFull, mediaAlignRegion, mediaApply, mediaEstimateUrl, mediaGetStats, mediaReplacePreview, mediaTranscribeFromUrl, mediaTranscribeUpload, resolveAudioUrl } from '../api/client';
+import { IconWave } from '../icons';
 import type { MediaTranscriptResult } from '../types';
 import './TranscriptPanel.css';
 import { useLocalStorage } from '../hooks/useLocalStorage';
