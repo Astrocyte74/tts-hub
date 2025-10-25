@@ -445,6 +445,7 @@ export function TranscriptPanel() {
       <div className="media-editor">
         <div className="media-editor__left">
           {/* Step 1 — Import media */}
+          {currentStep === '1' ? (
           <div className="step">
             <div className="step__title"><span className="step__badge">1</span> Import media</div>
             <div className="ingest-toolbar">
@@ -495,9 +496,13 @@ export function TranscriptPanel() {
                 <div style={{ width: `${Math.round(progress * 100)}%`, height: '100%', background: 'linear-gradient(90deg, #60a5fa, #22d3ee)' }} />
               </div>
             ) : null}
+            <div className="panel__actions" style={{ justifyContent: 'flex-end' }}>
+              <button className="panel__button" type="button" disabled={!((jobId && audioUrl) || transcript)} onClick={() => setCurrentStep('2')}>Next: Align</button>
+            </div>
           </div>
+          ) : null}
           {/* Step 2 — Whisper alignment (optional) (only after transcript exists) */}
-          {transcript ? (
+          {transcript && currentStep === '2' ? (
           <div className="step">
             <div className="step__title"><span className="step__badge">2</span> Whisper alignment <span className="step__hint">(optional)</span></div>
             {whisperxEnabled ? (
@@ -577,10 +582,14 @@ export function TranscriptPanel() {
             ) : (
               <p className="panel__hint panel__hint--muted">WhisperX not enabled on this host. Install and enable to refine word timings.</p>
             )}
+            <div className="panel__actions" style={{ justifyContent: 'space-between' }}>
+              <button className="panel__button" type="button" onClick={() => setCurrentStep('1')}>Back</button>
+              <button className="panel__button" type="button" disabled={!selectionValid} onClick={() => setCurrentStep('3')}>Next: Replace</button>
+            </div>
           </div>
           ) : null}
           {/* Replace preview (XTTS) */}
-          {transcript && (
+          {transcript && currentStep === '3' && (
             <div className="step">
               <div className="step__title"><span className="step__badge">3</span> Replace & preview</div>
               <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
@@ -709,12 +718,15 @@ export function TranscriptPanel() {
                     : 'XTTS is not available on this server.'}
                 </p>
               ) : null}
+              <div className="panel__actions" style={{ justifyContent: 'space-between' }}>
+                <button className="panel__button" type="button" onClick={() => setCurrentStep('2')}>Back</button>
+              </div>
             </div>
           )}
         </div>
         <div className="media-editor__right">
           {/* Step 1 info card when no audio yet */}
-          {!audioUrl ? (
+          {currentStep === '1' && !audioUrl ? (
             <div className="media-info-card">
               {ingestMode === 'url' && ytInfo ? (
                 <div className="media-info">
@@ -789,7 +801,7 @@ export function TranscriptPanel() {
               </div>
             </div>
           ) : null}
-          {audioUrl ? (
+          {audioUrl && (currentStep === '2' || currentStep === '3') ? (
             <div className="media-editor__player">
               {(() => {
                 const playerSrc = playbackTrack === 'preview'
@@ -932,7 +944,7 @@ export function TranscriptPanel() {
               ) : null}
             </div>
           ) : null}
-          {transcript ? (
+          {transcript && (currentStep === '2' || currentStep === '3') ? (
             <div className="media-editor__words">
               <p className="panel__meta">Language: {transcript.language || 'unknown'} · Duration: {transcript.duration?.toFixed?.(1) ?? transcript.duration}s</p>
               <div className="row" style={{ alignItems: 'flex-end', gap: 8 }}>
