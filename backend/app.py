@@ -199,7 +199,7 @@ def _ffprobe_has_video(path: Path) -> bool:
         out = (proc.stdout or "").strip()
         return bool(out)
     except Exception:
-    return False
+        return False
 
 
 def _log(msg: str) -> None:
