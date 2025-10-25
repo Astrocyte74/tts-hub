@@ -360,6 +360,7 @@ export function TranscriptPanel() {
   }
 
   const [alignedFull, setAlignedFull] = useState<boolean>(false);
+  const [alignDiff, setAlignDiff] = useState<{ compared?: number; changed?: number; mean_abs_ms?: number; median_abs_ms?: number; p95_abs_ms?: number; max_abs_ms?: number } | null>(null);
 
   async function handleAlignFull() {
     if (!jobId) {
@@ -388,6 +389,19 @@ export function TranscriptPanel() {
         setStatus(`Aligned full transcript in ${elapsed.toFixed(2)}s (words ${words})`);
       }
       setAlignedFull(true);
+      try {
+        const d = (res.stats as any)?.diff as any;
+        if (d && typeof d === 'object') {
+          setAlignDiff({
+            compared: Number(d.compared) || undefined,
+            changed: Number(d.changed) || undefined,
+            mean_abs_ms: Number(d.mean_abs_ms) || undefined,
+            median_abs_ms: Number(d.median_abs_ms) || undefined,
+            p95_abs_ms: Number(d.p95_abs_ms) || undefined,
+            max_abs_ms: Number(d.max_abs_ms) || undefined,
+          });
+        }
+      } catch {}
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Alignment failed');
     } finally {
@@ -609,6 +623,16 @@ export function TranscriptPanel() {
             ) : (
               <p className="panel__hint panel__hint--muted">WhisperX not enabled on this host. Install and enable to refine word timings.</p>
             )}
+            {alignDiff && alignDiff.compared ? (
+              <div className="subpanel">
+                <p className="panel__meta">
+                  Boundary adjustments on {alignDiff.compared.toLocaleString()} words · changed {alignDiff.changed?.toLocaleString() ?? 0}
+                </p>
+                <p className="panel__meta">
+                  Mean |Δ| {alignDiff.mean_abs_ms?.toFixed?.(0) ?? 0} ms · Median {alignDiff.median_abs_ms?.toFixed?.(0) ?? 0} ms · P95 {alignDiff.p95_abs_ms?.toFixed?.(0) ?? 0} ms · Max {alignDiff.max_abs_ms?.toFixed?.(0) ?? 0} ms
+                </p>
+              </div>
+            ) : null}
             <div className="panel__actions" style={{ justifyContent: 'space-between' }}>
               <button className="panel__button" type="button" onClick={() => setCurrentStep('1')}>Back</button>
               <button className="panel__button" type="button" disabled={!canStep2} onClick={() => setCurrentStep('3')}>Next: Replace</button>

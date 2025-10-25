@@ -199,7 +199,7 @@ def _ffprobe_has_video(path: Path) -> bool:
         out = (proc.stdout or "").strip()
         return bool(out)
     except Exception:
-        return False
+    return False
 
 
 def _log(msg: str) -> None:
@@ -223,6 +223,70 @@ def _record_stat(kind: str, sample: Dict[str, Any]) -> None:
         stats_path.write_text(json.dumps(data), encoding="utf-8")
     except Exception:
         pass
+
+
+def _alignment_diff_stats(prev_words: List[Dict[str, Any]], new_words: List[Dict[str, Any]], *, window: Optional[Tuple[float, float]] = None) -> Dict[str, Any]:
+    """Compute numerical differences between previous and new word timings.
+
+    Returns counts and aggregate absolute deltas (ms) for start/end boundaries.
+    If window=(start,end) is provided, only words overlapping that time range are compared.
+    """
+    try:
+        # Optionally subset by window
+        if window is not None:
+            ws, we = float(window[0]), float(window[1])
+            def _in_win(w: Dict[str, Any]) -> bool:
+                try:
+                    return float(w.get('end', 0) or 0) > ws and float(w.get('start', 0) or 0) < we
+                except Exception:
+                    return False
+            prev = [w for w in prev_words if _in_win(w)]
+            new = [w for w in new_words if _in_win(w)]
+        else:
+            prev, new = prev_words, new_words
+
+        n = min(len(prev), len(new))
+        if n == 0:
+            return {"compared": 0}
+        abs_deltas: List[float] = []
+        changed = 0
+        text_mismatch = 0
+        for i in range(n):
+            p = prev[i]; q = new[i]
+            try:
+                ps = float(p.get('start', 0) or 0); pe = float(p.get('end', 0) or 0)
+                qs = float(q.get('start', 0) or 0); qe = float(q.get('end', 0) or 0)
+            except Exception:
+                continue
+            if str(p.get('text') or p.get('word') or '').strip() != str(q.get('text') or q.get('word') or '').strip():
+                text_mismatch += 1
+            ds = abs(qs - ps); de = abs(qe - pe)
+            if ds > 1e-6 or de > 1e-6:
+                changed += 1
+            # consider boundary delta as the larger of start/end
+            abs_deltas.append(max(ds, de))
+        abs_ms = [d * 1000.0 for d in abs_deltas]
+        abs_ms_sorted = sorted(abs_ms)
+        def _pct(p: float) -> float:
+            if not abs_ms_sorted:
+                return 0.0
+            k = max(0, min(len(abs_ms_sorted)-1, int(round(p * (len(abs_ms_sorted)-1)))))
+            return float(abs_ms_sorted[k])
+        mean = sum(abs_ms) / len(abs_ms) if abs_ms else 0.0
+        med = _pct(0.5)
+        p95 = _pct(0.95)
+        mx = abs_ms_sorted[-1] if abs_ms_sorted else 0.0
+        return {
+            "compared": n,
+            "changed": changed,
+            "text_mismatch": text_mismatch,
+            "mean_abs_ms": mean,
+            "median_abs_ms": med,
+            "p95_abs_ms": p95,
+            "max_abs_ms": mx,
+        }
+    except Exception:
+        return {"compared": 0}
 
 
 def _maybe_cleanup_media_artifacts() -> None:
@@ -2603,6 +2667,7 @@ def media_align_endpoint():
         raise PlaygroundError("Source audio or transcript is missing for this job.", status=404)
     # Load transcript
     transcript = json.loads(tx_path.read_text(encoding="utf-8"))
+    prev_words = transcript.get('words') or []
     # Align
     t0 = time.time()
     aligned = _whisperx_align_full(audio_wav, transcript)
@@ -2618,11 +2683,12 @@ def media_align_endpoint():
         _record_stat("align_full", {"jobId": job_id, "elapsed": elapsed, "duration": float(aligned.get("duration", 0) or 0), "words": len(aligned.get("words", []) or []), "ts": time.time()})
     except Exception:
         pass
+    diff = _alignment_diff_stats(prev_words, aligned.get('words') or [])
     return jsonify({
         "jobId": job_id,
         "media": {"audio_url": f"/audio/{rel_audio}", "duration": aligned.get("duration", 0)},
         "transcript": aligned,
-        "stats": {"elapsed": elapsed, "words": len(aligned.get("words", []) or [])},
+        "stats": {"elapsed": elapsed, "words": len(aligned.get("words", []) or []), "diff": diff},
         "whisperx": {"enabled": True}
     })
 
@@ -2754,12 +2820,13 @@ def media_align_region_endpoint():
         _record_stat("align_region", {"jobId": job_id, "elapsed": elapsed, "region": {"start": start, "end": end, "used": {"start": region_start, "end": region_end}}, "words": len(new_words), "duration": float(region_end-region_start), "rtf": (region_end-region_start)/max(elapsed,1e-6), "ts": time.time()})
     except Exception:
         pass
+    diff = _alignment_diff_stats(prev_words, transcript.get("words") or [], window=(region_start, region_end))
     return jsonify({
         "jobId": job_id,
         "region": {"start": start, "end": end, "margin": margin_s, "used": {"start": region_start, "end": region_end}},
         "media": {"audio_url": f"/audio/{rel_audio}", "duration": duration},
         "transcript": transcript,
-        "stats": {"elapsed": elapsed, "rtf": (region_end-region_start)/max(elapsed,1e-6), "words": len(new_words)},
+        "stats": {"elapsed": elapsed, "rtf": (region_end-region_start)/max(elapsed,1e-6), "words": len(new_words), "diff": diff},
         "whisperx": {"enabled": True}
     })
 
