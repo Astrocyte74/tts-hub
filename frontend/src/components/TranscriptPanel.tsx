@@ -3,6 +3,7 @@ import { mediaAlignFull, mediaAlignRegion, mediaApply, mediaEstimateUrl, mediaGe
 import { IconWave } from '../icons';
 import type { MediaTranscriptResult, MediaEstimateInfo, MediaProbeInfo } from '../types';
 import './TranscriptPanel.css';
+import { WaveformCanvas } from './WaveformCanvas';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
 export function TranscriptPanel() {
@@ -41,6 +42,9 @@ export function TranscriptPanel() {
   const [voiceId, setVoiceId] = useState<string>('');
   const [favList, setFavList] = useState<{ id: string; label: string; voiceId: string }[]>([]);
   const [favVoiceId, setFavVoiceId] = useState<string>('');
+  const [loopPreview, setLoopPreview] = useLocalStorage<boolean>('kokoro:mediaLoopPreview', false);
+  const [autoRefineOnPreview, setAutoRefineOnPreview] = useLocalStorage<boolean>('kokoro:mediaAutoRefine', true);
+  const [lastRefinedSec, setLastRefinedSec] = useState<number | null>(null);
 
   async function ensureVoices() {
     if (voiceList.length) return;
@@ -142,9 +146,13 @@ export function TranscriptPanel() {
       } catch { /* ignore seek issues */ }
       const onTime = () => {
         if (audio.currentTime >= stopAt) {
-          audio.pause();
-          audio.removeEventListener('timeupdate', onTime);
-          setIsPreviewingSel(false);
+          if (loopPreview) {
+            try { audio.currentTime = start; } catch {}
+          } else {
+            audio.pause();
+            audio.removeEventListener('timeupdate', onTime);
+            setIsPreviewingSel(false);
+          }
         }
       };
       audio.addEventListener('timeupdate', onTime);
@@ -231,9 +239,13 @@ export function TranscriptPanel() {
     } catch { /* ignore */ }
     const onTime = () => {
       if (audio.currentTime >= stopAt) {
-        audio.pause();
-        audio.removeEventListener('timeupdate', onTime);
-        setIsPreviewingSel(false);
+        if (loopPreview) {
+          try { audio.currentTime = start; } catch {}
+        } else {
+          audio.pause();
+          audio.removeEventListener('timeupdate', onTime);
+          setIsPreviewingSel(false);
+        }
       }
     };
     audio.addEventListener('timeupdate', onTime);
@@ -762,7 +774,7 @@ export function TranscriptPanel() {
             <div className="panel__actions" style={{ justifyContent: 'space-between' }}>
               <button className="panel__button" type="button" onClick={() => setCurrentStep('1')}>Back</button>
               <button className="panel__button" type="button" disabled={!canStep2} onClick={() => setCurrentStep('3')}>Next: Replace</button>
-            </div>
+          </div>
           </div>
           ) : null}
           {/* Replace preview (XTTS) */}
@@ -784,6 +796,10 @@ export function TranscriptPanel() {
                     Favorite
                   </label>
                 </div>
+                <label className="field" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} title={whisperxEnabled ? 'Align region automatically before preview' : 'WhisperX not available'}>
+                  <input type="checkbox" disabled={!whisperxEnabled} checked={!!autoRefineOnPreview && whisperxEnabled} onChange={(e) => setAutoRefineOnPreview(e.target.checked)} />
+                  <span className="field__label">Auto-refine selection (WhisperX)</span>
+                </label>
                 <div className="voice-select-area">
                   {voiceMode === 'xtts' ? (
                     <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)} aria-label="XTTS voice" style={{ minWidth: 240 }}>
@@ -855,6 +871,19 @@ export function TranscriptPanel() {
                     setReplaceStatus('Generating replace preview…');
                     setError(null);
                     setReplacePreviewUrl(null);
+                    // Optional: auto-refine selection before preview
+                    if (autoRefineOnPreview && whisperxEnabled) {
+                      try {
+                        const m = Number(regionMargin || '0.75');
+                        const resAlign = await mediaAlignRegion(jobId, s, e, Number.isFinite(m) ? m : undefined);
+                        setTranscript(resAlign.transcript);
+                        setAlignScope('region');
+                        setAlignWindow({ start: s, end: e });
+                        setLastRefinedSec(Math.max(0, e - s));
+                      } catch {
+                        // ignore auto-refine failure
+                      }
+                    }
                     const chosen = voiceMode === 'xtts' ? (voiceId || undefined) : voiceMode === 'favorite' ? (favVoiceId || undefined) : undefined;
                     const duckDb = duckDbVal.trim() !== '' ? Number(duckDbVal) : undefined;
                     const res = await mediaReplacePreview({
@@ -876,7 +905,8 @@ export function TranscriptPanel() {
                     setPlaybackTrack('preview');
                     const se = res.stats?.synth_elapsed;
                     if (typeof se === 'number') {
-                      setReplaceStatus(`Synthesized and patched preview in ${se.toFixed(2)}s`);
+                      const refinedNote = (autoRefineOnPreview && whisperxEnabled && lastRefinedSec !== null) ? ` · refined ${lastRefinedSec.toFixed(1)}s region` : '';
+                      setReplaceStatus(`Synthesized and patched preview in ${se.toFixed(2)}s${refinedNote}`);
                     }
                   } catch (err) {
                     setError(err instanceof Error ? err.message : 'Replace preview failed');
@@ -1021,10 +1051,25 @@ export function TranscriptPanel() {
                       <button className="panel__button" type="button" onClick={() => void previewSelectionOnce()} disabled={isPreviewingSel || !regionStart || !regionEnd}>
                         {isPreviewingSel ? 'Playing…' : 'Play selection'}
                       </button>
+                      <label className="field" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} title="Loop the current selection when previewing">
+                        <input type="checkbox" checked={loopPreview} onChange={(e) => setLoopPreview(e.target.checked)} />
+                        <span className="field__label">Loop selection</span>
+                      </label>
                     </div>
                     <div className="row spaced" style={{ alignItems: 'center' }}>
                       <audio ref={audioRef} controls src={playerSrc ?? undefined} style={{ width: '100%' }} onPlay={handleAudioPlay} />
                     </div>
+                    <WaveformCanvas
+                      audioUrl={playerSrc}
+                      words={transcript?.words ?? null}
+                      currentTime={audioTime}
+                      selection={(Number(regionEnd) > Number(regionStart)) ? { start: Number(regionStart), end: Number(regionEnd) } : null}
+                      onChangeSelection={(s, e) => {
+                        setRegionStart(s.toFixed(2));
+                        setRegionEnd(e.toFixed(2));
+                      }}
+                      height={80}
+                    />
                   </>
                 );
               })()}

@@ -127,6 +127,17 @@
 }
 .media-editor__player audio { display: block; width: 100%; min-width: 0; }
 
+/* Waveform canvas */
+.waveform {
+  position: relative;
+  margin-top: 8px;
+  border: 1px solid rgba(148,163,184,0.25);
+  border-radius: 10px;
+  background: rgba(30,41,59,0.35);
+  overflow: hidden;
+}
+.waveform canvas { display: block; width: 100%; height: 80px; }
+
 .media-info-mini {
   display: flex;
   align-items: center;
