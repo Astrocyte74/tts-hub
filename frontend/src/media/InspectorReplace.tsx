@@ -19,8 +19,8 @@ interface Props {
 
 export function InspectorReplace({ busy, voiceMode, voiceId, favoriteVoiceId, onVoiceMode, onVoiceId, onFavoriteVoiceId, replaceText, onReplaceText, timing, onTimingPatch, voiceOptions, favoriteOptions, onPreviewReplace }: Props) {
   return (
-    <div className="card">
-      <div className="panel__heading"><h3 className="panel__title">Select & Replace</h3></div>
+    <div className="panel media-card">
+      <div className="panel__heading"><h3 className="panel__title">Replace Dialogue</h3></div>
       <fieldset className="panel__actions" style={{ gap: 8, border: '1px dashed rgba(148,163,184,0.35)', padding: 8, borderRadius: 8 }}>
         <legend className="panel__meta">Voice</legend>
         <label className="field" aria-label="Borrow voice">
@@ -76,16 +76,15 @@ export function InspectorReplace({ busy, voiceMode, voiceId, favoriteVoiceId, on
         </div>
       </details>
 
-      <label className="field" aria-label="Replace text" style={{ minWidth: 320, width: '100%', marginTop: 8 }}>
-        <span className="field__label">Replace text</span>
+      <label className="field" aria-label="Replacement text" style={{ minWidth: 320, width: '100%', marginTop: 8 }}>
+        <span className="field__label">Replacement text</span>
         <textarea value={replaceText} onChange={(e) => onReplaceText(e.target.value)} placeholder="New line to speak…" rows={3} style={{ width: '100%', resize: 'vertical' }} />
       </label>
       <div className="panel__actions" style={{ gap: 8, marginTop: 6 }}>
         <button className="panel__button panel__button--primary" type="button" disabled={busy || !replaceText.trim()} onClick={onPreviewReplace}>
-          {busy ? 'Working…' : 'Preview replace'}
+          {busy ? 'Working…' : 'Preview replacement'}
         </button>
       </div>
     </div>
   );
 }
-

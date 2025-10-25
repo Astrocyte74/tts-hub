@@ -7,14 +7,14 @@ interface Props {
 
 export function InspectorApply({ busy, previewUrl, finalUrl, onApply }: Props) {
   return (
-    <div className="card">
-      <div className="panel__heading"><h3 className="panel__title">Apply</h3></div>
+    <div className="panel media-card">
+      <div className="panel__heading"><h3 className="panel__title">Export</h3></div>
       {!previewUrl ? (
         <p className="panel__hint panel__hint--muted">Generate a preview first.</p>
       ) : (
         <div className="panel__actions" style={{ gap: 8 }}>
           <button className="panel__button panel__button--primary" type="button" disabled={busy} onClick={onApply}>
-            {busy ? 'Working…' : 'Apply to video'}
+            {busy ? 'Working…' : 'Apply to media'}
           </button>
         </div>
       )}
@@ -28,4 +28,3 @@ export function InspectorApply({ busy, previewUrl, finalUrl, onApply }: Props) {
     </div>
   );
 }
-

@@ -22,8 +22,8 @@ export function TranscriptView({ transcript, selection, onSelectRange, onPreview
   const hi = Math.max(a, b);
 
   return (
-    <div>
-      <p className="panel__meta">Language: {transcript.language || 'unknown'} · Duration: {transcript.duration?.toFixed?.(1) ?? transcript.duration}s</p>
+    <div className="media-surface">
+      <p className="panel__meta">Lang: {transcript.language || 'unknown'} · {transcript.duration?.toFixed?.(1) ?? transcript.duration}s</p>
       <div
         role="list"
         aria-label="Transcript words (drag to select a region)"
@@ -73,4 +73,3 @@ export function TranscriptView({ transcript, selection, onSelectRange, onPreview
     </div>
   );
 }
-

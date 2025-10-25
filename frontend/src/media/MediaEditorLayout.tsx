@@ -207,20 +207,29 @@ export function MediaEditorLayout() {
   const STEPS: { id: EditorStep; label: string }[] = [
     { id: 'import', label: 'Import' },
     { id: 'align', label: 'Align' },
-    { id: 'replace', label: 'Select & Replace' },
-    { id: 'apply', label: 'Apply' },
+    { id: 'replace', label: 'Replace' },
+    { id: 'apply', label: 'Export' },
   ];
 
   return (
     <div className="media-editor" style={{ display: 'grid', gridTemplateRows: 'auto auto 1fr', gap: 12 }}>
-      <div className="stepper" role="tablist" aria-label="Media editor steps" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div className="media-stepper" role="tablist" aria-label="Media editor steps">
         {STEPS.map((s, idx) => (
-          <button key={s.id} className="panel__button" role="tab" aria-selected={state.step === s.id} onClick={() => dispatch({ type: 'SET_STEP', step: s.id })}>
-            {idx + 1}. {s.label}
+          <button
+            key={s.id}
+            className={`stepper__btn ${state.step === s.id ? 'is-active' : ''}`}
+            role="tab"
+            aria-selected={state.step === s.id}
+            onClick={() => dispatch({ type: 'SET_STEP', step: s.id })}
+          >
+            <span className="stepper__index">{idx + 1}</span>
+            <span className="stepper__label">{s.label}</span>
           </button>
         ))}
-        {state.status ? <span className="panel__hint panel__hint--notice" style={{ marginLeft: 8 }}>{state.status}</span> : null}
-        {state.error ? <span className="panel__hint panel__hint--warning" style={{ marginLeft: 8 }}>{state.error}</span> : null}
+        <div className="stepper__status">
+          {state.status ? <span className="panel__hint panel__hint--notice">{state.status}</span> : null}
+          {state.error ? <span className="panel__hint panel__hint--warning">{state.error}</span> : null}
+        </div>
       </div>
 
       {/* Transport */}
@@ -273,4 +282,3 @@ export function MediaEditorLayout() {
     </div>
   );
 }
-

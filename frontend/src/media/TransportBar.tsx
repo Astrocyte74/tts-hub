@@ -34,13 +34,12 @@ export function TransportBar({ audioUrl, selection, onSetSelection }: TransportB
   }
 
   return (
-    <div className="transport" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6 }}>
-      <audio ref={audioRef} controls src={audioUrl ?? undefined} style={{ width: '100%' }} />
+    <div className="media-transport">
+      <audio ref={audioRef} controls src={audioUrl ?? undefined} className="media-transport__audio" />
       <div
         ref={timelineRef}
-        className="timeline"
+        className="media-timeline"
         aria-label="Timeline"
-        style={{ position: 'relative', height: 8, background: 'rgba(148,163,184,0.25)', borderRadius: 6, cursor: 'pointer' }}
         onClick={(e) => seekToClientX(e.clientX)}
       >
         {(() => {
@@ -57,10 +56,10 @@ export function TransportBar({ audioUrl, selection, onSetSelection }: TransportB
           );
         })()}
         {duration ? (
-          <div style={{ position: 'absolute', left: `${(time / duration) * 100}%`, top: -2, bottom: -2, width: 2, background: '#93c5fd' }} />
+          <div className="media-timeline__playhead" style={{ left: `${(time / duration) * 100}%` }} />
         ) : null}
       </div>
-      <div className="transport__meta" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, opacity: 0.8 }}>
+      <div className="media-transport__meta">
         <span>{time.toFixed(2)} / {duration.toFixed(2)}s</span>
         {Number.isFinite(selection.start ?? NaN) && Number.isFinite(selection.end ?? NaN) && selection.start! < selection.end! ? (
           <span>Selection: {(selection.end! - selection.start!).toFixed(2)}s</span>
@@ -69,4 +68,3 @@ export function TransportBar({ audioUrl, selection, onSetSelection }: TransportB
     </div>
   );
 }
-
