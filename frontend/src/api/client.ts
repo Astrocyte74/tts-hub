@@ -463,6 +463,7 @@ export async function mediaReplacePreview(payload: {
   speed?: number;
   marginMs?: number;
   fadeMs?: number;
+  duckDb?: number;
 }): Promise<MediaReplacePreviewResponse> {
   return postJson<MediaReplacePreviewResponse>('media/replace_preview', payload);
 }

@@ -20,6 +20,8 @@ export function TranscriptPanel() {
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
   const [voiceMode, setVoiceMode] = useState<'borrow' | 'xtts' | 'favorite'>('borrow');
   const [voiceList, setVoiceList] = useState<{ id: string; label: string }[]>([]);
+  const [xttsAvailable, setXttsAvailable] = useState<boolean>(false);
+  const [xttsMessage, setXttsMessage] = useState<string | null>(null);
   const [voiceId, setVoiceId] = useState<string>('');
   const [favList, setFavList] = useState<{ id: string; label: string; voiceId: string }[]>([]);
   const [favVoiceId, setFavVoiceId] = useState<string>('');
@@ -31,6 +33,8 @@ export function TranscriptPanel() {
       const { fetchVoices } = await import('../api/client');
       const cat = await fetchVoices('xtts');
       setVoiceList(cat.voices.map((v) => ({ id: v.id, label: v.label })));
+      setXttsAvailable(Boolean((cat as any).available));
+      setXttsMessage(typeof (cat as any).message === 'string' ? String((cat as any).message) : null);
     } catch {
       // ignore
     }
@@ -478,6 +482,10 @@ export function TranscriptPanel() {
                   <span className="field__label">Margin (s)</span>
                   <input type="number" step="0.01" value={regionMargin} onChange={(e) => setRegionMargin(e.target.value)} />
                 </label>
+                <label className="field" aria-label="Duck dB" style={{ width: 180 }}>
+                  <span className="field__label">Duck original (dB)</span>
+                  <input id="duck-db" type="number" step="1" placeholder="e.g. -18" />
+                </label>
                 <label className="field" aria-label="Trim dB" style={{ width: 160 }}>
                   <span className="field__label">Trim dB</span>
                   <input id="trim-db" type="number" step="1" defaultValue={40} />
@@ -513,7 +521,9 @@ export function TranscriptPanel() {
                   const trimDb = Number((document.getElementById('trim-db') as HTMLInputElement)?.value || '40');
                   const trimPre = Number((document.getElementById('trim-pre') as HTMLInputElement)?.value || '8');
                   const trimPost = Number((document.getElementById('trim-post') as HTMLInputElement)?.value || '8');
-                  const res = await mediaReplacePreview({ jobId, start: s, end: e, text: replaceText, marginMs: Number(regionMargin) * 1000, fadeMs: Number((document.querySelector('input[aria-label="Fade ms"]') as HTMLInputElement)?.value || '30'), trimTopDb: trimDb, trimPrepadMs: trimPre, trimPostpadMs: trimPost, trimEnable: true, voice: chosen });
+                  const duckValRaw = (document.getElementById('duck-db') as HTMLInputElement)?.value ?? '';
+                  const duckDb = duckValRaw.trim() !== '' ? Number(duckValRaw) : undefined;
+                  const res = await mediaReplacePreview({ jobId, start: s, end: e, text: replaceText, marginMs: Number(regionMargin) * 1000, fadeMs: Number((document.querySelector('input[aria-label="Fade ms"]') as HTMLInputElement)?.value || '30'), duckDb, trimTopDb: trimDb, trimPrepadMs: trimPre, trimPostpadMs: trimPost, trimEnable: true, voice: chosen });
                   setReplacePreviewUrl(res.preview_url ? resolveAudioUrl(res.preview_url) : null);
                   const se = res.stats?.synth_elapsed;
                   if (typeof se === 'number') {
@@ -528,6 +538,13 @@ export function TranscriptPanel() {
             >
               {busy ? 'Working…' : 'Preview replace'}
             </button>
+            {voiceMode === 'xtts' && voiceList.length === 0 ? (
+              <p className="panel__hint panel__hint--muted">
+                {xttsAvailable
+                  ? (xttsMessage || 'XTTS is available but no custom voices were found. Use “Borrow from selection” or add voices in the XTTS manager.')
+                  : 'XTTS is not available on this server.'}
+              </p>
+            ) : null}
           </div>
         </div>
         <div>
