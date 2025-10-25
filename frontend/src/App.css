@@ -1077,6 +1077,8 @@ textarea:focus-visible {
 }
 
 .media-surface { display: flex; flex-direction: column; gap: 8px; }
+.media-grid > div:first-child { align-self: start; }
+.media-empty { display: flex; align-items: center; justify-content: center; min-height: 240px; border: 1px dashed rgba(148,163,184,.35); border-radius: 12px; background: rgba(15,23,42,.35); }
 
 
 .voice-card:hover {

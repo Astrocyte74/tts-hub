@@ -349,12 +349,18 @@ export function MediaEditorLayout() {
           ) : null}
         </div>
         <div>
-          <TranscriptView
-            transcript={state.transcript}
-            selection={state.selection}
-            onSelectRange={(start, end) => dispatch({ type: 'SET_SELECTION', start: isNaN(start) ? null : start, end: isNaN(end) ? null : end })}
-            onPreview={() => {/* hook for quick preview later */}}
-          />
+          {state.transcript ? (
+            <TranscriptView
+              transcript={state.transcript}
+              selection={state.selection}
+              onSelectRange={(start, end) => dispatch({ type: 'SET_SELECTION', start: isNaN(start) ? null : start, end: isNaN(end) ? null : end })}
+              onPreview={() => {/* hook for quick preview later */}}
+            />
+          ) : (
+            <div className="media-empty">
+              <p className="panel__meta">Paste a URL or upload a file to see the transcript here.</p>
+            </div>
+          )}
         </div>
       </div>
     </div>
