@@ -397,48 +397,51 @@ export function TranscriptPanel() {
               <div style={{ width: `${Math.round(progress * 100)}%`, height: '100%', background: 'linear-gradient(90deg, #60a5fa, #22d3ee)' }} />
             </div>
           ) : null}
-          {whisperxEnabled ? (
-            <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
-              <button className="panel__button" type="button" disabled={busy || !jobId} onClick={handleAlignFull} title="Align transcript to audio for precise word timings using WhisperX">
-                {busy ? 'Aligning…' : 'Refine word timings (WhisperX)'}
-              </button>
-              {!jobId ? <p className="panel__hint panel__hint--muted">Transcribe first to create a job.</p> : null}
-              <div className="panel__meta" style={{ marginLeft: 12 }}>or refine a region:</div>
-              <div className="subpanel" style={{ width: '100%' }}>
-                <div className="row spaced">
-                  <span className="panel__meta" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <IconWave size={14} /> Selection
-                  </span>
-                  <span className="inline-hint">Chips or nudgers · drag handles on timeline.</span>
+          {/* Step 2 — Whisper alignment (optional) */}
+          <div className="step">
+            <div className="step__title"><span className="step__badge">2</span> Whisper alignment <span className="step__hint">(optional)</span></div>
+            {whisperxEnabled ? (
+              <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
+                <button className="panel__button" type="button" disabled={busy || !jobId} onClick={handleAlignFull} title="Align transcript to audio for precise word timings using WhisperX">
+                  {busy ? 'Aligning…' : 'Refine word timings (WhisperX)'}
+                </button>
+                {!jobId ? <p className="panel__hint panel__hint--muted">Transcribe first to create a job.</p> : null}
+                <div className="panel__meta" style={{ marginLeft: 12 }}>or refine a region:</div>
+                <div className="subpanel" style={{ width: '100%' }}>
+                  <div className="row spaced">
+                    <span className="panel__meta" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <IconWave size={14} /> Selection
+                    </span>
+                    <span className="inline-hint">Chips or nudgers · drag handles on timeline.</span>
+                  </div>
+                  <div className="row">
+                    <label className="field field--sm" aria-label="Region start">
+                      <span className="field__label">Start (s)</span>
+                      <div className="row" style={{ gap: 6 }}>
+                        <button className="panel__button" type="button" onClick={() => setRegionStart((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
+                        <input type="number" step="0.01" value={regionStart} onChange={(e) => setRegionStart(e.target.value)} className="grow" />
+                        <button className="panel__button" type="button" onClick={() => setRegionStart((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
+                      </div>
+                    </label>
+                    <label className="field field--sm" aria-label="Region end">
+                      <span className="field__label">End (s)</span>
+                      <div className="row" style={{ gap: 6 }}>
+                        <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
+                        <input type="number" step="0.01" value={regionEnd} onChange={(e) => setRegionEnd(e.target.value)} className="grow" />
+                        <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
+                      </div>
+                    </label>
+                    <label className="field field--sm" aria-label="Margin">
+                      <span className="field__label">Margin (s)</span>
+                      <input type="number" step="0.01" value={regionMargin} onChange={(e) => setRegionMargin(e.target.value)} />
+                    </label>
+                  </div>
                 </div>
-                <div className="row">
-                  <label className="field field--sm" aria-label="Region start">
-                    <span className="field__label">Start (s)</span>
-                    <div className="row" style={{ gap: 6 }}>
-                      <button className="panel__button" type="button" onClick={() => setRegionStart((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
-                      <input type="number" step="0.01" value={regionStart} onChange={(e) => setRegionStart(e.target.value)} className="grow" />
-                      <button className="panel__button" type="button" onClick={() => setRegionStart((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
-                    </div>
-                  </label>
-                  <label className="field field--sm" aria-label="Region end">
-                    <span className="field__label">End (s)</span>
-                    <div className="row" style={{ gap: 6 }}>
-                      <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
-                      <input type="number" step="0.01" value={regionEnd} onChange={(e) => setRegionEnd(e.target.value)} className="grow" />
-                      <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
-                    </div>
-                  </label>
-                  <label className="field field--sm" aria-label="Margin">
-                    <span className="field__label">Margin (s)</span>
-                    <input type="number" step="0.01" value={regionMargin} onChange={(e) => setRegionMargin(e.target.value)} />
-                  </label>
-                </div>
-              </div>
-              <button
-                className="panel__button"
-                type="button"
-                disabled={busy || !jobId}
-                onClick={async () => {
+                <button
+                  className="panel__button"
+                  type="button"
+                  disabled={busy || !jobId}
+                  onClick={async () => {
                   if (!jobId) { setError('Transcribe first'); return; }
                   const s = Number(regionStart), e = Number(regionEnd), m = Number(regionMargin || '0.75');
                   if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Enter start/end seconds (end > start)'); return; }
@@ -473,11 +476,14 @@ export function TranscriptPanel() {
                     void refreshStats();
                   }
                 }}
-              >
-                {busy ? 'Aligning…' : 'Refine region'}
-              </button>
-            </div>
-          ) : null}
+                >
+                  {busy ? 'Aligning…' : 'Refine region'}
+                </button>
+              </div>
+            ) : (
+              <p className="panel__hint panel__hint--muted">WhisperX not enabled on this host. Install and enable to refine word timings.</p>
+            )}
+          </div>
           {/* Replace preview (XTTS) */}
           {transcript ? (
           <div className="step">
