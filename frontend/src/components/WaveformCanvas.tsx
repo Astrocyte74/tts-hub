@@ -18,6 +18,7 @@ interface Props {
 export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChangeSelection, height = 80, diffMarkers = [], showLegend = true, defaultZoom = 1 }: Props) {
   const { peaks, duration } = useWaveformData(audioUrl, 1024);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const miniRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState<number>(600);
   const dpr = Math.max(1, Math.min(2, (window.devicePixelRatio || 1)));
@@ -183,6 +184,54 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
     }
   }, [peaks, duration, width, height, dpr, selection, words, currentTime, timeToX]);
 
+  // Minimap draw (full duration)
+  useEffect(() => {
+    const cv = miniRef.current;
+    if (!cv) return;
+    const mh = Math.floor(16 * dpr);
+    const mw = Math.floor(width * dpr);
+    if (cv.width !== mw || cv.height !== mh) {
+      cv.width = mw; cv.height = mh; cv.style.width = `${width}px`; cv.style.height = `16px`;
+    }
+    const ctx = cv.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, mw, mh);
+    ctx.fillStyle = 'rgba(30,41,59,0.6)';
+    ctx.fillRect(0, 0, mw, mh);
+    if (peaks && peaks.length && duration) {
+      ctx.fillStyle = 'rgba(59,130,246,0.7)';
+      const n = peaks.length;
+      for (let i = 0; i < n; i += 1) {
+        const v = peaks[i];
+        const x = Math.floor((i / (n - 1)) * mw);
+        const y = Math.floor(v * (mh - 2));
+        ctx.fillRect(x, mh - 2 - y, 1, y);
+      }
+      // viewport window
+      if (viewDuration > 0) {
+        const x0 = Math.floor((viewStart / duration) * mw);
+        const x1 = Math.floor(((viewStart + viewDuration) / duration) * mw);
+        ctx.strokeStyle = 'rgba(226,232,240,0.9)';
+        ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
+        ctx.strokeRect(x0, 1, Math.max(2, x1 - x0), mh - 2);
+        ctx.fillStyle = 'rgba(226,232,240,0.12)';
+        ctx.fillRect(x0, 1, Math.max(2, x1 - x0), mh - 2);
+      }
+    }
+  }, [peaks, duration, width, dpr, viewStart, viewDuration]);
+
+  // Minimap interactions
+  function miniPosToStart(clientX: number): number {
+    if (!miniRef.current || !duration) return 0;
+    const rect = miniRef.current.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    // center the view on click
+    let start = (pct * duration) - viewDuration / 2;
+    return clampViewStart(start);
+  }
+
+  const miniDrag = useRef<boolean>(false);
+
   // Interaction: click/drag to select, snap on release
   const dragRef = useRef<{ from: number; to: number } | null>(null);
 
@@ -343,6 +392,16 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
             <span className="wave-legend__item"><i className="wl wl--play" /> Playhead</span>
           </div>
         ) : null}
+      </div>
+      {/* Minimap overview (panning) */}
+      <div className="waveform__minimap"
+        onMouseDown={(e) => { if (!duration) return; setViewStart(miniPosToStart(e.clientX)); miniDrag.current = true; }}
+        onMouseMove={(e) => { if (!duration || !miniDrag.current) return; setViewStart(miniPosToStart(e.clientX)); }}
+        onMouseUp={() => { miniDrag.current = false; }}
+        onMouseLeave={() => { miniDrag.current = false; }}
+        aria-label="Audio overview"
+      >
+        <canvas ref={miniRef} />
       </div>
       {/* Hover tooltip */}
       {hover && hover.idx >= 0 && words && words[hover.idx] ? (() => {
