@@ -101,6 +101,7 @@ export function TranscriptPanel() {
   const [cursorIdx, setCursorIdx] = useState<number>(0);
   const [findQuery, setFindQuery] = useState<string>('');
   const [findStartFrom, setFindStartFrom] = useState<number>(0);
+  const [viewPanelOpen, setViewPanelOpen] = useLocalStorage<boolean>('kokoro:mediaViewPanel', false);
 
   function clearSelection() {
     setSelStartIdx(null);
@@ -702,13 +703,42 @@ export function TranscriptPanel() {
               <div className="subpanel">
                 <p className="panel__meta">{describeAlignment(alignDiff, alignScope, alignWindow)}</p>
                 {Array.isArray(alignDiff.top) && alignDiff.top.length ? (
-                  <p className="panel__meta">
-                    Examples: {alignDiff.top.slice(0,5).map((t, i) => {
+                  <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                    <span className="panel__meta">Examples:</span>
+                    {alignDiff.top.slice(0, 5).map((t, i) => {
                       const val = Math.round(Math.abs(t.delta_ms || 0));
                       const dir = (t.delta_ms || 0) >= 0 ? 'later' : 'earlier';
-                      return `${t.text ?? ''} ${val} ms ${dir}`;
-                    }).join(' · ')}{alignDiff.top.length > 5 ? ' …' : ''}
-                  </p>
+                      const arrow = (t.delta_ms || 0) >= 0 ? '→' : '←';
+                      const label = `${t.text ?? ''} ${val} ms ${dir} ${arrow}`;
+                      return (
+                        <button
+                          key={`ex-${i}-${t.idx}`}
+                          className="chip-button"
+                          title={`Adjusted ${t.boundary} by ${val} ms ${dir}`}
+                          type="button"
+                          onClick={() => {
+                            // Jump to the word by index if available
+                            try {
+                              const idx = typeof t.idx === 'number' ? t.idx : -1;
+                              if (idx >= 0 && transcript?.words?.[idx]) {
+                                const w = transcript.words[idx];
+                                setSelStartIdx(idx);
+                                setSelEndIdx(idx);
+                                setRegionStart(w.start.toFixed(2));
+                                setRegionEnd(w.end.toFixed(2));
+                                setCursorIdx(idx);
+                              }
+                            } catch {}
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                    {alignDiff.top.length > 5 ? (
+                      <span className="panel__meta">…</span>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             ) : null}
@@ -1092,46 +1122,49 @@ export function TranscriptPanel() {
           {transcript && (currentStep === '2' || currentStep === '3') ? (
             <div className="media-editor__words">
               <p className="panel__meta">Language: {transcript.language || 'unknown'} · Duration: {transcript.duration?.toFixed?.(1) ?? transcript.duration}s</p>
-              <div className="row" style={{ alignItems: 'flex-end', gap: 8 }}>
-                <div className="segmented segmented--sm" role="radiogroup" aria-label="View">
-                  <label className={`segmented__option ${viewMode === 'sentences' ? 'is-selected' : ''}`}>
-                    <input type="radio" name="view" value="sentences" checked={viewMode === 'sentences'} onChange={() => setViewMode('sentences')} />
-                    Sentences
+              <details open={Boolean(viewPanelOpen)} onToggle={(e) => setViewPanelOpen((e.currentTarget as HTMLDetailsElement).open)}>
+                <summary className="panel__meta" style={{ cursor: 'pointer' }}>View & Find — {viewMode === 'words' ? 'Words' : 'Sentences'}</summary>
+                <div className="row" style={{ alignItems: 'flex-end', gap: 8, marginTop: 6 }}>
+                  <div className="segmented segmented--sm" role="radiogroup" aria-label="View">
+                    <label className={`segmented__option ${viewMode === 'sentences' ? 'is-selected' : ''}`}>
+                      <input type="radio" name="view" value="sentences" checked={viewMode === 'sentences'} onChange={() => setViewMode('sentences')} />
+                      Sentences
+                    </label>
+                    <label className={`segmented__option ${viewMode === 'words' ? 'is-selected' : ''}`}>
+                      <input type="radio" name="view" value="words" checked={viewMode === 'words'} onChange={() => setViewMode('words')} />
+                      Words
+                    </label>
+                  </div>
+                  <div style={{ flex: 1 }} />
+                  <label className="field field--lg">
+                    <span className="field__label">Find</span>
+                    <input type="text" value={findQuery} onChange={(e) => { setFindQuery(e.target.value); if (!viewPanelOpen) setViewPanelOpen(true); }} placeholder="Type phrase to select…" />
                   </label>
-                  <label className={`segmented__option ${viewMode === 'words' ? 'is-selected' : ''}`}>
-                    <input type="radio" name="view" value="words" checked={viewMode === 'words'} onChange={() => setViewMode('words')} />
-                    Words
-                  </label>
+                  <button
+                    className="panel__button"
+                    type="button"
+                    onClick={() => {
+                      if (!transcript?.words?.length || !findQuery.trim()) return;
+                      const words = transcript.words.map((w) => w.text.toLowerCase());
+                      const tokens = findQuery.toLowerCase().split(/\s+/).filter(Boolean);
+                      if (!tokens.length) return;
+                      let matchLo = -1, matchHi = -1;
+                      for (let i = findStartFrom; i <= words.length - tokens.length; i += 1) {
+                        let ok = true;
+                        for (let j = 0; j < tokens.length; j += 1) { if (words[i + j] !== tokens[j]) { ok = false; break; } }
+                        if (ok) { matchLo = i; matchHi = i + tokens.length - 1; break; }
+                      }
+                      if (matchLo === -1) { setFindStartFrom(0); return; }
+                      setSelStartIdx(matchLo); setSelEndIdx(matchHi); updateRegionFromIdxRange(matchLo, matchHi); setCursorIdx(matchHi); setFindStartFrom(matchHi + 1);
+                    }}
+                  >
+                    Find
+                  </button>
+                  <button className="panel__button" type="button" onClick={() => { setFindStartFrom(0); }}>
+                    Reset
+                  </button>
                 </div>
-                <div style={{ flex: 1 }} />
-                <label className="field field--lg">
-                  <span className="field__label">Find</span>
-                  <input type="text" value={findQuery} onChange={(e) => setFindQuery(e.target.value)} placeholder="Type phrase to select…" />
-                </label>
-                <button
-                  className="panel__button"
-                  type="button"
-                  onClick={() => {
-                    if (!transcript?.words?.length || !findQuery.trim()) return;
-                    const words = transcript.words.map((w) => w.text.toLowerCase());
-                    const tokens = findQuery.toLowerCase().split(/\s+/).filter(Boolean);
-                    if (!tokens.length) return;
-                    let matchLo = -1, matchHi = -1;
-                    for (let i = findStartFrom; i <= words.length - tokens.length; i += 1) {
-                      let ok = true;
-                      for (let j = 0; j < tokens.length; j += 1) { if (words[i + j] !== tokens[j]) { ok = false; break; } }
-                      if (ok) { matchLo = i; matchHi = i + tokens.length - 1; break; }
-                    }
-                    if (matchLo === -1) { setFindStartFrom(0); return; }
-                    setSelStartIdx(matchLo); setSelEndIdx(matchHi); updateRegionFromIdxRange(matchLo, matchHi); setCursorIdx(matchHi); setFindStartFrom(matchHi + 1);
-                  }}
-                >
-                  Find
-                </button>
-                <button className="panel__button" type="button" onClick={() => { setFindStartFrom(0); }}>
-                  Reset
-                </button>
-              </div>
+              </details>
               <div className="panel__actions" style={{ gap: 8 }}>
                 <span className="panel__meta">Selection: {regionStart || '…'}s → {regionEnd || '…'}s {selectionValid ? `(${(Number(regionEnd) - Number(regionStart)).toFixed(2)}s)` : ''}</span>
                 <button className="panel__button" type="button" onClick={() => { clearSelection(); }}>
@@ -1141,7 +1174,7 @@ export function TranscriptPanel() {
                   {isPreviewingSel ? 'Playing…' : 'Preview selection'}
                 </button>
                 {whisperxEnabled ? (
-                  <button className="panel__button" type="button" disabled={busy || !jobId || !selectionValid} onClick={async () => {
+                  <button className="panel__button panel__button--ghost" type="button" disabled={busy || !jobId || !selectionValid} onClick={async () => {
                     if (!jobId) { setError('Transcribe first'); return; }
                     const s = Number(regionStart), e = Number(regionEnd), m = Number(regionMargin || '0.75');
                     if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Enter start/end seconds (end > start)'); return; }
