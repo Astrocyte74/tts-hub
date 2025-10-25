@@ -359,6 +359,8 @@ export function TranscriptPanel() {
     }
   }
 
+  const [alignedFull, setAlignedFull] = useState<boolean>(false);
+
   async function handleAlignFull() {
     if (!jobId) {
       setError('Transcribe first to create a job');
@@ -385,6 +387,7 @@ export function TranscriptPanel() {
         const words = res.stats?.words ?? res.transcript?.words?.length ?? 0;
         setStatus(`Aligned full transcript in ${elapsed.toFixed(2)}s (words ${words})`);
       }
+      setAlignedFull(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Alignment failed');
     } finally {
@@ -527,7 +530,8 @@ export function TranscriptPanel() {
           {/* Step 2 — Whisper alignment (optional) (only after transcript exists) */}
           {transcript && currentStep === '2' ? (
           <div className="step">
-            <div className="step__title"><span className="step__badge">2</span> Whisper alignment <span className="step__hint">(optional)</span></div>
+            <div className="step__title"><span className="step__badge">2</span> Whisper alignment <span className="step__hint">(optional)</span> {alignedFull ? (<span className="status-pill status-pill--ok" style={{ marginLeft: 8 }}>Aligned</span>) : null}</div>
+            <p className="panel__meta">Tip: Select a sentence or words below to define a region. You can refine just that region with WhisperX, or proceed to Replace and select there.</p>
             {whisperxEnabled ? (
               <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
                 <button className="panel__button" type="button" disabled={busy || !jobId} onClick={handleAlignFull} title="Align transcript to audio for precise word timings using WhisperX">
@@ -607,7 +611,7 @@ export function TranscriptPanel() {
             )}
             <div className="panel__actions" style={{ justifyContent: 'space-between' }}>
               <button className="panel__button" type="button" onClick={() => setCurrentStep('1')}>Back</button>
-              <button className="panel__button" type="button" disabled={!selectionValid} onClick={() => setCurrentStep('3')}>Next: Replace</button>
+              <button className="panel__button" type="button" disabled={!canStep2} onClick={() => setCurrentStep('3')}>Next: Replace</button>
             </div>
           </div>
           ) : null}
