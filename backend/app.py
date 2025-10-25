@@ -249,6 +249,7 @@ def _alignment_diff_stats(prev_words: List[Dict[str, Any]], new_words: List[Dict
         if n == 0:
             return {"compared": 0}
         abs_deltas: List[float] = []
+        tops: List[Dict[str, Any]] = []
         changed = 0
         text_mismatch = 0
         for i in range(n):
@@ -258,13 +259,27 @@ def _alignment_diff_stats(prev_words: List[Dict[str, Any]], new_words: List[Dict
                 qs = float(q.get('start', 0) or 0); qe = float(q.get('end', 0) or 0)
             except Exception:
                 continue
-            if str(p.get('text') or p.get('word') or '').strip() != str(q.get('text') or q.get('word') or '').strip():
+            pt = str(p.get('text') or p.get('word') or '').strip()
+            qt = str(q.get('text') or q.get('word') or '').strip()
+            if pt != qt:
                 text_mismatch += 1
             ds = abs(qs - ps); de = abs(qe - pe)
             if ds > 1e-6 or de > 1e-6:
                 changed += 1
             # consider boundary delta as the larger of start/end
-            abs_deltas.append(max(ds, de))
+            chosen = 'start' if ds >= de else 'end'
+            dval = ds if chosen == 'start' else de
+            abs_deltas.append(dval)
+            # record candidate for top list (skip text mismatches)
+            if pt == qt:
+                if chosen == 'start':
+                    direction = 'later' if qs > ps else 'earlier'
+                    delta_ms = (qs - ps) * 1000.0
+                    tops.append({'idx': i, 'text': qt, 'boundary': 'start', 'delta_ms': delta_ms, 'start_prev': ps, 'start_new': qs})
+                else:
+                    direction = 'later' if qe > pe else 'earlier'
+                    delta_ms = (qe - pe) * 1000.0
+                    tops.append({'idx': i, 'text': qt, 'boundary': 'end', 'delta_ms': delta_ms, 'end_prev': pe, 'end_new': qe})
         abs_ms = [d * 1000.0 for d in abs_deltas]
         abs_ms_sorted = sorted(abs_ms)
         def _pct(p: float) -> float:
@@ -284,6 +299,16 @@ def _alignment_diff_stats(prev_words: List[Dict[str, Any]], new_words: List[Dict
             "median_abs_ms": med,
             "p95_abs_ms": p95,
             "max_abs_ms": mx,
+            "top": sorted([
+                {
+                    'idx': t.get('idx'),
+                    'text': t.get('text'),
+                    'boundary': t.get('boundary'),
+                    'delta_ms': float(t.get('delta_ms') or 0.0),
+                    'direction': ('later' if float(t.get('delta_ms') or 0.0) > 0 else 'earlier')
+                }
+                for t in tops
+            ], key=lambda r: abs(float(r.get('delta_ms') or 0.0)), reverse=True)[:10]
         }
     except Exception:
         return {"compared": 0}

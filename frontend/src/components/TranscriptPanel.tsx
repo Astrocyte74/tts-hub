@@ -360,7 +360,7 @@ export function TranscriptPanel() {
   }
 
   const [alignedFull, setAlignedFull] = useState<boolean>(false);
-  const [alignDiff, setAlignDiff] = useState<{ compared?: number; changed?: number; mean_abs_ms?: number; median_abs_ms?: number; p95_abs_ms?: number; max_abs_ms?: number } | null>(null);
+  const [alignDiff, setAlignDiff] = useState<{ compared?: number; changed?: number; mean_abs_ms?: number; median_abs_ms?: number; p95_abs_ms?: number; max_abs_ms?: number; top?: { idx?: number; text?: string; boundary?: string; delta_ms?: number; direction?: string }[] } | null>(null);
   const [alignScope, setAlignScope] = useState<'full' | 'region' | null>(null);
   const [alignWindow, setAlignWindow] = useState<{ start: number; end: number } | null>(null);
 
@@ -413,6 +413,7 @@ export function TranscriptPanel() {
             median_abs_ms: Number(d.median_abs_ms) || undefined,
             p95_abs_ms: Number(d.p95_abs_ms) || undefined,
             max_abs_ms: Number(d.max_abs_ms) || undefined,
+            top: Array.isArray(d.top) ? d.top.slice(0, 10) : undefined,
           });
           setAlignScope('full');
           setAlignWindow(null);
@@ -606,6 +607,7 @@ export function TranscriptPanel() {
                             median_abs_ms: Number(d.median_abs_ms) || undefined,
                             p95_abs_ms: Number(d.p95_abs_ms) || undefined,
                             max_abs_ms: Number(d.max_abs_ms) || undefined,
+                            top: Array.isArray(d.top) ? d.top.slice(0, 10) : undefined,
                           });
                           setAlignScope('region');
                           setAlignWindow({ start: s, end: e });
@@ -699,6 +701,15 @@ export function TranscriptPanel() {
             {alignDiff && alignDiff.compared ? (
               <div className="subpanel">
                 <p className="panel__meta">{describeAlignment(alignDiff, alignScope, alignWindow)}</p>
+                {Array.isArray(alignDiff.top) && alignDiff.top.length ? (
+                  <p className="panel__meta">
+                    Examples: {alignDiff.top.slice(0,5).map((t, i) => {
+                      const val = Math.round(Math.abs(t.delta_ms || 0));
+                      const dir = (t.delta_ms || 0) >= 0 ? 'later' : 'earlier';
+                      return `${t.text ?? ''} ${val} ms ${dir}`;
+                    }).join(' · ')}{alignDiff.top.length > 5 ? ' …' : ''}
+                  </p>
+                ) : null}
               </div>
             ) : null}
             <div className="panel__actions" style={{ justifyContent: 'space-between' }}>
@@ -931,23 +942,35 @@ export function TranscriptPanel() {
                 return (
                   <>
                     <div className="row" style={{ alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                      <div className="segmented segmented--sm" role="radiogroup" aria-label="Playback">
-                        <label className={`segmented__option ${playbackTrack === 'original' ? 'is-selected' : ''}`}>
-                          <input type="radio" name="pb" value="original" checked={playbackTrack === 'original'} onChange={() => setPlaybackTrack('original')} />
-                          Original
-                        </label>
-                        <label className={`segmented__option ${playbackTrack === 'diff' ? 'is-selected' : ''}`}>
-                          <input type="radio" name="pb" value="diff" checked={playbackTrack === 'diff'} onChange={() => setPlaybackTrack('diff')} disabled={!replaceDiffUrl} />
-                          Diff
-                        </label>
-                        <label className={`segmented__option ${playbackTrack === 'preview' ? 'is-selected' : ''}`}>
-                          <input type="radio" name="pb" value="preview" checked={playbackTrack === 'preview'} onChange={() => setPlaybackTrack('preview')} disabled={!replacePreviewUrl} />
-                          Preview
-                        </label>
-                      </div>
-                      <span className="panel__hint panel__hint--muted" style={{ marginLeft: 8 }}>
-                        Original: source audio · Diff: only the changes · Preview: patched audio (from Step 3)
-                      </span>
+                      {currentStep === '2' ? (
+                        <div className="segmented segmented--sm" aria-label="Playback (Step 2)">
+                          <span className="segmented__option is-selected">Original</span>
+                        </div>
+                      ) : (
+                        <div className="segmented segmented--sm" role="radiogroup" aria-label="Playback">
+                          <label className={`segmented__option ${playbackTrack === 'original' ? 'is-selected' : ''}`}>
+                            <input type="radio" name="pb" value="original" checked={playbackTrack === 'original'} onChange={() => setPlaybackTrack('original')} />
+                            Original
+                          </label>
+                          <label className={`segmented__option ${playbackTrack === 'diff' ? 'is-selected' : ''}`}>
+                            <input type="radio" name="pb" value="diff" checked={playbackTrack === 'diff'} onChange={() => setPlaybackTrack('diff')} disabled={!replaceDiffUrl} />
+                            Diff
+                          </label>
+                          <label className={`segmented__option ${playbackTrack === 'preview' ? 'is-selected' : ''}`}>
+                            <input type="radio" name="pb" value="preview" checked={playbackTrack === 'preview'} onChange={() => setPlaybackTrack('preview')} disabled={!replacePreviewUrl} />
+                            Preview
+                          </label>
+                        </div>
+                      )}
+                      {currentStep === '3' ? (
+                        <span className="panel__hint panel__hint--muted" style={{ marginLeft: 8 }}>
+                          Original: source audio · Diff: only the changes · Preview: patched audio
+                        </span>
+                      ) : (
+                        <span className="panel__hint panel__hint--muted" style={{ marginLeft: 8 }}>
+                          Preview becomes available in Step 3
+                        </span>
+                      )}
                       <button className="panel__button" type="button" onClick={() => void previewSelectionOnce()} disabled={isPreviewingSel || !regionStart || !regionEnd}>
                         {isPreviewingSel ? 'Playing…' : 'Play selection'}
                       </button>
