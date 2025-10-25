@@ -479,8 +479,10 @@ export function TranscriptPanel() {
             </div>
           ) : null}
           {/* Replace preview (XTTS) */}
-          <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
-            <div className="panel__actions" style={{ gap: 8 }}>
+          {transcript ? (
+          <div className="step">
+            <div className="step__title"><span className="step__badge">3</span> Replace & preview</div>
+            <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
               <div className="segmented" role="tablist" aria-label="Voice source">
                 <label className={`segmented__option ${voiceMode === 'borrow' ? 'is-selected' : ''}`} aria-label="Borrow from selection">
                   <input type="radio" name="voice-mode" value="borrow" checked={voiceMode === 'borrow'} onChange={() => setVoiceMode('borrow')} />
@@ -605,6 +607,7 @@ export function TranscriptPanel() {
               </p>
             ) : null}
           </div>
+          ) : null}
         </div>
         <div className="media-editor__right">
           {audioUrl ? (
