@@ -361,7 +361,9 @@ function App() {
       }
       const newKeys = availableIds.map((id) => makePreviewKey(engineId, id));
       setPreviewBusy((prev) => Array.from(new Set([...prev, ...newKeys])));
-      setResultsDrawerOpen(true);
+      if (autoOpenClips && activePanel !== 'results') {
+        setResultsDrawerOpen(true);
+      }
 
       const queueEntries = new Map<string, string>();
       const baseTime = Date.now();
@@ -1264,7 +1266,9 @@ function App() {
           ...prev,
           { id: qid, label: `Synthesis · ${voiceLabel}`, engine: engineId, status: 'pending', progress: 0, startedAt: new Date().toISOString() },
         ]);
-        setResultsDrawerOpen(true);
+        if (autoOpenClips && activePanel !== 'results') {
+          setResultsDrawerOpen(true);
+        }
         const payload: SynthesisRequest & { style?: string; speaker?: string; seed?: number } = {
           text: script,
           voice,
@@ -1401,7 +1405,9 @@ function App() {
       ...prev,
       { id: auditionQueueId, label: `Audition · ${selectedVoices.length} voices`, engine: engineId, status: 'pending', progress: 0, startedAt: new Date().toISOString() },
     ]);
-    setResultsDrawerOpen(true);
+    if (autoOpenClips && activePanel !== 'results') {
+      setResultsDrawerOpen(true);
+    }
     selectedVoices.forEach((voiceId) => {
       const override: Record<string, unknown> = {};
       const voiceMeta = voiceById.get(voiceId);

@@ -159,7 +159,8 @@ Notes
 - `POST /api/media/transcribe` — Upload or `{ source:'youtube', url }` → transcript with words + `media.audio_url` (WAV).
 - `POST /api/media/align` — WhisperX full transcript alignment.
 - `POST /api/media/align_region` — WhisperX alignment for a [start,end] window; merges refined words.
-- `POST /api/media/replace_preview` — `{ jobId, start, end, text, voice?, marginMs?, fadeMs?, trimEnable?, trimTopDb?, trimPrepadMs?, trimPostpadMs? }` → preview URL.
+- `POST /api/media/replace_preview` — `{ jobId, start, end, text, voice?, marginMs?, fadeMs?, duckDb?, trimEnable?, trimTopDb?, trimPrepadMs?, trimPostpadMs? }` → preview URL.
+  - `duckDb` (optional): dB amount to reduce original audio under the replacement (e.g., `-18`). When omitted, the original segment is fully replaced within the region.
 - `POST /api/media/apply` — `{ jobId, format? }` → mux final URL; auto codec selection + re‑encode fallback.
 - `GET /api/media/stats` — average RTFs from recent runs.
 - `POST /api/media/estimate` — `{ source:'youtube', url }` → `{ duration }` used for transcribe ETA.

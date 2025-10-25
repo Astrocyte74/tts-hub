@@ -26,8 +26,10 @@ export function TranscriptPanel() {
   const [ingestMode, setIngestMode] = useLocalStorage<'url' | 'file'>('kokoro:mediaIngestMode', 'url');
   const [replaceText, setReplaceText] = useState<string>('');
   const [replacePreviewUrl, setReplacePreviewUrl] = useState<string | null>(null);
+  const [replaceDiffUrl, setReplaceDiffUrl] = useState<string | null>(null);
   const [replaceStatus, setReplaceStatus] = useState<string>('');
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
+  const [playbackTrack, setPlaybackTrack] = useState<'original' | 'diff' | 'preview'>('original');
   const [voiceMode, setVoiceMode] = useState<'borrow' | 'xtts' | 'favorite'>('borrow');
   const [voiceList, setVoiceList] = useState<{ id: string; label: string }[]>([]);
   const [xttsAvailable, setXttsAvailable] = useState<boolean>(false);
@@ -92,6 +94,9 @@ export function TranscriptPanel() {
   const [selStartIdx, setSelStartIdx] = useState<number | null>(null);
   const [selEndIdx, setSelEndIdx] = useState<number | null>(null);
   const [isPreviewingSel, setIsPreviewingSel] = useState(false);
+  const [cursorIdx, setCursorIdx] = useState<number>(0);
+  const [findQuery, setFindQuery] = useState<string>('');
+  const [findStartFrom, setFindStartFrom] = useState<number>(0);
 
   function clearSelection() {
     setSelStartIdx(null);
@@ -194,7 +199,7 @@ export function TranscriptPanel() {
         setRegionEnd(newEnd.toFixed(2));
       }
     }
-    function onUp() { setDragTarget(null); }
+    function onUp() { setDragTarget(null); snapRegionToWords(); }
     if (dragTarget) {
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp, { once: true });
@@ -246,11 +251,9 @@ export function TranscriptPanel() {
 
   // Fetch stats once when panel opens
   useEffect(() => {
-    if (open) {
-      void refreshStats();
-    }
+    void refreshStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, []);
 
   async function handleTranscribe(kind: 'url' | 'file') {
     try {
@@ -352,6 +355,30 @@ export function TranscriptPanel() {
     }
   }
 
+  function snapSecondsToNearestWord(t: number, bound: 'start' | 'end'): number {
+    if (!transcript?.words?.length) return t;
+    let nearest = transcript.words[0]!.start;
+    let best = Infinity;
+    for (const w of transcript.words) {
+      const v = bound === 'start' ? w.start : w.end;
+      const d = Math.abs(v - t);
+      if (d < best) {
+        best = d;
+        nearest = v;
+      }
+    }
+    return Number(nearest.toFixed(2));
+  }
+
+  function snapRegionToWords() {
+    const s = Number(regionStart), e = Number(regionEnd);
+    if (!Number.isFinite(s) || !Number.isFinite(e)) return;
+    const s2 = snapSecondsToNearestWord(s, 'start');
+    const e2 = snapSecondsToNearestWord(e, 'end');
+    setRegionStart(s2.toFixed(2));
+    setRegionEnd(e2.toFixed(2));
+  }
+
   return (
     <div className="panel panel--compact" style={{ marginTop: 12 }}>
       <div className="media-editor">
@@ -361,7 +388,7 @@ export function TranscriptPanel() {
             <div className="step__title"><span className="step__badge">1</span> Import media</div>
             <div className="ingest-toolbar">
               <span className="ingest-toolbar__label">Source</span>
-              <div className="segmented segmented--sm" role="tablist" aria-label="Ingest source">
+              <div className="segmented segmented--sm" role="radiogroup" aria-label="Ingest source">
                 <label className={`segmented__option ${ingestMode === 'url' ? 'is-selected' : ''}`}>
                   <input type="radio" name="ingest" value="url" checked={ingestMode === 'url'} onChange={() => setIngestMode('url')} /> URL
                 </label>
@@ -396,7 +423,14 @@ export function TranscriptPanel() {
               </p>
             ) : null}
             {progress !== null ? (
-              <div style={{ height: 6, background: 'rgba(148,163,184,0.2)', borderRadius: 6, overflow: 'hidden' }} aria-label="Estimated progress">
+              <div
+                style={{ height: 6, background: 'rgba(148,163,184,0.2)', borderRadius: 6, overflow: 'hidden' }}
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round((progress ?? 0) * 100)}
+                aria-label="Estimated progress"
+              >
                 <div style={{ width: `${Math.round(progress * 100)}%`, height: '100%', background: 'linear-gradient(90deg, #60a5fa, #22d3ee)' }} />
               </div>
             ) : null}
@@ -495,7 +529,7 @@ export function TranscriptPanel() {
             <div className="step">
               <div className="step__title"><span className="step__badge">3</span> Replace & preview</div>
               <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
-                <div className="segmented" role="tablist" aria-label="Voice source">
+                <div className="segmented" role="radiogroup" aria-label="Voice source">
                   <label className={`segmented__option ${voiceMode === 'borrow' ? 'is-selected' : ''}`} aria-label="Borrow from selection">
                     <input type="radio" name="voice-mode" value="borrow" checked={voiceMode === 'borrow'} onChange={() => setVoiceMode('borrow')} />
                     Borrow
@@ -597,6 +631,8 @@ export function TranscriptPanel() {
                       voice: chosen,
                     });
                     setReplacePreviewUrl(res.preview_url ? resolveAudioUrl(res.preview_url) : null);
+                    setReplaceDiffUrl(res.diff_url ? resolveAudioUrl(res.diff_url) : null);
+                    setPlaybackTrack('preview');
                     const se = res.stats?.synth_elapsed;
                     if (typeof se === 'number') {
                       setReplaceStatus(`Synthesized and patched preview in ${se.toFixed(2)}s`);
@@ -624,12 +660,39 @@ export function TranscriptPanel() {
         <div className="media-editor__right">
           {audioUrl ? (
             <div className="media-editor__player">
-              <div className="row spaced" style={{ alignItems: 'center' }}>
-                <audio ref={audioRef} controls src={audioUrl} style={{ width: '100%' }} onPlay={handleAudioPlay} />
-                <button className="panel__button" type="button" onClick={() => void previewSelectionOnce()} disabled={isPreviewingSel || !regionStart || !regionEnd}>
-                  {isPreviewingSel ? 'Playing…' : 'Play selection'}
-                </button>
-              </div>
+              {(() => {
+                const playerSrc = playbackTrack === 'preview'
+                  ? (replacePreviewUrl ?? audioUrl)
+                  : playbackTrack === 'diff'
+                  ? (replaceDiffUrl ?? audioUrl)
+                  : audioUrl;
+                return (
+                  <>
+                    <div className="row" style={{ alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <div className="segmented segmented--sm" role="radiogroup" aria-label="Playback">
+                        <label className={`segmented__option ${playbackTrack === 'original' ? 'is-selected' : ''}`}>
+                          <input type="radio" name="pb" value="original" checked={playbackTrack === 'original'} onChange={() => setPlaybackTrack('original')} />
+                          Original
+                        </label>
+                        <label className={`segmented__option ${playbackTrack === 'diff' ? 'is-selected' : ''}`}>
+                          <input type="radio" name="pb" value="diff" checked={playbackTrack === 'diff'} onChange={() => setPlaybackTrack('diff')} disabled={!replaceDiffUrl} />
+                          Diff
+                        </label>
+                        <label className={`segmented__option ${playbackTrack === 'preview' ? 'is-selected' : ''}`}>
+                          <input type="radio" name="pb" value="preview" checked={playbackTrack === 'preview'} onChange={() => setPlaybackTrack('preview')} disabled={!replacePreviewUrl} />
+                          Preview
+                        </label>
+                      </div>
+                      <button className="panel__button" type="button" onClick={() => void previewSelectionOnce()} disabled={isPreviewingSel || !regionStart || !regionEnd}>
+                        {isPreviewingSel ? 'Playing…' : 'Play selection'}
+                      </button>
+                    </div>
+                    <div className="row spaced" style={{ alignItems: 'center' }}>
+                      <audio ref={audioRef} controls src={playerSrc ?? undefined} style={{ width: '100%' }} onPlay={handleAudioPlay} />
+                    </div>
+                  </>
+                );
+              })()}
               {/* Custom selection timeline overlay */}
               <div
                 className="media-editor__timeline"
@@ -655,15 +718,39 @@ export function TranscriptPanel() {
                       <div
                         role="slider"
                         aria-label="Selection start"
+                        aria-orientation="horizontal"
+                        aria-valuemin={0}
+                        aria-valuemax={audioDuration || 0}
+                        aria-valuenow={Number(regionStart) || 0}
                         title="Drag to adjust start"
                         onMouseDown={(e) => { e.preventDefault(); setDragTarget('start'); }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                            e.preventDefault();
+                            const delta = e.key === 'ArrowLeft' ? -0.01 : 0.01;
+                            const next = Math.max(0, Math.min(audioDuration || 0, (Number(regionStart) || 0) + delta));
+                            setRegionStart(next.toFixed(2));
+                          }
+                        }}
                         style={{ position: 'absolute', left, top: -4, width: 10, height: 16, background: '#60a5fa', borderRadius: 3, cursor: 'ew-resize', transform: 'translateX(-50%)' }}
                       />
                       <div
                         role="slider"
                         aria-label="Selection end"
+                        aria-orientation="horizontal"
+                        aria-valuemin={0}
+                        aria-valuemax={audioDuration || 0}
+                        aria-valuenow={Number(regionEnd) || 0}
                         title="Drag to adjust end"
                         onMouseDown={(e) => { e.preventDefault(); setDragTarget('end'); }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                            e.preventDefault();
+                            const delta = e.key === 'ArrowLeft' ? -0.01 : 0.01;
+                            const next = Math.max(0, Math.min(audioDuration || 0, (Number(regionEnd) || 0) + delta));
+                            setRegionEnd(next.toFixed(2));
+                          }
+                        }}
                         style={{ position: 'absolute', left: `calc(${left} + ${width})`, top: -4, width: 10, height: 16, background: '#22d3ee', borderRadius: 3, cursor: 'ew-resize', transform: 'translateX(-50%)' }}
                       />
                     </>
@@ -723,11 +810,73 @@ export function TranscriptPanel() {
                 onMouseUp={() => setIsSelecting(false)}
                 tabIndex={0}
                 onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    clearSelection();
+                  if (e.key === 'Escape') { clearSelection(); return; }
+                  const maxIdx = transcript?.words?.length ? transcript.words.length - 1 : 0;
+                  if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    const base = selEndIdx ?? selStartIdx ?? cursorIdx ?? 0;
+                    const next = Math.min(maxIdx, base + 1);
+                    if (e.shiftKey && selStartIdx !== null) {
+                      setSelEndIdx(next); updateRegionFromIdxRange(selStartIdx, next);
+                    } else {
+                      setSelStartIdx(next); setSelEndIdx(next);
+                      setRegionStart(transcript!.words[next].start.toFixed(2));
+                      setRegionEnd(transcript!.words[next].end.toFixed(2));
+                    }
+                    setCursorIdx(next);
+                  } else if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    const base = selEndIdx ?? selStartIdx ?? cursorIdx ?? 0;
+                    const prev = Math.max(0, base - 1);
+                    if (e.shiftKey && selStartIdx !== null) {
+                      setSelEndIdx(prev); updateRegionFromIdxRange(selStartIdx, prev);
+                    } else {
+                      setSelStartIdx(prev); setSelEndIdx(prev);
+                      setRegionStart(transcript!.words[prev].start.toFixed(2));
+                      setRegionEnd(transcript!.words[prev].end.toFixed(2));
+                    }
+                    setCursorIdx(prev);
+                  } else if (e.key.toLowerCase() === 'a') {
+                    const idx = selEndIdx ?? selStartIdx ?? cursorIdx ?? 0;
+                    const seg = transcript?.segments?.find(s => s.start <= transcript!.words[idx].start && s.end >= transcript!.words[idx].end);
+                    if (seg && transcript?.words?.length) {
+                      let lo = 0, hi = transcript.words.length - 1;
+                      for (let i = 0; i < transcript.words.length; i += 1) { if (transcript.words[i].start >= seg.start) { lo = i; break; } }
+                      for (let j = transcript.words.length - 1; j >= 0; j -= 1) { if (transcript.words[j].end <= seg.end) { hi = j; break; } }
+                      setSelStartIdx(lo); setSelEndIdx(hi); updateRegionFromIdxRange(lo, hi); setCursorIdx(hi);
+                    }
                   }
                 }}
               >
+                <div className="row" style={{ gap: 8, marginBottom: 6 }}>
+                  <label className="field field--lg">
+                    <span className="field__label">Find</span>
+                    <input type="text" value={findQuery} onChange={(e) => setFindQuery(e.target.value)} placeholder="Type phrase to select…" />
+                  </label>
+                  <button
+                    className="panel__button"
+                    type="button"
+                    onClick={() => {
+                      if (!transcript?.words?.length || !findQuery.trim()) return;
+                      const words = transcript.words.map((w) => w.text.toLowerCase());
+                      const tokens = findQuery.toLowerCase().split(/\s+/).filter(Boolean);
+                      if (!tokens.length) return;
+                      let matchLo = -1, matchHi = -1;
+                      for (let i = findStartFrom; i <= words.length - tokens.length; i += 1) {
+                        let ok = true;
+                        for (let j = 0; j < tokens.length; j += 1) { if (words[i + j] !== tokens[j]) { ok = false; break; } }
+                        if (ok) { matchLo = i; matchHi = i + tokens.length - 1; break; }
+                      }
+                      if (matchLo === -1) { setFindStartFrom(0); return; }
+                      setSelStartIdx(matchLo); setSelEndIdx(matchHi); updateRegionFromIdxRange(matchLo, matchHi); setCursorIdx(matchHi); setFindStartFrom(matchHi + 1);
+                    }}
+                  >
+                    Find
+                  </button>
+                  <button className="panel__button" type="button" onClick={() => { setFindStartFrom(0); }}>
+                    Reset
+                  </button>
+                </div>
                 {transcript.words?.length ? (
                   transcript.words.map((w, idx) => {
                     const a = selStartIdx ?? -1;
@@ -735,6 +884,9 @@ export function TranscriptPanel() {
                     const lo = Math.min(a, b);
                     const hi = Math.max(a, b);
                     const selected = a !== null && b !== null && idx >= lo && idx <= hi;
+                    const conf = typeof w.confidence === 'number' ? Math.max(0, Math.min(1, w.confidence)) : null;
+                    const baseBgAlpha = 0.12 + (conf !== null ? (1 - conf) * 0.15 : 0.15);
+                    const baseBorderAlpha = 0.22 + (conf !== null ? (1 - conf) * 0.1 : 0.1);
                     return (
                       <span
                         key={`w-${idx}`}
@@ -771,8 +923,8 @@ export function TranscriptPanel() {
                           }
                         }}
                         style={{
-                          background: selected ? 'rgba(96,165,250,0.35)' : 'rgba(148,163,184,0.15)',
-                          border: selected ? '1px solid rgba(96,165,250,0.8)' : '1px solid rgba(148,163,184,0.25)',
+                          background: selected ? 'rgba(96,165,250,0.35)' : `rgba(148,163,184,${baseBgAlpha.toFixed(2)})`,
+                          border: selected ? '1px solid rgba(96,165,250,0.8)' : `1px solid rgba(148,163,184,${baseBorderAlpha.toFixed(2)})`,
                           padding: '3px 6px',
                           borderRadius: 8,
                           cursor: 'pointer',
