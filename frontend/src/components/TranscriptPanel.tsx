@@ -489,6 +489,7 @@ export function TranscriptPanel() {
               <p className="panel__hint panel__hint--muted">WhisperX not enabled on this host. Install and enable to refine word timings.</p>
             )}
           </div>
+          ) : null}
           {/* Replace preview (XTTS) */}
           {transcript && (
             <div className="step">
