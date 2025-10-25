@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useWaveformData } from '../hooks/useWaveformData';
 
 type Word = { text: string; start: number; end: number };
@@ -17,7 +17,15 @@ interface Props {
   replaceWords?: ReplacementWord[] | null; // optional overlay lane (absolute times)
 }
 
-export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChangeSelection, height = 80, diffMarkers = [], showLegend = true, defaultZoom = 1, replaceWords = null }: Props) {
+export interface WaveformHandle {
+  fit(): void;
+  zoomToSelection(start: number, end: number): void;
+}
+
+export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function WaveformCanvas(
+  { audioUrl, words, currentTime, selection, onChangeSelection, height = 80, diffMarkers = [], showLegend = true, defaultZoom = 1, replaceWords = null }: Props,
+  ref
+) {
   const { peaks, duration } = useWaveformData(audioUrl, 1024);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const miniRef = useRef<HTMLCanvasElement | null>(null);
@@ -28,7 +36,7 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
   const [zoom, setZoom] = useState<number>(Math.max(1, defaultZoom || 1)); // 1 = fit all
   const [viewStart, setViewStart] = useState<number>(0); // seconds
   const [isHot, setIsHot] = useState<boolean>(false); // keyboard scope when hovered
-  const [styleMode, setStyleMode] = useState<'bars' | 'line' | 'filled'>('bars');
+  const [styleMode, setStyleMode] = useState<'bars' | 'line' | 'filled'>('filled');
   const [showTicks, setShowTicks] = useState<boolean>(false);
   const [showWhiskers, setShowWhiskers] = useState<boolean>(true);
   const [showBlocks, setShowBlocks] = useState<boolean>(false);
@@ -60,6 +68,19 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
   };
 
   useEffect(() => { setViewStart((s) => clampViewStart(s)); }, [viewDuration]);
+
+  useImperativeHandle(ref, () => ({
+    fit() {
+      setZoom(1); setViewStart(0);
+    },
+    zoomToSelection(start: number, end: number) {
+      if (!duration) return;
+      const len = Math.max(0.01, end - start);
+      const nextZoom = Math.min(100, duration / len);
+      setZoom(nextZoom);
+      setViewStart(clampViewStart(start - 0.05 * len));
+    },
+  }), [duration, clampViewStart]);
 
   const timeToX = useMemo(() => (
     (t: number) => {
@@ -507,4 +528,4 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
       {/* (legend rendered in footer) */}
     </div>
   );
-}
+});

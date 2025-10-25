@@ -3,7 +3,7 @@ import { mediaAlignFull, mediaAlignRegion, mediaApply, mediaEstimateUrl, mediaGe
 import { IconWave } from '../icons';
 import type { MediaTranscriptResult, MediaEstimateInfo, MediaProbeInfo } from '../types';
 import './TranscriptPanel.css';
-import { WaveformCanvas } from './WaveformCanvas';
+import { WaveformCanvas, type WaveformHandle } from './WaveformCanvas';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
 export function TranscriptPanel() {
@@ -107,6 +107,7 @@ export function TranscriptPanel() {
   const [findQuery, setFindQuery] = useState<string>('');
   const [findStartFrom, setFindStartFrom] = useState<number>(0);
   const [viewPanelOpen, setViewPanelOpen] = useLocalStorage<boolean>('kokoro:mediaViewPanel', false);
+  const waveRef = useRef<WaveformHandle | null>(null);
 
   function clearSelection() {
     setSelStartIdx(null);
@@ -1163,6 +1164,7 @@ export function TranscriptPanel() {
                       <audio ref={audioRef} controls src={playerSrc ?? undefined} style={{ width: '100%' }} onPlay={handleAudioPlay} />
                     </div>
                     <WaveformCanvas
+                      ref={waveRef}
                       audioUrl={playerSrc}
                       words={transcript?.words ?? null}
                       currentTime={audioTime}
@@ -1500,6 +1502,7 @@ export function TranscriptPanel() {
                           setRegionStart(w.start.toFixed(2));
                           setRegionEnd(w.end.toFixed(2));
                           void previewSelectionOnce();
+                          try { waveRef.current?.zoomToSelection(w.start, w.end); } catch {}
                         }}
                         onMouseEnter={() => {
                           if (isSelecting) {
