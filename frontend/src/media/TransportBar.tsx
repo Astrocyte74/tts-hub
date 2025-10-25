@@ -11,6 +11,7 @@ export function TransportBar({ audioUrl, selection, onSetSelection }: TransportB
   const [duration, setDuration] = useState(0);
   const [time, setTime] = useState(0);
   const timelineRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<null | 'start' | 'end'>(null);
 
   useEffect(() => {
     const el = audioRef.current;
@@ -33,6 +34,31 @@ export function TransportBar({ audioUrl, selection, onSetSelection }: TransportB
     try { audioRef.current.currentTime = pct * duration; } catch {}
   }
 
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      if (!dragRef.current || !timelineRef.current || !duration) return;
+      const rect = timelineRef.current.getBoundingClientRect();
+      const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const t = pct * duration;
+      const start = selection.start ?? 0;
+      const end = selection.end ?? duration;
+      if (dragRef.current === 'start') {
+        const newStart = Math.min(t, end - 0.01);
+        onSetSelection(Math.max(0, newStart), end);
+      } else {
+        const newEnd = Math.max(t, start + 0.01);
+        onSetSelection(start, Math.min(duration, newEnd));
+      }
+    }
+    function onUp() { dragRef.current = null; }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [duration, selection.start, selection.end, onSetSelection]);
+
   return (
     <div className="media-transport">
       <audio ref={audioRef} controls src={audioUrl ?? undefined} className="media-transport__audio" />
@@ -50,8 +76,20 @@ export function TransportBar({ audioUrl, selection, onSetSelection }: TransportB
           return (
             <>
               <div style={{ position: 'absolute', left, width, top: 0, bottom: 0, background: 'linear-gradient(90deg,#60a5fa,#22d3ee)', opacity: 0.6, borderRadius: 6 }} />
-              <div title="Drag to adjust start" role="slider" aria-label="Selection start" style={{ position: 'absolute', left, top: -4, width: 10, height: 16, background: '#60a5fa', borderRadius: 3, cursor: 'ew-resize', transform: 'translateX(-50%)' }} />
-              <div title="Drag to adjust end" role="slider" aria-label="Selection end" style={{ position: 'absolute', left: `calc(${left} + ${width})`, top: -4, width: 10, height: 16, background: '#22d3ee', borderRadius: 3, cursor: 'ew-resize', transform: 'translateX(-50%)' }} />
+              <div
+                title="Drag to adjust start"
+                role="slider"
+                aria-label="Selection start"
+                onMouseDown={(e) => { e.preventDefault(); dragRef.current = 'start'; }}
+                style={{ position: 'absolute', left, top: -4, width: 10, height: 16, background: '#60a5fa', borderRadius: 3, cursor: 'ew-resize', transform: 'translateX(-50%)' }}
+              />
+              <div
+                title="Drag to adjust end"
+                role="slider"
+                aria-label="Selection end"
+                onMouseDown={(e) => { e.preventDefault(); dragRef.current = 'end'; }}
+                style={{ position: 'absolute', left: `calc(${left} + ${width})`, top: -4, width: 10, height: 16, background: '#22d3ee', borderRadius: 3, cursor: 'ew-resize', transform: 'translateX(-50%)' }}
+              />
             </>
           );
         })()}
