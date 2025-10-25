@@ -361,6 +361,20 @@ export function TranscriptPanel() {
 
   const [alignedFull, setAlignedFull] = useState<boolean>(false);
   const [alignDiff, setAlignDiff] = useState<{ compared?: number; changed?: number; mean_abs_ms?: number; median_abs_ms?: number; p95_abs_ms?: number; max_abs_ms?: number } | null>(null);
+  const [alignScope, setAlignScope] = useState<'full' | 'region' | null>(null);
+  const [alignWindow, setAlignWindow] = useState<{ start: number; end: number } | null>(null);
+
+  const describeAlignment = (diff: typeof alignDiff | null, scope: 'full' | 'region' | null, win: { start: number; end: number } | null) => {
+    if (!diff || !diff.compared) return '';
+    const n = diff.compared;
+    const changed = diff.changed ?? 0;
+    const mean = diff.mean_abs_ms ?? 0;
+    const med = diff.median_abs_ms ?? 0;
+    const p95 = diff.p95_abs_ms ?? 0;
+    const mx = diff.max_abs_ms ?? 0;
+    const where = scope === 'region' && win ? ` in the selected region (${win.start.toFixed(2)}–${win.end.toFixed(2)}s)` : '';
+    return `Adjusted ${changed.toLocaleString()} of ${n.toLocaleString()} word boundaries${where}. Typical adjustment was about ${Math.round(mean)} ms (median ${Math.round(med)} ms; 95th percentile ${Math.round(p95)} ms; max ${Math.round(mx)} ms).`;
+  };
 
   async function handleAlignFull() {
     if (!jobId) {
@@ -400,6 +414,8 @@ export function TranscriptPanel() {
             p95_abs_ms: Number(d.p95_abs_ms) || undefined,
             max_abs_ms: Number(d.max_abs_ms) || undefined,
           });
+          setAlignScope('full');
+          setAlignWindow(null);
         }
       } catch {}
     } catch (err) {
@@ -551,6 +567,63 @@ export function TranscriptPanel() {
                 <button className="panel__button" type="button" disabled={busy || !jobId} onClick={handleAlignFull} title="Align transcript to audio for precise word timings using WhisperX">
                   {busy ? 'Aligning…' : 'Improve full timing (WhisperX)'}
                 </button>
+                <button
+                  className="panel__button"
+                  type="button"
+                  disabled={busy || !jobId || !selectionValid}
+                  title="Refine just the selected region with WhisperX"
+                  onClick={async () => {
+                    if (!jobId) { setError('Transcribe first'); return; }
+                    const s = Number(regionStart), e = Number(regionEnd), m = Number(regionMargin || '0.75');
+                    if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Select a valid region first'); return; }
+                    try {
+                      setBusy(true);
+                      setStatus(`Aligning region ${s.toFixed(2)}–${e.toFixed(2)}s with WhisperX…`);
+                      setError(null);
+                      const dur = (e - s) + (Number.isFinite(m) ? Number(m) * 2 : 1.5);
+                      const total = dur / (avgRtf.region > 0 ? avgRtf.region : 5);
+                      const startAt = Date.now();
+                      setProgress(0);
+                      progressTimer.current = window.setInterval(() => {
+                        const elapsed = (Date.now() - startAt) / 1000;
+                        setProgress(Math.max(0, Math.min(1, elapsed / total)));
+                      }, 1000);
+                      const res = await mediaAlignRegion(jobId, s, e, Number.isFinite(m) ? m : undefined);
+                      setTranscript(res.transcript);
+                      const elapsed = res.stats?.elapsed;
+                      const rtf = res.stats?.rtf;
+                      const words = res.stats?.words ?? 0;
+                      if (typeof elapsed === 'number' && typeof rtf === 'number') {
+                        setStatus(`Aligned ${words} words in ${elapsed.toFixed(2)}s (RTF ${rtf.toFixed(2)}×)`);
+                      }
+                      try {
+                        const d = (res.stats as any)?.diff as any;
+                        if (d && typeof d === 'object') {
+                          setAlignDiff({
+                            compared: Number(d.compared) || undefined,
+                            changed: Number(d.changed) || undefined,
+                            mean_abs_ms: Number(d.mean_abs_ms) || undefined,
+                            median_abs_ms: Number(d.median_abs_ms) || undefined,
+                            p95_abs_ms: Number(d.p95_abs_ms) || undefined,
+                            max_abs_ms: Number(d.max_abs_ms) || undefined,
+                          });
+                          setAlignScope('region');
+                          setAlignWindow({ start: s, end: e });
+                        }
+                      } catch {}
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Region alignment failed');
+                    } finally {
+                      setBusy(false);
+                      setStatus('');
+                      if (progressTimer.current) { window.clearInterval(progressTimer.current); progressTimer.current = null; }
+                      setProgress(null);
+                      void refreshStats();
+                    }
+                  }}
+                >
+                  Refine selection (WhisperX)
+                </button>
                 {!jobId ? <p className="panel__hint panel__hint--muted">Transcribe first to create a job.</p> : null}
                 <details className="subpanel" style={{ width: '100%' }}>
                   <summary className="panel__meta" style={{ cursor: 'pointer' }}>Precise adjust (advanced)</summary>
@@ -625,12 +698,7 @@ export function TranscriptPanel() {
             )}
             {alignDiff && alignDiff.compared ? (
               <div className="subpanel">
-                <p className="panel__meta">
-                  Boundary adjustments on {alignDiff.compared.toLocaleString()} words · changed {alignDiff.changed?.toLocaleString() ?? 0}
-                </p>
-                <p className="panel__meta">
-                  Mean |Δ| {alignDiff.mean_abs_ms?.toFixed?.(0) ?? 0} ms · Median {alignDiff.median_abs_ms?.toFixed?.(0) ?? 0} ms · P95 {alignDiff.p95_abs_ms?.toFixed?.(0) ?? 0} ms · Max {alignDiff.max_abs_ms?.toFixed?.(0) ?? 0} ms
-                </p>
+                <p className="panel__meta">{describeAlignment(alignDiff, alignScope, alignWindow)}</p>
               </div>
             ) : null}
             <div className="panel__actions" style={{ justifyContent: 'space-between' }}>
@@ -877,6 +945,9 @@ export function TranscriptPanel() {
                           Preview
                         </label>
                       </div>
+                      <span className="panel__hint panel__hint--muted" style={{ marginLeft: 8 }}>
+                        Original: source audio · Diff: only the changes · Preview: patched audio (from Step 3)
+                      </span>
                       <button className="panel__button" type="button" onClick={() => void previewSelectionOnce()} disabled={isPreviewingSel || !regionStart || !regionEnd}>
                         {isPreviewingSel ? 'Playing…' : 'Play selection'}
                       </button>
