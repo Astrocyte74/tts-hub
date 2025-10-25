@@ -209,6 +209,8 @@ export interface MediaReplacePreviewResponse {
   preview_url: string;
   diff_url?: string;
   stats?: { synth_elapsed?: number; fade_ms?: number };
+  // Optional: aligned timings for the synthesized, time-stretched replacement segment
+  replace_words?: { text: string; start: number; end: number }[];
 }
 
 export interface MediaApplyResponse {

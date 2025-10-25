@@ -30,6 +30,7 @@ export function TranscriptPanel() {
   const [replaceText, setReplaceText] = useState<string>('');
   const [replacePreviewUrl, setReplacePreviewUrl] = useState<string | null>(null);
   const [replaceDiffUrl, setReplaceDiffUrl] = useState<string | null>(null);
+  const [replaceWords, setReplaceWords] = useState<{ text: string; start: number; end: number }[] | null>(null);
   const [replaceStatus, setReplaceStatus] = useState<string>('');
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
   const [playbackTrack, setPlaybackTrack] = useState<'original' | 'diff' | 'preview'>('original');
@@ -999,9 +1000,11 @@ export function TranscriptPanel() {
                       trimPostpadMs: Number(trimPostMs || '8'),
                       trimEnable: true,
                       voice: chosen,
+                      alignReplace: true,
                     });
                     setReplacePreviewUrl(res.preview_url ? resolveAudioUrl(res.preview_url) : null);
                     setReplaceDiffUrl(res.diff_url ? resolveAudioUrl(res.diff_url) : null);
+                    setReplaceWords(Array.isArray((res as any).replace_words) ? ((res as any).replace_words as any[]).map((w) => ({ text: String(w.text||''), start: Number(w.start||0), end: Number(w.end||0) })) : null);
                     setPlaybackTrack('preview');
                     const se = res.stats?.synth_elapsed;
                     if (typeof se === 'number') {
@@ -1183,6 +1186,7 @@ export function TranscriptPanel() {
                         }
                       }}
                       diffMarkers={lastBoundaryChanges}
+                      replaceWords={replaceWords}
                       showLegend
                       defaultZoom={8}
                       height={80}

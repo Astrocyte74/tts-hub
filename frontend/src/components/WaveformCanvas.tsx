@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWaveformData } from '../hooks/useWaveformData';
 
 type Word = { text: string; start: number; end: number };
+type ReplacementWord = { text: string; start: number; end: number };
 
 interface Props {
   audioUrl: string | null;
@@ -13,9 +14,10 @@ interface Props {
   diffMarkers?: { idx: number; boundary: 'start'|'end'; prev: number; next: number; deltaMs: number }[];
   showLegend?: boolean;
   defaultZoom?: number;
+  replaceWords?: ReplacementWord[] | null; // optional overlay lane (absolute times)
 }
 
-export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChangeSelection, height = 80, diffMarkers = [], showLegend = true, defaultZoom = 1 }: Props) {
+export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChangeSelection, height = 80, diffMarkers = [], showLegend = true, defaultZoom = 1, replaceWords = null }: Props) {
   const { peaks, duration } = useWaveformData(audioUrl, 1024);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const miniRef = useRef<HTMLCanvasElement | null>(null);
@@ -173,6 +175,19 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
         ctx.stroke();
         // end cap
         ctx.fillRect(Math.floor(xNow - dxPx - (1 * dpr)), yMid - 5, Math.max(2, Math.floor(2 * dpr)), Math.max(4, Math.floor(4 * dpr)));
+      }
+    }
+
+    // Replacement words overlay (lane under ticks)
+    if (replaceWords && replaceWords.length && duration) {
+      ctx.fillStyle = 'rgba(250,204,21,0.6)'; // amber lane
+      const laneTop = Math.floor(h * 0.70);
+      const laneH = Math.floor(h * 0.20);
+      for (const rw of replaceWords) {
+        if (rw.end < viewStart || rw.start > (viewStart + viewDuration)) continue;
+        const xs = Math.floor(timeToX(Math.max(rw.start, viewStart)) * dpr);
+        const xe = Math.floor(timeToX(Math.min(rw.end, viewStart + viewDuration)) * dpr);
+        ctx.fillRect(xs, laneTop, Math.max(1, xe - xs), laneH);
       }
     }
 
