@@ -7,6 +7,7 @@ import { InspectorAlign } from './InspectorAlign';
 import { InspectorReplace } from './InspectorReplace';
 import { InspectorApply } from './InspectorApply';
 import { useSessionStorage } from '../hooks/useSessionStorage';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 import type { SynthesisResult } from '../types';
 import {
   mediaTranscribeFromUrl,
@@ -42,6 +43,19 @@ export function MediaEditorLayout() {
   const [favoriteOptions, setFavoriteOptions] = useState<{ id: string; label: string; voiceId: string }[]>([]);
   const [progressTimer, setProgressTimer] = useState<number | null>(null);
 
+  // Persisted preferences
+  const [prefVoiceMode, setPrefVoiceMode] = useLocalStorage<'borrow' | 'xtts' | 'favorite'>('kokoro:media:voiceMode', 'borrow');
+  const [prefVoiceId, setPrefVoiceId] = useLocalStorage<string>('kokoro:media:voiceId', '');
+  const [prefFavVoiceId, setPrefFavVoiceId] = useLocalStorage<string>('kokoro:media:favVoiceId', '');
+  const [prefTiming, setPrefTiming] = useLocalStorage<{ marginSec: number; fadeMs: number; trimEnable: boolean; trimTopDb: number; trimPrepadMs: number; trimPostpadMs: number }>('kokoro:media:timing', {
+    marginSec: 0.75,
+    fadeMs: 30,
+    trimEnable: true,
+    trimTopDb: 40,
+    trimPrepadMs: 8,
+    trimPostpadMs: 8,
+  });
+
   useEffect(() => {
     (async () => {
       try { const s = await mediaGetStats(); setStats({ transcribe: s.transcribe?.avg_rtf || 10, full: s.align_full?.avg_rtf || 5, region: s.align_region?.avg_rtf || 5 }); } catch {}
@@ -49,6 +63,21 @@ export function MediaEditorLayout() {
       try { const data = await listProfiles(); const xtts = (data.profiles || []).filter((p: any) => p.engine === 'xtts'); setFavoriteOptions(xtts.map((p: any) => ({ id: p.id, label: p.label, voiceId: p.voiceId }))); } catch {}
     })();
   }, []);
+
+  // Load persisted prefs into editor state on first render
+  useEffect(() => {
+    dispatch({ type: 'SET_VOICE_MODE', voiceMode: prefVoiceMode });
+    if (prefVoiceId) dispatch({ type: 'SET_VOICE_ID', voiceId: prefVoiceId });
+    if (prefFavVoiceId) dispatch({ type: 'SET_FAVORITE_VOICE_ID', favoriteVoiceId: prefFavVoiceId });
+    dispatch({ type: 'SET_TIMING', patch: prefTiming });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist on changes
+  useEffect(() => { setPrefVoiceMode(state.voiceMode); }, [state.voiceMode]);
+  useEffect(() => { setPrefVoiceId(state.voiceId); }, [state.voiceId]);
+  useEffect(() => { setPrefFavVoiceId(state.favoriteVoiceId); }, [state.favoriteVoiceId]);
+  useEffect(() => { setPrefTiming(state.timing); }, [state.timing]);
 
   // Queue helpers
   function queueAdd(label: string): string {
@@ -227,6 +256,13 @@ export function MediaEditorLayout() {
   // Derived
   const canReplace = useMemo(() => state.selection.start != null && state.selection.end != null && (state.replaceText || '').trim().length > 0, [state.selection, state.replaceText]);
 
+  // Next step suggestion
+  const nextStep: EditorStep | null = useMemo(() => {
+    if (state.step === 'align' && !state.busy && state.transcript) return 'replace';
+    if (state.step === 'replace' && !state.busy && state.previewUrl) return 'apply';
+    return null;
+  }, [state.step, state.busy, state.transcript, state.previewUrl]);
+
   // Stepper UI
   const STEPS: { id: EditorStep; label: string }[] = [
     { id: 'import', label: 'Import' },
@@ -253,6 +289,11 @@ export function MediaEditorLayout() {
         <div className="stepper__status">
           {state.status ? <span className="panel__hint panel__hint--notice">{state.status}</span> : null}
           {state.error ? <span className="panel__hint panel__hint--warning">{state.error}</span> : null}
+          {nextStep ? (
+            <button type="button" className="panel__button stepper__next" onClick={() => dispatch({ type: 'SET_STEP', step: nextStep })}>
+              Next: {STEPS.find((s) => s.id === nextStep)?.label}
+            </button>
+          ) : null}
           {(() => {
             const active = [...queue].filter((q) => q.engine === 'media' && q.status === 'rendering');
             const job = active.length ? active[active.length - 1] : null;
