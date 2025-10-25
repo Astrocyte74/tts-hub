@@ -81,6 +81,11 @@ except Exception:  # pragma: no cover
     WhisperModel = None  # type: ignore
     _have_faster_whisper = False
 
+# Cache a singleton faster-whisper model to avoid reloading per request
+_fw_model_lock = threading.Lock()
+_fw_model_name: Optional[str] = None
+_fw_model: Any = None
+
 try:  # Optional alignment dependency
     import whisperx  # type: ignore
 
@@ -217,8 +222,13 @@ def _record_stat(kind: str, sample: Dict[str, Any]) -> None:
 def _transcribe_faster_whisper(audio_wav: Path) -> Dict[str, Any]:
     if not _have_faster_whisper or WhisperModel is None:  # type: ignore[name-defined]
         raise PlaygroundError("STT 'faster-whisper' is not available on this host.", status=503)
-    # Lazy init model with CPU-friendly defaults
-    model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")  # type: ignore[call-arg]
+    # Lazy init model with CPU-friendly defaults (cached singleton)
+    global _fw_model, _fw_model_name
+    with _fw_model_lock:
+        if _fw_model is None or _fw_model_name != WHISPER_MODEL:
+            _fw_model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")  # type: ignore[call-arg]
+            _fw_model_name = WHISPER_MODEL
+        model = _fw_model
     _log(f"STT faster-whisper: transcribing wav='{audio_wav}'")
     t0 = time.time()
     segments, info = model.transcribe(str(audio_wav), vad_filter=True, word_timestamps=True)
@@ -1128,12 +1138,16 @@ def build_xtts_voice_payload() -> Dict[str, Any]:
 
 
 def xtts_is_available() -> bool:
+    # Remote server configured: treat as available (borrow-from-region works without local voice cache)
+    if XTTS_SERVER_URL:
+        return True
+    # Local CLI present: consider engine available even if voices dir is empty,
+    # since media replace can borrow a reference from the selected region.
     if not XTTS_PYTHON.exists() or not XTTS_PYTHON.is_file():
         return False
     if not XTTS_SERVICE_DIR.exists():
         return False
-    voice_map = get_xtts_voice_map()
-    return bool(voice_map)
+    return True
 
 
 def _resolve_xtts_voice_path(identifier: str) -> Tuple[str, Path]:
