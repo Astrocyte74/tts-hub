@@ -86,6 +86,16 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
     },
   }), [duration, clampViewStart]);
 
+  function setZoomAnchored(newZoom: number, anchorT?: number) {
+    if (!duration) return;
+    const nz = Math.max(1, Math.min(100, newZoom));
+    const vd = Math.max(0.01, duration / nz);
+    const anchor = typeof anchorT === 'number' ? anchorT : (selection ? (selection.start + selection.end) / 2 : (viewStart + viewDuration / 2));
+    let ns = clampViewStart(anchor - vd / 2);
+    setZoom(nz);
+    setViewStart(ns);
+  }
+
   const timeToX = useMemo(() => (
     (t: number) => {
       if (!duration) return 0;
@@ -505,6 +515,14 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
       <div className="waveform__controls" aria-label="Waveform zoom controls">
         <button type="button" className="wf-btn" onClick={() => { setZoom((z) => Math.max(1, z / 1.5)); }}>−</button>
         <button type="button" className="wf-btn" onClick={() => { setZoom(1); setViewStart(0); }}>Fit</button>
+        <button type="button" className="wf-btn" title="Click to cycle zoom presets" onClick={() => {
+          const presets = [1, 2, 4, 8, 12, 16, 24];
+          const cur = zoom;
+          let idx = presets.findIndex(p => Math.abs(p - cur) < 0.5);
+          if (idx < 0) idx = 0;
+          const next = presets[(idx + 1) % presets.length];
+          setZoomAnchored(next);
+        }}>{`${Math.round(zoom)}×`}</button>
         <button type="button" className="wf-btn" onClick={() => { if (selection && duration) { const len = Math.max(0.01, selection.end - selection.start); const nextZoom = Math.min(100, duration / len); setZoom(nextZoom); setViewStart(clampViewStart(selection.start - 0.05 * len)); } }} disabled={!selection || !(selection.end > selection.start)}>Sel</button>
         <button type="button" className="wf-btn" onClick={() => { setZoom((z) => Math.min(100, z * 1.5)); }}>+</button>
       </div>
@@ -515,6 +533,15 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
           <span>Shortcuts: Z in, Shift+Z out, F fit, S selection.</span>
         </div>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div className="wf-seg" role="group" aria-label="Quick zoom">
+            <span className="panel__hint panel__hint--muted" style={{ marginRight: 4 }}>Zoom</span>
+            <button type="button" className="wf-btn" onClick={() => { setZoomAnchored(1); }}>Fit</button>
+            <button type="button" className={`wf-btn ${Math.abs(zoom - 1) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(1)}>1×</button>
+            <button type="button" className={`wf-btn ${Math.abs(zoom - 2) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(2)}>2×</button>
+            <button type="button" className={`wf-btn ${Math.abs(zoom - 4) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(4)}>4×</button>
+            <button type="button" className={`wf-btn ${Math.abs(zoom - 8) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(8)}>8×</button>
+            <button type="button" className={`wf-btn ${Math.abs(zoom - 12) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(12)}>12×</button>
+          </div>
           <div className="wf-seg" role="radiogroup" aria-label="Waveform style">
             <button type="button" className={`wf-btn ${styleMode === 'bars' ? 'is-active' : ''}`} onClick={() => setStyleMode('bars')} title="Bars">Bars</button>
             <button type="button" className={`wf-btn ${styleMode === 'line' ? 'is-active' : ''}`} onClick={() => setStyleMode('line')} title="Line">Line</button>
