@@ -33,6 +33,7 @@ export function TranscriptPanel() {
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
   const [playbackTrack, setPlaybackTrack] = useState<'original' | 'diff' | 'preview'>('original');
   const [viewMode, setViewMode] = useState<'sentences' | 'words'>('words');
+  const [currentStep, setCurrentStep] = useLocalStorage<'1' | '2' | '3'>('kokoro:mediaStep', '1');
   const [voiceMode, setVoiceMode] = useState<'borrow' | 'xtts' | 'favorite'>('borrow');
   const [voiceList, setVoiceList] = useState<{ id: string; label: string }[]>([]);
   const [xttsAvailable, setXttsAvailable] = useState<boolean>(false);
@@ -330,6 +331,7 @@ export function TranscriptPanel() {
         if (typeof elapsed === 'number' && typeof rtf === 'number') {
           setStatus(`Transcribed in ${elapsed.toFixed(2)}s (RTF ${rtf.toFixed(2)}×)`);
         }
+        setCurrentStep('2');
       } else {
         if (!file) {
           setError('Choose a media file to upload');
@@ -345,6 +347,7 @@ export function TranscriptPanel() {
         if (typeof elapsed === 'number' && typeof rtf === 'number') {
           setStatus(`Transcribed in ${elapsed.toFixed(2)}s (RTF ${rtf.toFixed(2)}×)`);
         }
+        setCurrentStep('2');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Transcription failed');
@@ -422,6 +425,8 @@ export function TranscriptPanel() {
     const s = Number(regionStart); const e = Number(regionEnd);
     return Number.isFinite(s) && Number.isFinite(e) && e > s;
   })();
+  const canStep2 = Boolean((jobId && audioUrl) || transcript);
+  const canStep3 = canStep2 && selectionValid;
 
   function selectSegment(seg: { start: number; end: number }) {
     if (!transcript?.words?.length) return;
@@ -758,6 +763,30 @@ export function TranscriptPanel() {
                   </div>
                 </div>
               ) : null}
+            </div>
+          ) : null}
+          {/* Compact source summary shown in later steps */}
+          {audioUrl && (ytInfo || probeInfo) ? (
+            <div className="media-info-mini" title={ytInfo?.title || undefined}>
+              {ytInfo?.thumbnail_url ? (
+                <img src={ytInfo.thumbnail_url} alt="Thumb" className="media-info-mini__thumb" />
+              ) : null}
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <p className="media-info-mini__title">
+                  {ytInfo?.title || (probeInfo ? 'Local file' : 'Source')}
+                </p>
+                <p className="media-info-mini__line">
+                  {ytInfo ? (
+                    <>
+                      {ytInfo.uploader || 'Unknown channel'} · {ytInfo.duration?.toFixed?.(1)}s {ytInfo.cached ? '· cached' : ''}
+                    </>
+                  ) : probeInfo ? (
+                    <>
+                      {probeInfo.format} · {probeInfo.duration.toFixed(1)}s {probeInfo.has_video ? '· video' : ''}
+                    </>
+                  ) : null}
+                </p>
+              </div>
             </div>
           ) : null}
           {audioUrl ? (
