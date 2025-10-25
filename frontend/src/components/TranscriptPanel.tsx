@@ -3,6 +3,7 @@ import { mediaAlignFull, mediaAlignRegion, mediaApply, mediaEstimateUrl, mediaGe
 import { IconWave } from '../icons';
 import type { MediaTranscriptResult, MediaEstimateInfo, MediaProbeInfo } from '../types';
 import './TranscriptPanel.css';
+import { WaveformCanvas } from './WaveformCanvas';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
 export function TranscriptPanel() {
@@ -41,6 +42,9 @@ export function TranscriptPanel() {
   const [voiceId, setVoiceId] = useState<string>('');
   const [favList, setFavList] = useState<{ id: string; label: string; voiceId: string }[]>([]);
   const [favVoiceId, setFavVoiceId] = useState<string>('');
+  const [loopPreview, setLoopPreview] = useLocalStorage<boolean>('kokoro:mediaLoopPreview', false);
+  const [autoRefineOnPreview, setAutoRefineOnPreview] = useLocalStorage<boolean>('kokoro:mediaAutoRefine', true);
+  const [lastRefinedSec, setLastRefinedSec] = useState<number | null>(null);
 
   async function ensureVoices() {
     if (voiceList.length) return;
@@ -142,9 +146,13 @@ export function TranscriptPanel() {
       } catch { /* ignore seek issues */ }
       const onTime = () => {
         if (audio.currentTime >= stopAt) {
-          audio.pause();
-          audio.removeEventListener('timeupdate', onTime);
-          setIsPreviewingSel(false);
+          if (loopPreview) {
+            try { audio.currentTime = start; } catch {}
+          } else {
+            audio.pause();
+            audio.removeEventListener('timeupdate', onTime);
+            setIsPreviewingSel(false);
+          }
         }
       };
       audio.addEventListener('timeupdate', onTime);
@@ -231,9 +239,13 @@ export function TranscriptPanel() {
     } catch { /* ignore */ }
     const onTime = () => {
       if (audio.currentTime >= stopAt) {
-        audio.pause();
-        audio.removeEventListener('timeupdate', onTime);
-        setIsPreviewingSel(false);
+        if (loopPreview) {
+          try { audio.currentTime = start; } catch {}
+        } else {
+          audio.pause();
+          audio.removeEventListener('timeupdate', onTime);
+          setIsPreviewingSel(false);
+        }
       }
     };
     audio.addEventListener('timeupdate', onTime);
@@ -364,6 +376,9 @@ export function TranscriptPanel() {
   const [alignDiff, setAlignDiff] = useState<{ compared?: number; changed?: number; mean_abs_ms?: number; median_abs_ms?: number; p95_abs_ms?: number; max_abs_ms?: number; top?: { idx?: number; text?: string; boundary?: string; delta_ms?: number; direction?: string }[] } | null>(null);
   const [alignScope, setAlignScope] = useState<'full' | 'region' | null>(null);
   const [alignWindow, setAlignWindow] = useState<{ start: number; end: number } | null>(null);
+  const prevWordsRef = useRef<{ start: number; end: number; text?: string }[] | null>(null);
+  const [lastBoundaryChanges, setLastBoundaryChanges] = useState<{ idx: number; boundary: 'start'|'end'; prev: number; next: number; deltaMs: number }[]>([]);
+  const [lastBoundaryMap, setLastBoundaryMap] = useState<Record<number, { startPrev?: number; startNew?: number; endPrev?: number; endNew?: number }>>({});
 
   const describeAlignment = (diff: typeof alignDiff | null, scope: 'full' | 'region' | null, win: { start: number; end: number } | null) => {
     if (!diff || !diff.compared) return '';
@@ -386,6 +401,8 @@ export function TranscriptPanel() {
       setBusy(true);
       setStatus('Aligning full transcript with WhisperX…');
       setError(null);
+      // capture previous words for diff
+      prevWordsRef.current = transcript?.words ? transcript.words.map(w => ({ start: w.start, end: w.end, text: w.text })) : null;
       // ETA progress: estimate using avgRtf.full and transcript duration
       if (transcript?.duration && avgRtf.full > 0) {
         const total = transcript.duration / avgRtf.full;
@@ -418,6 +435,35 @@ export function TranscriptPanel() {
           });
           setAlignScope('full');
           setAlignWindow(null);
+          // compute whiskers map
+          if (prevWordsRef.current && Array.isArray(res.transcript?.words)) {
+            const prev = prevWordsRef.current;
+            const next = res.transcript.words as any[];
+            const n = Math.min(prev.length, next.length);
+            const changes: { idx: number; boundary: 'start'|'end'; prev: number; next: number; deltaMs: number }[] = [];
+            const m: Record<number, { startPrev?: number; startNew?: number; endPrev?: number; endNew?: number }> = {};
+            for (let i = 0; i < n; i += 1) {
+              const p = prev[i]; const q = next[i];
+              if (!p || !q) continue;
+              if (Math.abs((q.start ?? 0) - (p.start ?? 0)) > 1e-3) {
+                const deltaMs = ((q.start ?? 0) - (p.start ?? 0)) * 1000;
+                changes.push({ idx: i, boundary: 'start', prev: p.start ?? 0, next: q.start ?? 0, deltaMs });
+                m[i] = m[i] || {};
+                m[i].startPrev = p.start ?? 0; m[i].startNew = q.start ?? 0;
+              }
+              if (Math.abs((q.end ?? 0) - (p.end ?? 0)) > 1e-3) {
+                const deltaMs = ((q.end ?? 0) - (p.end ?? 0)) * 1000;
+                changes.push({ idx: i, boundary: 'end', prev: p.end ?? 0, next: q.end ?? 0, deltaMs });
+                m[i] = m[i] || {};
+                m[i].endPrev = p.end ?? 0; m[i].endNew = q.end ?? 0;
+              }
+            }
+            setLastBoundaryChanges(changes);
+            setLastBoundaryMap(m);
+          } else {
+            setLastBoundaryChanges([]);
+            setLastBoundaryMap({});
+          }
         }
       } catch {}
     } catch (err) {
@@ -462,6 +508,7 @@ export function TranscriptPanel() {
   })();
   const canStep2 = Boolean((jobId && audioUrl) || transcript);
   const canStep3 = canStep2 && selectionValid;
+  const showLegacyTimeline = false;
 
   // Guard against blank state if a persisted step is not yet unlocked
   useEffect(() => {
@@ -578,7 +625,9 @@ export function TranscriptPanel() {
                     if (!jobId) { setError('Transcribe first'); return; }
                     const s = Number(regionStart), e = Number(regionEnd), m = Number(regionMargin || '0.75');
                     if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Select a valid region first'); return; }
-                    try {
+                  try {
+                      // capture previous words for diff
+                      prevWordsRef.current = transcript?.words ? transcript.words.map(w => ({ start: w.start, end: w.end, text: w.text })) : null;
                       setBusy(true);
                       setStatus(`Aligning region ${s.toFixed(2)}–${e.toFixed(2)}s with WhisperX…`);
                       setError(null);
@@ -612,6 +661,33 @@ export function TranscriptPanel() {
                           });
                           setAlignScope('region');
                           setAlignWindow({ start: s, end: e });
+                          // compute whiskers for region
+                          if (prevWordsRef.current && Array.isArray(res.transcript?.words)) {
+                            const prev = prevWordsRef.current;
+                            const next = res.transcript.words as any[];
+                            const n = Math.min(prev.length, next.length);
+                            const changes: { idx: number; boundary: 'start'|'end'; prev: number; next: number; deltaMs: number }[] = [];
+                            const m: Record<number, { startPrev?: number; startNew?: number; endPrev?: number; endNew?: number }> = {};
+                            for (let i = 0; i < n; i += 1) {
+                              const p = prev[i]; const q = next[i];
+                              if (!p || !q) continue;
+                              if (Math.abs((q.start ?? 0) - (p.start ?? 0)) > 1e-3) {
+                                const deltaMs = ((q.start ?? 0) - (p.start ?? 0)) * 1000;
+                                changes.push({ idx: i, boundary: 'start', prev: p.start ?? 0, next: q.start ?? 0, deltaMs });
+                                m[i] = m[i] || {}; m[i].startPrev = p.start ?? 0; m[i].startNew = q.start ?? 0;
+                              }
+                              if (Math.abs((q.end ?? 0) - (p.end ?? 0)) > 1e-3) {
+                                const deltaMs = ((q.end ?? 0) - (p.end ?? 0)) * 1000;
+                                changes.push({ idx: i, boundary: 'end', prev: p.end ?? 0, next: q.end ?? 0, deltaMs });
+                                m[i] = m[i] || {}; m[i].endPrev = p.end ?? 0; m[i].endNew = q.end ?? 0;
+                              }
+                            }
+                            setLastBoundaryChanges(changes);
+                            setLastBoundaryMap(m);
+                          } else {
+                            setLastBoundaryChanges([]);
+                            setLastBoundaryMap({});
+                          }
                         }
                       } catch {}
                     } catch (err) {
@@ -710,11 +786,22 @@ export function TranscriptPanel() {
                       const dir = (t.delta_ms || 0) >= 0 ? 'later' : 'earlier';
                       const arrow = (t.delta_ms || 0) >= 0 ? '→' : '←';
                       const label = `${t.text ?? ''} ${val} ms ${dir} ${arrow}`;
+                      let titleTxt = `Adjusted ${t.boundary} by ${val} ms ${dir}`;
+                      try {
+                        const idx = typeof t.idx === 'number' ? t.idx : -1;
+                        const m = lastBoundaryMap[idx];
+                        const b = String(t.boundary) === 'start' ? 'start' : 'end';
+                        const p = b === 'start' ? m?.startPrev : m?.endPrev;
+                        const n = b === 'start' ? m?.startNew : m?.endNew;
+                        if (typeof p === 'number' && typeof n === 'number') {
+                          titleTxt = `${b} ${p.toFixed(2)}s → ${n.toFixed(2)}s (${val} ms ${dir})`;
+                        }
+                      } catch {}
                       return (
                         <button
                           key={`ex-${i}-${t.idx}`}
                           className="chip-button chip-button--accent"
-                          title={`Adjusted ${t.boundary} by ${val} ms ${dir}`}
+                          title={titleTxt}
                           type="button"
                           onMouseEnter={() => {
                             try {
@@ -762,7 +849,7 @@ export function TranscriptPanel() {
             <div className="panel__actions" style={{ justifyContent: 'space-between' }}>
               <button className="panel__button" type="button" onClick={() => setCurrentStep('1')}>Back</button>
               <button className="panel__button" type="button" disabled={!canStep2} onClick={() => setCurrentStep('3')}>Next: Replace</button>
-            </div>
+          </div>
           </div>
           ) : null}
           {/* Replace preview (XTTS) */}
@@ -784,6 +871,10 @@ export function TranscriptPanel() {
                     Favorite
                   </label>
                 </div>
+                <label className="field" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} title={whisperxEnabled ? 'Align region automatically before preview' : 'WhisperX not available'}>
+                  <input type="checkbox" disabled={!whisperxEnabled} checked={!!autoRefineOnPreview && whisperxEnabled} onChange={(e) => setAutoRefineOnPreview(e.target.checked)} />
+                  <span className="field__label">Auto-refine selection (WhisperX)</span>
+                </label>
                 <div className="voice-select-area">
                   {voiceMode === 'xtts' ? (
                     <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)} aria-label="XTTS voice" style={{ minWidth: 240 }}>
@@ -855,6 +946,44 @@ export function TranscriptPanel() {
                     setReplaceStatus('Generating replace preview…');
                     setError(null);
                     setReplacePreviewUrl(null);
+                    // Optional: auto-refine selection before preview
+                    if (autoRefineOnPreview && whisperxEnabled) {
+                      try {
+                        prevWordsRef.current = transcript?.words ? transcript.words.map(w => ({ start: w.start, end: w.end, text: w.text })) : null;
+                        const m = Number(regionMargin || '0.75');
+                        const resAlign = await mediaAlignRegion(jobId, s, e, Number.isFinite(m) ? m : undefined);
+                        setTranscript(resAlign.transcript);
+                        setAlignScope('region');
+                        setAlignWindow({ start: s, end: e });
+                        setLastRefinedSec(Math.max(0, e - s));
+                        // compute whiskers for auto-refine
+                        if (prevWordsRef.current && Array.isArray(resAlign.transcript?.words)) {
+                          const prev = prevWordsRef.current;
+                          const next = resAlign.transcript.words as any[];
+                          const n2 = Math.min(prev.length, next.length);
+                          const changes2: { idx: number; boundary: 'start'|'end'; prev: number; next: number; deltaMs: number }[] = [];
+                          const m2: Record<number, { startPrev?: number; startNew?: number; endPrev?: number; endNew?: number }> = {};
+                          for (let i = 0; i < n2; i += 1) {
+                            const p = prev[i]; const q = next[i];
+                            if (!p || !q) continue;
+                            if (Math.abs((q.start ?? 0) - (p.start ?? 0)) > 1e-3) {
+                              const dms = ((q.start ?? 0) - (p.start ?? 0)) * 1000;
+                              changes2.push({ idx: i, boundary: 'start', prev: p.start ?? 0, next: q.start ?? 0, deltaMs: dms });
+                              m2[i] = m2[i] || {}; m2[i].startPrev = p.start ?? 0; m2[i].startNew = q.start ?? 0;
+                            }
+                            if (Math.abs((q.end ?? 0) - (p.end ?? 0)) > 1e-3) {
+                              const dms = ((q.end ?? 0) - (p.end ?? 0)) * 1000;
+                              changes2.push({ idx: i, boundary: 'end', prev: p.end ?? 0, next: q.end ?? 0, deltaMs: dms });
+                              m2[i] = m2[i] || {}; m2[i].endPrev = p.end ?? 0; m2[i].endNew = q.end ?? 0;
+                            }
+                          }
+                          setLastBoundaryChanges(changes2);
+                          setLastBoundaryMap(m2);
+                        }
+                      } catch {
+                        // ignore auto-refine failure
+                      }
+                    }
                     const chosen = voiceMode === 'xtts' ? (voiceId || undefined) : voiceMode === 'favorite' ? (favVoiceId || undefined) : undefined;
                     const duckDb = duckDbVal.trim() !== '' ? Number(duckDbVal) : undefined;
                     const res = await mediaReplacePreview({
@@ -876,7 +1005,8 @@ export function TranscriptPanel() {
                     setPlaybackTrack('preview');
                     const se = res.stats?.synth_elapsed;
                     if (typeof se === 'number') {
-                      setReplaceStatus(`Synthesized and patched preview in ${se.toFixed(2)}s`);
+                      const refinedNote = (autoRefineOnPreview && whisperxEnabled && lastRefinedSec !== null) ? ` · refined ${lastRefinedSec.toFixed(1)}s region` : '';
+                      setReplaceStatus(`Synthesized and patched preview in ${se.toFixed(2)}s${refinedNote}`);
                     }
                   } catch (err) {
                     setError(err instanceof Error ? err.message : 'Replace preview failed');
@@ -1021,14 +1151,47 @@ export function TranscriptPanel() {
                       <button className="panel__button" type="button" onClick={() => void previewSelectionOnce()} disabled={isPreviewingSel || !regionStart || !regionEnd}>
                         {isPreviewingSel ? 'Playing…' : 'Play selection'}
                       </button>
+                      <label className="field" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} title="Loop the current selection when previewing">
+                        <input type="checkbox" checked={loopPreview} onChange={(e) => setLoopPreview(e.target.checked)} />
+                        <span className="field__label">Loop selection</span>
+                      </label>
                     </div>
                     <div className="row spaced" style={{ alignItems: 'center' }}>
                       <audio ref={audioRef} controls src={playerSrc ?? undefined} style={{ width: '100%' }} onPlay={handleAudioPlay} />
                     </div>
+                    <WaveformCanvas
+                      audioUrl={playerSrc}
+                      words={transcript?.words ?? null}
+                      currentTime={audioTime}
+                      selection={(Number(regionEnd) > Number(regionStart)) ? { start: Number(regionStart), end: Number(regionEnd) } : null}
+                      onChangeSelection={(s, e) => {
+                        // Snap to nearest word indices and mirror selection in chips
+                        const ws = transcript?.words || [];
+                        if (ws.length) {
+                          let lo = 0; let hi = ws.length - 1;
+                          // first word whose end >= s
+                          for (let i = 0; i < ws.length; i += 1) { if (ws[i].end >= s) { lo = i; break; } }
+                          // last word whose start <= e
+                          for (let j = ws.length - 1; j >= 0; j -= 1) { if (ws[j].start <= e) { hi = j; break; } }
+                          setSelStartIdx(lo);
+                          setSelEndIdx(hi);
+                          setRegionStart(ws[lo].start.toFixed(2));
+                          setRegionEnd(ws[hi].end.toFixed(2));
+                        } else {
+                          setRegionStart(s.toFixed(2));
+                          setRegionEnd(e.toFixed(2));
+                        }
+                      }}
+                      diffMarkers={lastBoundaryChanges}
+                      showLegend
+                      defaultZoom={8}
+                      height={80}
+                    />
                   </>
                 );
               })()}
-              {/* Custom selection timeline overlay */}
+              {/* Custom selection timeline overlay (legacy; hidden when waveform is used) */}
+              {showLegacyTimeline ? (
               <div
                 className="media-editor__timeline"
                 ref={timelineRef}
@@ -1096,6 +1259,7 @@ export function TranscriptPanel() {
                   <div style={{ position: 'absolute', left: `${(audioTime / audioDuration) * 100}%`, top: -2, bottom: -2, width: 2, background: '#93c5fd' }} />
                 ) : null}
               </div>
+              ) : null}
               {/* Secondary play selection was redundant; kept single button next to player */}
             </div>
           ) : null}

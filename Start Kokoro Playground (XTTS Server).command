@@ -410,7 +410,7 @@ export API_PREFIX="$BACKEND_API_PREFIX"
 # STT/Alignment toggles (prompt if not set and interactive)
 if [[ "$SKIP_ASK" != "1" ]]; then
   if [[ -z "${WHISPERX_ENABLE:-}" ]]; then
-    if yesno_auto_yes_after "Enable WhisperX alignment for tighter word timings? (slower, requires torch/whisperx)" 3; then
+    if yesno_auto_yes_after "Enable WhisperX alignment for tighter word timings? (slower, requires torch/whisperx)" 1; then
       export WHISPERX_ENABLE=1
     else
       export WHISPERX_ENABLE=0
