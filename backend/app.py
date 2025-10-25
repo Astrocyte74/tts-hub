@@ -2507,6 +2507,13 @@ def media_transcribe_endpoint():
                     if best:
                         break
                 cache_path = best or candidates[0]
+                # Save metadata JSON alongside cache (best effort)
+                try:
+                    meta = _yt_dlp_info_json(url)
+                    if vid:
+                        _youtube_meta_save(vid, meta)
+                except Exception:
+                    pass
             input_path = cache_path
 
         if input_path is None:
@@ -2812,6 +2819,47 @@ def _youtube_cache_find(vid: str) -> Optional[Path]:
     except Exception:
         return None
 
+
+def _youtube_meta_path(vid: str) -> Path:
+    cache_dir = OUTPUT_DIR / "media_cache" / "youtube"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / f"{vid}.info.json"
+
+
+def _youtube_meta_load(vid: str) -> Optional[Dict[str, Any]]:
+    try:
+        p = _youtube_meta_path(vid)
+        if not p.exists():
+            return None
+        return json.loads(p.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+
+
+def _youtube_meta_save(vid: str, data: Dict[str, Any]) -> None:
+    try:
+        p = _youtube_meta_path(vid)
+        p.write_text(json.dumps(data), encoding='utf-8')
+    except Exception:
+        pass
+
+
+def _yt_dlp_info_json(url: str) -> Dict[str, Any]:
+    if not _have_tool('yt-dlp'):
+        raise PlaygroundError("yt-dlp is required to fetch metadata.", status=503)
+    cmd = ['yt-dlp', '-j']
+    try:
+        if YT_DLP_COOKIES_PATH.exists():
+            cmd += ['--cookies', str(YT_DLP_COOKIES_PATH)]
+    except Exception:
+        pass
+    if YT_DLP_EXTRACTOR_ARGS.strip():
+        cmd += ['--extractor-args', YT_DLP_EXTRACTOR_ARGS.strip()]
+    cmd.append(url)
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    data = json.loads(proc.stdout.splitlines()[0]) if proc.stdout else {}
+    return data
+
 @api.route("/media/estimate", methods=["POST"])
 def media_estimate_endpoint():
     """Estimate media duration and basic metadata for ETA/preview.
@@ -2843,11 +2891,23 @@ def media_estimate_endpoint():
         cached = _youtube_cache_find(vid)
         if cached and cached.exists():
             out: Dict[str, Any] = { 'duration': _ffprobe_duration_seconds(cached), 'cached': True }
-            # Try to enrich with yt-dlp metadata even when cached (best effort)
+            # First try metadata cache
+            cached_meta = _youtube_meta_load(vid)
+            if cached_meta:
+                out.update({
+                    'title': cached_meta.get('title') or None,
+                    'uploader': cached_meta.get('uploader') or cached_meta.get('channel') or None,
+                    'upload_date': cached_meta.get('upload_date') or None,
+                    'view_count': cached_meta.get('view_count') or None,
+                    'thumbnail_url': cached_meta.get('thumbnail') or None,
+                    'webpage_url': cached_meta.get('webpage_url') or url,
+                })
+                return jsonify(out)
+            # If no meta cache yet, try to fetch once and save
             if _have_tool('yt-dlp'):
                 try:
-                    proc = subprocess.run(['yt-dlp','-j', url], capture_output=True, text=True, check=True)
-                    data = json.loads(proc.stdout.splitlines()[0]) if proc.stdout else {}
+                    data = _yt_dlp_info_json(url)
+                    _youtube_meta_save(vid, data)
                     out.update({
                         'title': data.get('title') or None,
                         'uploader': data.get('uploader') or data.get('channel') or None,
@@ -2857,15 +2917,13 @@ def media_estimate_endpoint():
                         'webpage_url': data.get('webpage_url') or url,
                     })
                 except Exception:
-                    # ignore metadata fetch errors; return minimal cached info
                     pass
             return jsonify(out)
     # Fallback: yt-dlp JSON
     if not _have_tool('yt-dlp'):
         raise PlaygroundError("yt-dlp is required to estimate duration.", status=503)
     try:
-        proc = subprocess.run(['yt-dlp','-j', url], capture_output=True, text=True, check=True)
-        data = json.loads(proc.stdout.splitlines()[0]) if proc.stdout else {}
+        data = _yt_dlp_info_json(url)
         dur = float(data.get('duration') or 0)
         if dur <= 0:
             raise ValueError('No duration from yt-dlp')
@@ -2879,6 +2937,8 @@ def media_estimate_endpoint():
             'thumbnail_url': data.get('thumbnail') or None,
             'webpage_url': data.get('webpage_url') or url,
         }
+        if vid:
+            _youtube_meta_save(vid, data)
         return jsonify(result)
     except Exception as exc:
         raise PlaygroundError(f"Could not estimate duration: {exc}", status=500)
