@@ -11,14 +11,16 @@ interface Props {
   onChangeSelection?: (start: number, end: number) => void;
   height?: number;
   diffMarkers?: { idx: number; boundary: 'start'|'end'; prev: number; next: number; deltaMs: number }[];
+  showLegend?: boolean;
 }
 
-export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChangeSelection, height = 80, diffMarkers = [] }: Props) {
+export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChangeSelection, height = 80, diffMarkers = [], showLegend = true }: Props) {
   const { peaks, duration } = useWaveformData(audioUrl, 1024);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState<number>(600);
   const dpr = Math.max(1, Math.min(2, (window.devicePixelRatio || 1)));
+  const [hover, setHover] = useState<{ x: number; t: number; idx: number } | null>(null);
 
   // Resize observer to keep canvas crisp
   useEffect(() => {
@@ -83,7 +85,7 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
 
     // Word boundary ticks
     if (words && words.length && duration) {
-      ctx.fillStyle = 'rgba(226,232,240,0.7)';
+      ctx.fillStyle = 'rgba(226,232,240,0.55)';
       for (const wd of words) {
         const xs = Math.floor(timeToX(wd.start) * dpr);
         const xe = Math.floor(timeToX(wd.end) * dpr);
@@ -94,8 +96,8 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
 
     // Whiskers for boundary adjustments (last alignment)
     if (diffMarkers && diffMarkers.length && duration) {
-      ctx.strokeStyle = 'rgba(234,179,8,0.9)'; // amber
-      ctx.fillStyle = 'rgba(234,179,8,0.9)';
+      ctx.strokeStyle = 'rgba(237,137,54,0.9)'; // orange
+      ctx.fillStyle = 'rgba(237,137,54,0.9)';
       ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
       for (const mk of diffMarkers) {
         const tNow = mk.next;
@@ -172,9 +174,57 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
         const e2 = snapToWords(b, 'end');
         onChangeSelection && onChangeSelection(s, e2);
       }}
+      onPointerMove={(e) => {
+        if (!containerRef.current || !duration) return;
+        // Hover preview (nearest word + time)
+        const rect = containerRef.current.getBoundingClientRect();
+        const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+        const t = Math.max(0, Math.min(duration, (x / rect.width) * duration));
+        // find nearest word by interval distance
+        let idx = -1; let best = Infinity;
+        if (words && words.length) {
+          for (let i = 0; i < words.length; i += 1) {
+            const w = words[i]!;
+            const d = t >= w.start && t <= w.end ? 0 : Math.min(Math.abs(t - w.start), Math.abs(t - w.end));
+            if (d < best) { best = d; idx = i; }
+          }
+        }
+        setHover({ x, t, idx });
+      }}
+      onPointerLeave={() => setHover(null)}
       title={duration ? `${duration.toFixed(2)}s` : undefined}
     >
       <canvas ref={canvasRef} />
+      {/* Hover tooltip */}
+      {hover && hover.idx >= 0 && words && words[hover.idx] ? (() => {
+        const w = words[hover.idx]!;
+        const map: Record<number, { startDelta?: number; endDelta?: number }> = {};
+        for (const mk of diffMarkers) {
+          const m = map[mk.idx] || (map[mk.idx] = {});
+          if (mk.boundary === 'start') m.startDelta = mk.deltaMs;
+          else m.endDelta = mk.deltaMs;
+        }
+        const dm = map[hover.idx];
+        const sd = typeof dm?.startDelta === 'number' ? `${dm!.startDelta! >= 0 ? '+' : ''}${Math.round(dm!.startDelta!)}ms` : '';
+        const ed = typeof dm?.endDelta === 'number' ? `${dm!.endDelta! >= 0 ? '+' : ''}${Math.round(dm!.endDelta!)}ms` : '';
+        const label = `${w.text} · t=${hover.t.toFixed(2)}s${sd || ed ? ` · Δ ${[sd, ed].filter(Boolean).join(' / ')}` : ''}`;
+        const left = Math.max(6, Math.min(width - 6, hover.x));
+        return (
+          <div className="waveform__tooltip" style={{ left, top: 8 }} role="tooltip" aria-label={label}>
+            {label}
+          </div>
+        );
+      })() : null}
+      {/* Legend */}
+      {showLegend ? (
+        <div className="waveform__legend" aria-hidden>
+          <span className="wave-legend__item"><i className="wl wl--env" /> Envelope</span>
+          <span className="wave-legend__item"><i className="wl wl--tick" /> Word boundary</span>
+          <span className="wave-legend__item"><i className="wl wl--sel" /> Selection</span>
+          <span className="wave-legend__item"><i className="wl wl--whisk" /> Adjustment</span>
+          <span className="wave-legend__item"><i className="wl wl--play" /> Playhead</span>
+        </div>
+      ) : null}
     </div>
   );
 }
