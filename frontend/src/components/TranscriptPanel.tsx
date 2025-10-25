@@ -25,6 +25,7 @@ export function TranscriptPanel() {
   const [duckDbVal, setDuckDbVal] = useLocalStorage<string>('kokoro:mediaDuckDb', '');
   const [replaceText, setReplaceText] = useState<string>('');
   const [replacePreviewUrl, setReplacePreviewUrl] = useState<string | null>(null);
+  const [replaceStatus, setReplaceStatus] = useState<string>('');
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
   const [voiceMode, setVoiceMode] = useState<'borrow' | 'xtts' | 'favorite'>('borrow');
   const [voiceList, setVoiceList] = useState<{ id: string; label: string }[]>([]);
@@ -476,22 +477,23 @@ export function TranscriptPanel() {
                   Favorite
                 </label>
               </div>
-              {voiceMode === 'xtts' ? (
-                <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)} aria-label="XTTS voice" style={{ minWidth: 240 }}>
-                  <option value="">Choose a voice…</option>
-                  {voiceList.map((v) => (
-                    <option key={v.id} value={v.id}>{v.label}</option>
-                  ))}
-                </select>
-              ) : null}
-              {voiceMode === 'favorite' ? (
-                <select value={favVoiceId} onChange={(e) => setFavVoiceId(e.target.value)} aria-label="Favorite voice" style={{ minWidth: 240 }}>
-                  <option value="">Choose a favorite…</option>
-                  {favList.map((f) => (
-                    <option key={f.id} value={f.voiceId}>{f.label}</option>
-                  ))}
-                </select>
-              ) : null}
+              <div className="voice-select-area">
+                {voiceMode === 'xtts' ? (
+                  <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)} aria-label="XTTS voice" style={{ minWidth: 240 }}>
+                    <option value="">Choose a voice…</option>
+                    {voiceList.map((v) => (
+                      <option key={v.id} value={v.id}>{v.label}</option>
+                    ))}
+                  </select>
+                ) : voiceMode === 'favorite' ? (
+                  <select value={favVoiceId} onChange={(e) => setFavVoiceId(e.target.value)} aria-label="Favorite voice" style={{ minWidth: 240 }}>
+                    <option value="">Choose a favorite…</option>
+                    {favList.map((f) => (
+                      <option key={f.id} value={f.voiceId}>{f.label}</option>
+                    ))}
+                  </select>
+                ) : null}
+              </div>
             </div>
             <details style={{ marginTop: 6 }}>
               <summary className="panel__meta" style={{ cursor: 'pointer' }}>Timing</summary>
@@ -543,7 +545,7 @@ export function TranscriptPanel() {
                 if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Enter start/end seconds (end > start)'); return; }
                 try {
                   setBusy(true);
-                  setStatus('Generating replace preview…');
+                  setReplaceStatus('Generating replace preview…');
                   setError(null);
                   setReplacePreviewUrl(null);
                   const chosen = voiceMode === 'xtts' ? (voiceId || undefined) : voiceMode === 'favorite' ? (favVoiceId || undefined) : undefined;
@@ -565,7 +567,7 @@ export function TranscriptPanel() {
                   setReplacePreviewUrl(res.preview_url ? resolveAudioUrl(res.preview_url) : null);
                   const se = res.stats?.synth_elapsed;
                   if (typeof se === 'number') {
-                    setStatus(`Synthesized and patched preview in ${se.toFixed(2)}s`);
+                    setReplaceStatus(`Synthesized and patched preview in ${se.toFixed(2)}s`);
                   }
                 } catch (err) {
                   setError(err instanceof Error ? err.message : 'Replace preview failed');
@@ -576,6 +578,7 @@ export function TranscriptPanel() {
             >
               {busy ? 'Working…' : 'Preview replace'}
             </button>
+            {replaceStatus ? <p className="panel__hint panel__hint--notice">{replaceStatus}</p> : null}
             {voiceMode === 'xtts' && voiceList.length === 0 ? (
               <p className="panel__hint panel__hint--muted">
                 {xttsAvailable
@@ -638,13 +641,7 @@ export function TranscriptPanel() {
                   <div style={{ position: 'absolute', left: `${(audioTime / audioDuration) * 100}%`, top: -2, bottom: -2, width: 2, background: '#93c5fd' }} />
                 ) : null}
               </div>
-              {selStartIdx !== null && selEndIdx !== null ? (
-                <div className="panel__actions" style={{ gap: 8, marginTop: 6 }}>
-                  <button className="panel__button" type="button" onClick={() => void previewSelectionOnce()}>
-                    Play selection
-                  </button>
-                </div>
-              ) : null}
+              {/* Secondary play selection was redundant; kept single button next to player */}
             </div>
           ) : null}
           {replacePreviewUrl ? (

@@ -124,3 +124,10 @@
 
 .btns-mini { display: inline-flex; gap: 6px; }
 .btns-mini .panel__button { padding: 4px 8px; font-size: 12px; }
+
+/* Stable area for XTTS/Favorite selects so the segmented control doesn't jump */
+.voice-select-area {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
