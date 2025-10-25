@@ -490,139 +490,135 @@ export function TranscriptPanel() {
             )}
           </div>
           {/* Replace preview (XTTS) */}
-          {transcript ? (
-          <div className="step">
-            <div className="step__title"><span className="step__badge">3</span> Replace & preview</div>
-            <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
-              <div className="segmented" role="tablist" aria-label="Voice source">
-                <label className={`segmented__option ${voiceMode === 'borrow' ? 'is-selected' : ''}`} aria-label="Borrow from selection">
-                  <input type="radio" name="voice-mode" value="borrow" checked={voiceMode === 'borrow'} onChange={() => setVoiceMode('borrow')} />
-                  Borrow
-                </label>
-                <label className={`segmented__option ${voiceMode === 'xtts' ? 'is-selected' : ''}`} aria-label="Use XTTS voice">
-                  <input type="radio" name="voice-mode" value="xtts" checked={voiceMode === 'xtts'} onChange={() => { setVoiceMode('xtts'); void ensureVoices(); }} />
-                  XTTS
-                </label>
-                <label className={`segmented__option ${voiceMode === 'favorite' ? 'is-selected' : ''}`} aria-label="Use Favorite">
-                  <input type="radio" name="voice-mode" value="favorite" checked={voiceMode === 'favorite'} onChange={() => { setVoiceMode('favorite'); void ensureFavorites(); }} />
-                  Favorite
-                </label>
+          {transcript && (
+            <div className="step">
+              <div className="step__title"><span className="step__badge">3</span> Replace & preview</div>
+              <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
+                <div className="segmented" role="tablist" aria-label="Voice source">
+                  <label className={`segmented__option ${voiceMode === 'borrow' ? 'is-selected' : ''}`} aria-label="Borrow from selection">
+                    <input type="radio" name="voice-mode" value="borrow" checked={voiceMode === 'borrow'} onChange={() => setVoiceMode('borrow')} />
+                    Borrow
+                  </label>
+                  <label className={`segmented__option ${voiceMode === 'xtts' ? 'is-selected' : ''}`} aria-label="Use XTTS voice">
+                    <input type="radio" name="voice-mode" value="xtts" checked={voiceMode === 'xtts'} onChange={() => { setVoiceMode('xtts'); void ensureVoices(); }} />
+                    XTTS
+                  </label>
+                  <label className={`segmented__option ${voiceMode === 'favorite' ? 'is-selected' : ''}`} aria-label="Use Favorite">
+                    <input type="radio" name="voice-mode" value="favorite" checked={voiceMode === 'favorite'} onChange={() => { setVoiceMode('favorite'); void ensureFavorites(); }} />
+                    Favorite
+                  </label>
+                </div>
+                <div className="voice-select-area">
+                  {voiceMode === 'xtts' ? (
+                    <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)} aria-label="XTTS voice" style={{ minWidth: 240 }}>
+                      <option value="">Choose a voice…</option>
+                      {voiceList.map((v) => (
+                        <option key={v.id} value={v.id}>{v.label}</option>
+                      ))}
+                    </select>
+                  ) : voiceMode === 'favorite' ? (
+                    <select value={favVoiceId} onChange={(e) => setFavVoiceId(e.target.value)} aria-label="Favorite voice" style={{ minWidth: 240 }}>
+                      <option value="">Choose a favorite…</option>
+                      {favList.map((f) => (
+                        <option key={f.id} value={f.voiceId}>{f.label}</option>
+                      ))}
+                    </select>
+                  ) : null}
+                </div>
               </div>
-              <div className="voice-select-area">
-                {voiceMode === 'xtts' ? (
-                  <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)} aria-label="XTTS voice" style={{ minWidth: 240 }}>
-                    <option value="">Choose a voice…</option>
-                    {voiceList.map((v) => (
-                      <option key={v.id} value={v.id}>{v.label}</option>
-                    ))}
-                  </select>
-                ) : voiceMode === 'favorite' ? (
-                  <select value={favVoiceId} onChange={(e) => setFavVoiceId(e.target.value)} aria-label="Favorite voice" style={{ minWidth: 240 }}>
-                    <option value="">Choose a favorite…</option>
-                    {favList.map((f) => (
-                      <option key={f.id} value={f.voiceId}>{f.label}</option>
-                    ))}
-                  </select>
-                ) : null}
-              </div>
-            </div>
-            <details style={{ marginTop: 6 }}>
-              <summary className="panel__meta" style={{ cursor: 'pointer' }}>Timing</summary>
-              <div className="panel__actions panel__actions--wrap" style={{ gap: 8, marginTop: 6 }}>
-                <label className="field field--sm" aria-label="Fade ms">
-                  <span className="field__label">Fade (ms)</span>
-                  <input type="number" step="1" value={fadeMs} onChange={(e) => setFadeMs(e.target.value)} />
-                </label>
-                <label className="field field--sm" aria-label="Margin s">
-                  <span className="field__label">Margin (s)</span>
-                  <input type="number" step="0.01" value={regionMargin} onChange={(e) => setRegionMargin(e.target.value)} />
-                </label>
-                <label className="field field--md" aria-label="Duck dB">
-                  <span className="field__label">Duck original (dB)</span>
-                  <div className="row">
-                    <input id="duck-db" type="number" step="1" placeholder="e.g. -18" value={duckDbVal} onChange={(e) => setDuckDbVal(e.target.value)} className="grow" />
-                    <div className="btns-mini" role="group" aria-label="Duck presets">
-                      <button className="panel__button" type="button" onClick={() => setDuckDbVal('')}>None</button>
-                      <button className="panel__button" type="button" onClick={() => setDuckDbVal('-12')}>−12</button>
-                      <button className="panel__button" type="button" onClick={() => setDuckDbVal('-18')}>−18</button>
+              <details style={{ marginTop: 6 }}>
+                <summary className="panel__meta" style={{ cursor: 'pointer' }}>Timing</summary>
+                <div className="panel__actions panel__actions--wrap" style={{ gap: 8, marginTop: 6 }}>
+                  <label className="field field--sm" aria-label="Fade ms">
+                    <span className="field__label">Fade (ms)</span>
+                    <input type="number" step="1" value={fadeMs} onChange={(e) => setFadeMs(e.target.value)} />
+                  </label>
+                  <label className="field field--sm" aria-label="Margin s">
+                    <span className="field__label">Margin (s)</span>
+                    <input type="number" step="0.01" value={regionMargin} onChange={(e) => setRegionMargin(e.target.value)} />
+                  </label>
+                  <label className="field field--md" aria-label="Duck dB">
+                    <span className="field__label">Duck original (dB)</span>
+                    <div className="row">
+                      <input id="duck-db" type="number" step="1" placeholder="e.g. -18" value={duckDbVal} onChange={(e) => setDuckDbVal(e.target.value)} className="grow" />
+                      <div className="btns-mini" role="group" aria-label="Duck presets">
+                        <button className="panel__button" type="button" onClick={() => setDuckDbVal('')}>None</button>
+                        <button className="panel__button" type="button" onClick={() => setDuckDbVal('-12')}>−12</button>
+                        <button className="panel__button" type="button" onClick={() => setDuckDbVal('-18')}>−18</button>
+                      </div>
                     </div>
-                  </div>
-                </label>
-                <label className="field field--sm" aria-label="Trim dB">
-                  <span className="field__label">Trim dB</span>
-                  <input id="trim-db" type="number" step="1" value={trimDb} onChange={(e) => setTrimDb(e.target.value)} />
-                </label>
-                <label className="field field--sm" aria-label="Pre-pad ms">
-                  <span className="field__label">Pre-pad (ms)</span>
-                  <input id="trim-pre" type="number" step="1" value={trimPreMs} onChange={(e) => setTrimPreMs(e.target.value)} />
-                </label>
-                <label className="field field--sm" aria-label="Post-pad ms">
-                  <span className="field__label">Post-pad (ms)</span>
-                  <input id="trim-post" type="number" step="1" value={trimPostMs} onChange={(e) => setTrimPostMs(e.target.value)} />
-                </label>
-              </div>
-            </details>
-            <label className="field" aria-label="Replace text" style={{ minWidth: 320, width: '100%' }}>
-              <span className="field__label">Replace text</span>
-              <textarea value={replaceText} onChange={(e) => setReplaceText(e.target.value)} placeholder="New line to speak…" rows={3} style={{ width: '100%', resize: 'vertical' }} />
-            </label>
-            <button
-              className="panel__button panel__button--primary"
-              type="button"
-              disabled={busy || !jobId || !replaceText.trim()}
-              onClick={async () => {
-                if (!jobId) { setError('Transcribe first'); return; }
-                const s = Number(regionStart), e = Number(regionEnd);
-                if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Enter start/end seconds (end > start)'); return; }
-                try {
-                  setBusy(true);
-                  setReplaceStatus('Generating replace preview…');
-                  setError(null);
-                  setReplacePreviewUrl(null);
-                  const chosen = voiceMode === 'xtts' ? (voiceId || undefined) : voiceMode === 'favorite' ? (favVoiceId || undefined) : undefined;
-                  const duckDb = duckDbVal.trim() !== '' ? Number(duckDbVal) : undefined;
-                  const res = await mediaReplacePreview({
-                    jobId,
-                    start: s,
-                    end: e,
-                    text: replaceText,
-                    marginMs: Number(regionMargin) * 1000,
-                    fadeMs: Number(fadeMs || '30'),
-                    duckDb,
-                    trimTopDb: Number(trimDb || '40'),
-                    trimPrepadMs: Number(trimPreMs || '8'),
-                    trimPostpadMs: Number(trimPostMs || '8'),
-                    trimEnable: true,
-                    voice: chosen,
-                  });
-                  setReplacePreviewUrl(res.preview_url ? resolveAudioUrl(res.preview_url) : null);
-                  const se = res.stats?.synth_elapsed;
-                  if (typeof se === 'number') {
-                    setReplaceStatus(`Synthesized and patched preview in ${se.toFixed(2)}s`);
+                  </label>
+                  <label className="field field--sm" aria-label="Trim dB">
+                    <span className="field__label">Trim dB</span>
+                    <input id="trim-db" type="number" step="1" value={trimDb} onChange={(e) => setTrimDb(e.target.value)} />
+                  </label>
+                  <label className="field field--sm" aria-label="Pre-pad ms">
+                    <span className="field__label">Pre-pad (ms)</span>
+                    <input id="trim-pre" type="number" step="1" value={trimPreMs} onChange={(e) => setTrimPreMs(e.target.value)} />
+                  </label>
+                  <label className="field field--sm" aria-label="Post-pad ms">
+                    <span className="field__label">Post-pad (ms)</span>
+                    <input id="trim-post" type="number" step="1" value={trimPostMs} onChange={(e) => setTrimPostMs(e.target.value)} />
+                  </label>
+                </div>
+              </details>
+              <label className="field" aria-label="Replace text" style={{ minWidth: 320, width: '100%' }}>
+                <span className="field__label">Replace text</span>
+                <textarea value={replaceText} onChange={(e) => setReplaceText(e.target.value)} placeholder="New line to speak…" rows={3} style={{ width: '100%', resize: 'vertical' }} />
+              </label>
+              <button
+                className="panel__button panel__button--primary"
+                type="button"
+                disabled={busy || !jobId || !replaceText.trim()}
+                onClick={async () => {
+                  if (!jobId) { setError('Transcribe first'); return; }
+                  const s = Number(regionStart), e = Number(regionEnd);
+                  if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Enter start/end seconds (end > start)'); return; }
+                  try {
+                    setBusy(true);
+                    setReplaceStatus('Generating replace preview…');
+                    setError(null);
+                    setReplacePreviewUrl(null);
+                    const chosen = voiceMode === 'xtts' ? (voiceId || undefined) : voiceMode === 'favorite' ? (favVoiceId || undefined) : undefined;
+                    const duckDb = duckDbVal.trim() !== '' ? Number(duckDbVal) : undefined;
+                    const res = await mediaReplacePreview({
+                      jobId,
+                      start: s,
+                      end: e,
+                      text: replaceText,
+                      marginMs: Number(regionMargin) * 1000,
+                      fadeMs: Number(fadeMs || '30'),
+                      duckDb,
+                      trimTopDb: Number(trimDb || '40'),
+                      trimPrepadMs: Number(trimPreMs || '8'),
+                      trimPostpadMs: Number(trimPostMs || '8'),
+                      trimEnable: true,
+                      voice: chosen,
+                    });
+                    setReplacePreviewUrl(res.preview_url ? resolveAudioUrl(res.preview_url) : null);
+                    const se = res.stats?.synth_elapsed;
+                    if (typeof se === 'number') {
+                      setReplaceStatus(`Synthesized and patched preview in ${se.toFixed(2)}s`);
+                    }
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Replace preview failed');
+                  } finally {
+                    setBusy(false);
                   }
-                } catch (err) {
-                  setError(err instanceof Error ? err.message : 'Replace preview failed');
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              {busy ? 'Working…' : 'Preview replace'}
-            </button>
-            {replaceStatus ? <p className="panel__hint panel__hint--notice">{replaceStatus}</p> : null}
-            {voiceMode === 'xtts' && voiceList.length === 0 ? (
-              <p className="panel__hint panel__hint--muted">
-                {xttsAvailable
-                  ? (xttsMessage || 'XTTS is available but no custom voices were found. Use “Borrow from selection” or add voices in the XTTS manager.')
-                  : 'XTTS is not available on this server.'}
-              </p>
-            ) : null}
-              </div>
-          ) : (
-            <p className="panel__hint panel__hint--muted">WhisperX not enabled on this host. Install and enable to refine word timings.</p>
+                }}
+              >
+                {busy ? 'Working…' : 'Preview replace'}
+              </button>
+              {replaceStatus ? <p className="panel__hint panel__hint--notice">{replaceStatus}</p> : null}
+              {voiceMode === 'xtts' && voiceList.length === 0 ? (
+                <p className="panel__hint panel__hint--muted">
+                  {xttsAvailable
+                    ? (xttsMessage || 'XTTS is available but no custom voices were found. Use “Borrow from selection” or add voices in the XTTS manager.')
+                    : 'XTTS is not available on this server.'}
+                </p>
+              ) : null}
+            </div>
           )}
-          </div>
-          ) : null}
         </div>
         <div className="media-editor__right">
           {audioUrl ? (
