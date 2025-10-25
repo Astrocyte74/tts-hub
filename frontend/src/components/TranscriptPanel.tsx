@@ -62,16 +62,7 @@ export function TranscriptPanel() {
     return out;
   }
 
-  // Auto-populate Replace text from selection
-  useEffect(() => {
-    if (!transcript?.words?.length) return;
-    if (selStartIdx === null || selEndIdx === null) return;
-    const lo = Math.max(0, Math.min(selStartIdx, selEndIdx));
-    const hi = Math.min(transcript.words.length - 1, Math.max(selStartIdx, selEndIdx));
-    const ws = transcript.words.slice(lo, hi + 1).map((w) => w.text);
-    const phrase = joinWordsToPhrase(ws);
-    setReplaceText(phrase);
-  }, [selStartIdx, selEndIdx, transcript]);
+  // (moved below after hooks are declared)
   const [transcript, setTranscript] = useState<MediaTranscriptResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -103,6 +94,17 @@ export function TranscriptPanel() {
       setRegionEnd(ws[ws.length - 1].end.toFixed(2));
     }
   }
+
+  // Auto-populate Replace text from current selection (after hooks are defined)
+  useEffect(() => {
+    if (!transcript?.words?.length) return;
+    if (selStartIdx === null || selEndIdx === null) return;
+    const lo = Math.max(0, Math.min(selStartIdx, selEndIdx));
+    const hi = Math.min(transcript.words.length - 1, Math.max(selStartIdx, selEndIdx));
+    const ws = transcript.words.slice(lo, hi + 1).map((w) => w.text);
+    const phrase = joinWordsToPhrase(ws);
+    setReplaceText(phrase);
+  }, [selStartIdx, selEndIdx, transcript]);
 
   async function previewSelectionOnce() {
     const start = Number(regionStart);
