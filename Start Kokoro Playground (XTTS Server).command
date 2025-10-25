@@ -91,6 +91,28 @@ log() {
   printf '[Kokoro SPA] %s\n' "$*"
 }
 
+# Optional: copy a URL to clipboard on start (macOS pbcopy; Linux wl-copy/xclip/xsel)
+COPY_URL_ON_START="${COPY_URL_ON_START:-1}"
+COPY_URL="${COPY_URL:-https://www.youtube.com/watch?v=U8F7UNK9jco}"
+_copy_url_flag=$(printf '%s' "$COPY_URL_ON_START" | tr '[:upper:]' '[:lower:]')
+if [[ "$_copy_url_flag" =~ ^(1|true|yes|on)$ && -n "$COPY_URL" ]]; then
+  if command -v pbcopy >/dev/null 2>&1; then
+    printf "%s" "$COPY_URL" | pbcopy
+    log "Copied URL to clipboard"
+  elif command -v wl-copy >/dev/null 2>&1; then
+    printf "%s" "$COPY_URL" | wl-copy
+    log "Copied URL to clipboard (wl-copy)"
+  elif command -v xclip >/dev/null 2>&1; then
+    printf "%s" "$COPY_URL" | xclip -selection clipboard
+    log "Copied URL to clipboard (xclip)"
+  elif command -v xsel >/dev/null 2>&1; then
+    printf "%s" "$COPY_URL" | xsel --clipboard --input
+    log "Copied URL to clipboard (xsel)"
+  else
+    log "Clipboard tool not found (pbcopy/wl-copy/xclip/xsel). Skipping copy."
+  fi
+fi
+
 yesno_default_no() {
   local prompt="$1"; local ans
   read -r -p "$prompt [y/N] " ans || ans=""
