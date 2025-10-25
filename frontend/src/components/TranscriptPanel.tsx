@@ -1164,12 +1164,26 @@ export function TranscriptPanel() {
                       currentTime={audioTime}
                       selection={(Number(regionEnd) > Number(regionStart)) ? { start: Number(regionStart), end: Number(regionEnd) } : null}
                       onChangeSelection={(s, e) => {
-                        setRegionStart(s.toFixed(2));
-                        setRegionEnd(e.toFixed(2));
+                        // Snap to nearest word indices and mirror selection in chips
+                        const ws = transcript?.words || [];
+                        if (ws.length) {
+                          let lo = 0; let hi = ws.length - 1;
+                          // first word whose end >= s
+                          for (let i = 0; i < ws.length; i += 1) { if (ws[i].end >= s) { lo = i; break; } }
+                          // last word whose start <= e
+                          for (let j = ws.length - 1; j >= 0; j -= 1) { if (ws[j].start <= e) { hi = j; break; } }
+                          setSelStartIdx(lo);
+                          setSelEndIdx(hi);
+                          setRegionStart(ws[lo].start.toFixed(2));
+                          setRegionEnd(ws[hi].end.toFixed(2));
+                        } else {
+                          setRegionStart(s.toFixed(2));
+                          setRegionEnd(e.toFixed(2));
+                        }
                       }}
                       diffMarkers={lastBoundaryChanges}
                       showLegend
-                      defaultZoom={3}
+                      defaultZoom={8}
                       height={80}
                     />
                   </>

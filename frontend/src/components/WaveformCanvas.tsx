@@ -210,6 +210,13 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
     return nearest;
   }
 
+  function isInUi(target: EventTarget | null): boolean {
+    if (!(target instanceof Element) || !containerRef.current) return false;
+    const controls = containerRef.current.querySelector('.waveform__controls');
+    const footer = containerRef.current.querySelector('.waveform__footer');
+    return Boolean((controls && controls.contains(target)) || (footer && footer.contains(target)));
+  }
+
   return (
     <div
       className="waveform"
@@ -217,18 +224,19 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
       onMouseEnter={() => setIsHot(true)}
       onMouseLeave={() => { setIsHot(false); setHover(null); }}
       onMouseDown={(e) => {
+        if (isInUi(e.target)) return;
         const t = posToTime(e.clientX);
         dragRef.current = { from: t, to: t };
       }}
       onMouseMove={(e) => {
-        if (!dragRef.current) return;
+        if (!dragRef.current || isInUi(e.target)) return;
         dragRef.current.to = posToTime(e.clientX);
         const a = Math.min(dragRef.current.from, dragRef.current.to);
         const b = Math.max(dragRef.current.from, dragRef.current.to);
         onChangeSelection && onChangeSelection(a, b);
       }}
       onMouseUp={(e) => {
-        if (!dragRef.current) return;
+        if (!dragRef.current || isInUi(e.target)) return;
         const a = Math.min(dragRef.current.from, dragRef.current.to);
         const b = Math.max(dragRef.current.from, dragRef.current.to);
         dragRef.current = null;
@@ -258,6 +266,7 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
         }
       }}
       onPointerMove={(e) => {
+        if (isInUi(e.target)) { setHover(null); return; }
         if (!containerRef.current || !duration) return;
         // Hover preview (nearest word + time)
         const rect = containerRef.current.getBoundingClientRect();
@@ -321,16 +330,7 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
           </div>
         );
       })() : null}
-      {/* Legend */}
-      {showLegend ? (
-        <div className="waveform__legend" aria-hidden>
-          <span className="wave-legend__item"><i className="wl wl--env" /> Envelope</span>
-          <span className="wave-legend__item"><i className="wl wl--tick" /> Word boundary</span>
-          <span className="wave-legend__item"><i className="wl wl--sel" /> Selection</span>
-          <span className="wave-legend__item"><i className="wl wl--whisk" /> Adjustment</span>
-          <span className="wave-legend__item"><i className="wl wl--play" /> Playhead</span>
-        </div>
-      ) : null}
+      {/* (legend rendered in footer) */}
     </div>
   );
 }
