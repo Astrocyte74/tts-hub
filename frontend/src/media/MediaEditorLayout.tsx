@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useState, useRef } from 'react';
 import { editorReducer, initialEditorState, type EditorStep } from './EditorTypes';
 import { TransportBar } from './TransportBar';
 import { TranscriptView } from './TranscriptView';
