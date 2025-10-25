@@ -386,8 +386,10 @@ export function TranscriptPanel() {
               <div className="panel__meta" style={{ marginLeft: 12 }}>or refine a region:</div>
               <div className="subpanel" style={{ width: '100%' }}>
                 <div className="row spaced">
-                  <strong className="panel__meta">Selection</strong>
-                  <span className="inline-hint">Use chips or nudgers to adjust.</span>
+                  <span className="panel__meta" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <IconWave size={14} /> Selection
+                  </span>
+                  <span className="inline-hint">Chips or nudgers · drag handles on timeline.</span>
                 </div>
                 <div className="row">
                   <label className="field field--sm" aria-label="Region start">
