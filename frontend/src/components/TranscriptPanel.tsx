@@ -30,7 +30,7 @@ export function TranscriptPanel() {
   const [replaceStatus, setReplaceStatus] = useState<string>('');
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
   const [playbackTrack, setPlaybackTrack] = useState<'original' | 'diff' | 'preview'>('original');
-  const [viewMode, setViewMode] = useState<'sentences' | 'words'>('sentences');
+  const [viewMode, setViewMode] = useState<'sentences' | 'words'>('words');
   const [voiceMode, setVoiceMode] = useState<'borrow' | 'xtts' | 'favorite'>('borrow');
   const [voiceList, setVoiceList] = useState<{ id: string; label: string }[]>([]);
   const [xttsAvailable, setXttsAvailable] = useState<boolean>(false);
@@ -825,7 +825,7 @@ export function TranscriptPanel() {
                   </label>
                   <label className={`segmented__option ${viewMode === 'words' ? 'is-selected' : ''}`}>
                     <input type="radio" name="view" value="words" checked={viewMode === 'words'} onChange={() => setViewMode('words')} />
-                    Words (advanced)
+                    Words
                   </label>
                 </div>
                 <div style={{ flex: 1 }} />
