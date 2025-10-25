@@ -225,6 +225,95 @@ def _record_stat(kind: str, sample: Dict[str, Any]) -> None:
         pass
 
 
+def _alignment_diff_stats(prev_words: List[Dict[str, Any]], new_words: List[Dict[str, Any]], *, window: Optional[Tuple[float, float]] = None) -> Dict[str, Any]:
+    """Compute numerical differences between previous and new word timings.
+
+    Returns counts and aggregate absolute deltas (ms) for start/end boundaries.
+    If window=(start,end) is provided, only words overlapping that time range are compared.
+    """
+    try:
+        # Optionally subset by window
+        if window is not None:
+            ws, we = float(window[0]), float(window[1])
+            def _in_win(w: Dict[str, Any]) -> bool:
+                try:
+                    return float(w.get('end', 0) or 0) > ws and float(w.get('start', 0) or 0) < we
+                except Exception:
+                    return False
+            prev = [w for w in prev_words if _in_win(w)]
+            new = [w for w in new_words if _in_win(w)]
+        else:
+            prev, new = prev_words, new_words
+
+        n = min(len(prev), len(new))
+        if n == 0:
+            return {"compared": 0}
+        abs_deltas: List[float] = []
+        tops: List[Dict[str, Any]] = []
+        changed = 0
+        text_mismatch = 0
+        for i in range(n):
+            p = prev[i]; q = new[i]
+            try:
+                ps = float(p.get('start', 0) or 0); pe = float(p.get('end', 0) or 0)
+                qs = float(q.get('start', 0) or 0); qe = float(q.get('end', 0) or 0)
+            except Exception:
+                continue
+            pt = str(p.get('text') or p.get('word') or '').strip()
+            qt = str(q.get('text') or q.get('word') or '').strip()
+            if pt != qt:
+                text_mismatch += 1
+            ds = abs(qs - ps); de = abs(qe - pe)
+            if ds > 1e-6 or de > 1e-6:
+                changed += 1
+            # consider boundary delta as the larger of start/end
+            chosen = 'start' if ds >= de else 'end'
+            dval = ds if chosen == 'start' else de
+            abs_deltas.append(dval)
+            # record candidate for top list (skip text mismatches)
+            if pt == qt:
+                if chosen == 'start':
+                    direction = 'later' if qs > ps else 'earlier'
+                    delta_ms = (qs - ps) * 1000.0
+                    tops.append({'idx': i, 'text': qt, 'boundary': 'start', 'delta_ms': delta_ms, 'start_prev': ps, 'start_new': qs})
+                else:
+                    direction = 'later' if qe > pe else 'earlier'
+                    delta_ms = (qe - pe) * 1000.0
+                    tops.append({'idx': i, 'text': qt, 'boundary': 'end', 'delta_ms': delta_ms, 'end_prev': pe, 'end_new': qe})
+        abs_ms = [d * 1000.0 for d in abs_deltas]
+        abs_ms_sorted = sorted(abs_ms)
+        def _pct(p: float) -> float:
+            if not abs_ms_sorted:
+                return 0.0
+            k = max(0, min(len(abs_ms_sorted)-1, int(round(p * (len(abs_ms_sorted)-1)))))
+            return float(abs_ms_sorted[k])
+        mean = sum(abs_ms) / len(abs_ms) if abs_ms else 0.0
+        med = _pct(0.5)
+        p95 = _pct(0.95)
+        mx = abs_ms_sorted[-1] if abs_ms_sorted else 0.0
+        return {
+            "compared": n,
+            "changed": changed,
+            "text_mismatch": text_mismatch,
+            "mean_abs_ms": mean,
+            "median_abs_ms": med,
+            "p95_abs_ms": p95,
+            "max_abs_ms": mx,
+            "top": sorted([
+                {
+                    'idx': t.get('idx'),
+                    'text': t.get('text'),
+                    'boundary': t.get('boundary'),
+                    'delta_ms': float(t.get('delta_ms') or 0.0),
+                    'direction': ('later' if float(t.get('delta_ms') or 0.0) > 0 else 'earlier')
+                }
+                for t in tops
+            ], key=lambda r: abs(float(r.get('delta_ms') or 0.0)), reverse=True)[:10]
+        }
+    except Exception:
+        return {"compared": 0}
+
+
 def _maybe_cleanup_media_artifacts() -> None:
     """Delete old media artifacts in out/media_edits and out/media_cache based on TTL.
 
@@ -2507,6 +2596,13 @@ def media_transcribe_endpoint():
                     if best:
                         break
                 cache_path = best or candidates[0]
+                # Save metadata JSON alongside cache (best effort)
+                try:
+                    meta = _yt_dlp_info_json(url)
+                    if vid:
+                        _youtube_meta_save(vid, meta)
+                except Exception:
+                    pass
             input_path = cache_path
 
         if input_path is None:
@@ -2596,6 +2692,7 @@ def media_align_endpoint():
         raise PlaygroundError("Source audio or transcript is missing for this job.", status=404)
     # Load transcript
     transcript = json.loads(tx_path.read_text(encoding="utf-8"))
+    prev_words = transcript.get('words') or []
     # Align
     t0 = time.time()
     aligned = _whisperx_align_full(audio_wav, transcript)
@@ -2611,11 +2708,12 @@ def media_align_endpoint():
         _record_stat("align_full", {"jobId": job_id, "elapsed": elapsed, "duration": float(aligned.get("duration", 0) or 0), "words": len(aligned.get("words", []) or []), "ts": time.time()})
     except Exception:
         pass
+    diff = _alignment_diff_stats(prev_words, aligned.get('words') or [])
     return jsonify({
         "jobId": job_id,
         "media": {"audio_url": f"/audio/{rel_audio}", "duration": aligned.get("duration", 0)},
         "transcript": aligned,
-        "stats": {"elapsed": elapsed, "words": len(aligned.get("words", []) or [])},
+        "stats": {"elapsed": elapsed, "words": len(aligned.get("words", []) or []), "diff": diff},
         "whisperx": {"enabled": True}
     })
 
@@ -2747,12 +2845,13 @@ def media_align_region_endpoint():
         _record_stat("align_region", {"jobId": job_id, "elapsed": elapsed, "region": {"start": start, "end": end, "used": {"start": region_start, "end": region_end}}, "words": len(new_words), "duration": float(region_end-region_start), "rtf": (region_end-region_start)/max(elapsed,1e-6), "ts": time.time()})
     except Exception:
         pass
+    diff = _alignment_diff_stats(prev_words, transcript.get("words") or [], window=(region_start, region_end))
     return jsonify({
         "jobId": job_id,
         "region": {"start": start, "end": end, "margin": margin_s, "used": {"start": region_start, "end": region_end}},
         "media": {"audio_url": f"/audio/{rel_audio}", "duration": duration},
         "transcript": transcript,
-        "stats": {"elapsed": elapsed, "rtf": (region_end-region_start)/max(elapsed,1e-6), "words": len(new_words)},
+        "stats": {"elapsed": elapsed, "rtf": (region_end-region_start)/max(elapsed,1e-6), "words": len(new_words), "diff": diff},
         "whisperx": {"enabled": True}
     })
 
@@ -2812,12 +2911,64 @@ def _youtube_cache_find(vid: str) -> Optional[Path]:
     except Exception:
         return None
 
+
+def _youtube_meta_path(vid: str) -> Path:
+    cache_dir = OUTPUT_DIR / "media_cache" / "youtube"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / f"{vid}.info.json"
+
+
+def _youtube_meta_load(vid: str) -> Optional[Dict[str, Any]]:
+    try:
+        p = _youtube_meta_path(vid)
+        if not p.exists():
+            return None
+        return json.loads(p.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+
+
+def _youtube_meta_save(vid: str, data: Dict[str, Any]) -> None:
+    try:
+        p = _youtube_meta_path(vid)
+        p.write_text(json.dumps(data), encoding='utf-8')
+    except Exception:
+        pass
+
+
+def _yt_dlp_info_json(url: str) -> Dict[str, Any]:
+    if not _have_tool('yt-dlp'):
+        raise PlaygroundError("yt-dlp is required to fetch metadata.", status=503)
+    cmd = ['yt-dlp', '-j']
+    try:
+        if YT_DLP_COOKIES_PATH.exists():
+            cmd += ['--cookies', str(YT_DLP_COOKIES_PATH)]
+    except Exception:
+        pass
+    if YT_DLP_EXTRACTOR_ARGS.strip():
+        cmd += ['--extractor-args', YT_DLP_EXTRACTOR_ARGS.strip()]
+    cmd.append(url)
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    data = json.loads(proc.stdout.splitlines()[0]) if proc.stdout else {}
+    return data
+
 @api.route("/media/estimate", methods=["POST"])
 def media_estimate_endpoint():
-    """Estimate media duration for ETA.
+    """Estimate media duration and basic metadata for ETA/preview.
 
     Body: { source: 'youtube', url }
-    Returns: { duration, cached?: boolean }
+    Returns: {
+      duration: number,
+      cached?: boolean,
+      title?: string,
+      uploader?: string,
+      upload_date?: string,
+      view_count?: int,
+      thumbnail_url?: string,
+      webpage_url?: string,
+      channel_url?: string,
+      like_count?: int
+    }
     """
     # Opportunistic cleanup of old media artifacts
     _maybe_cleanup_media_artifacts()
@@ -2833,20 +2984,156 @@ def media_estimate_endpoint():
     if vid:
         cached = _youtube_cache_find(vid)
         if cached and cached.exists():
-            return jsonify({ 'duration': _ffprobe_duration_seconds(cached), 'cached': True })
+            out: Dict[str, Any] = { 'duration': _ffprobe_duration_seconds(cached), 'cached': True }
+            # First try metadata cache
+            cached_meta = _youtube_meta_load(vid)
+            if cached_meta:
+                out.update({
+                    'title': cached_meta.get('title') or None,
+                    'uploader': cached_meta.get('uploader') or cached_meta.get('channel') or None,
+                    'upload_date': cached_meta.get('upload_date') or None,
+                    'view_count': cached_meta.get('view_count') or None,
+                    'thumbnail_url': cached_meta.get('thumbnail') or None,
+                    'webpage_url': cached_meta.get('webpage_url') or url,
+                    'channel_url': cached_meta.get('channel_url') or None,
+                    'like_count': cached_meta.get('like_count') or None,
+                })
+                return jsonify(out)
+            # If no meta cache yet, try to fetch once and save
+            if _have_tool('yt-dlp'):
+                try:
+                    data = _yt_dlp_info_json(url)
+                    _youtube_meta_save(vid, data)
+                    out.update({
+                        'title': data.get('title') or None,
+                        'uploader': data.get('uploader') or data.get('channel') or None,
+                        'upload_date': data.get('upload_date') or None,
+                        'view_count': data.get('view_count') or None,
+                        'thumbnail_url': data.get('thumbnail') or None,
+                        'webpage_url': data.get('webpage_url') or url,
+                        'channel_url': data.get('channel_url') or None,
+                        'like_count': data.get('like_count') or None,
+                    })
+                except Exception:
+                    pass
+            return jsonify(out)
     # Fallback: yt-dlp JSON
     if not _have_tool('yt-dlp'):
         raise PlaygroundError("yt-dlp is required to estimate duration.", status=503)
     try:
-        proc = subprocess.run(['yt-dlp','-j', url], capture_output=True, text=True, check=True)
-        data = json.loads(proc.stdout.splitlines()[0]) if proc.stdout else {}
+        data = _yt_dlp_info_json(url)
         dur = float(data.get('duration') or 0)
         if dur <= 0:
-            # fallback to ffprobe if webpage_url_basename exists in cache path
             raise ValueError('No duration from yt-dlp')
-        return jsonify({ 'duration': dur, 'cached': False })
+        result = {
+            'duration': dur,
+            'cached': False,
+            'title': data.get('title') or None,
+            'uploader': data.get('uploader') or data.get('channel') or None,
+            'upload_date': data.get('upload_date') or None,
+            'view_count': data.get('view_count') or None,
+            'thumbnail_url': data.get('thumbnail') or None,
+            'webpage_url': data.get('webpage_url') or url,
+            'channel_url': data.get('channel_url') or None,
+            'like_count': data.get('like_count') or None,
+        }
+        if vid:
+            _youtube_meta_save(vid, data)
+        return jsonify(result)
     except Exception as exc:
         raise PlaygroundError(f"Could not estimate duration: {exc}", status=500)
+
+
+def _ffprobe_json(path: Path) -> Dict[str, Any]:
+    if not _have_tool('ffprobe'):
+        raise PlaygroundError("ffprobe is required to analyze files.", status=503)
+    try:
+        proc = subprocess.run(
+            ['ffprobe', '-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', str(path)],
+            capture_output=True, text=True, check=True
+        )
+        return json.loads(proc.stdout or '{}')
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"ffprobe failed: {exc}", status=500)
+
+
+@api.route('/media/probe', methods=['POST'])
+def media_probe_endpoint():
+    """Inspect an uploaded media file without starting a job.
+
+    Accepts: multipart/form-data with field 'file'
+    Returns: {
+      duration: number,
+      size_bytes: int,
+      format: string,
+      has_video: bool,
+      audio?: { codec?: str, sample_rate?: int, channels?: int },
+      video?: { codec?: str, width?: int, height?: int, fps?: float }
+    }
+    """
+    up = request.files.get('file')
+    if not up or not up.filename:
+        raise PlaygroundError("No file uploaded.", status=400)
+    suffix = Path(up.filename).suffix or '.dat'
+    tmp_dir = OUTPUT_DIR / 'media_probe'
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    tmp_path = tmp_dir / f"probe-{uuid.uuid4().hex}{suffix}"
+    up.save(str(tmp_path))
+    try:
+        info = _ffprobe_json(tmp_path)
+        fmt = (info.get('format') or {})
+        size_bytes = int(float(fmt.get('size') or 0))
+        duration = float(fmt.get('duration') or 0.0)
+        streams = info.get('streams') or []
+        audio: Dict[str, Any] = {}
+        video: Dict[str, Any] = {}
+        has_video = False
+        for s in streams:
+            if s.get('codec_type') == 'audio' and not audio:
+                sr = s.get('sample_rate')
+                try:
+                    sr_i = int(sr) if isinstance(sr, str) else int(sr or 0)
+                except Exception:
+                    sr_i = None
+                audio = {
+                    'codec': s.get('codec_name') or None,
+                    'sample_rate': sr_i,
+                    'channels': s.get('channels') or None,
+                }
+            elif s.get('codec_type') == 'video' and not video:
+                has_video = True
+                fps = None
+                try:
+                    r = s.get('r_frame_rate') or s.get('avg_frame_rate')
+                    if isinstance(r, str) and '/' in r:
+                        num, den = r.split('/')
+                        num_f = float(num)
+                        den_f = float(den) if float(den) != 0 else 1.0
+                        fps = num_f / den_f
+                except Exception:
+                    fps = None
+                video = {
+                    'codec': s.get('codec_name') or None,
+                    'width': s.get('width') or None,
+                    'height': s.get('height') or None,
+                    'fps': fps,
+                }
+        result = {
+            'duration': duration,
+            'size_bytes': size_bytes,
+            'format': (fmt.get('format_name') or fmt.get('format_long_name') or 'unknown'),
+            'has_video': has_video,
+        }
+        if audio:
+            result['audio'] = audio
+        if video:
+            result['video'] = video
+        return jsonify(result)
+    finally:
+        try:
+            tmp_path.unlink(missing_ok=True)  # type: ignore[arg-type]
+        except Exception:
+            pass
 
 
 @api.route("/media/replace_preview", methods=["POST"])

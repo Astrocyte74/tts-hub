@@ -16,6 +16,8 @@ import type {
   MediaStatsSummary,
   MediaReplacePreviewResponse,
   MediaApplyResponse,
+  MediaEstimateInfo,
+  MediaProbeInfo,
 } from '../types';
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
@@ -449,8 +451,8 @@ export async function mediaGetStats(): Promise<MediaStatsSummary> {
   return getJson<MediaStatsSummary>('media/stats');
 }
 
-export async function mediaEstimateUrl(url: string): Promise<{ duration: number; cached?: boolean }> {
-  return postJson<{ duration: number; cached?: boolean }>('media/estimate', { source: 'youtube', url });
+export async function mediaEstimateUrl(url: string): Promise<MediaEstimateInfo> {
+  return postJson<MediaEstimateInfo>('media/estimate', { source: 'youtube', url });
 }
 
 export async function mediaReplacePreview(payload: {
@@ -472,6 +474,22 @@ export async function mediaApply(jobId: string, opts?: { format?: string }): Pro
   const body: Record<string, unknown> = { jobId };
   if (opts?.format) body.format = opts.format;
   return postJson<MediaApplyResponse>('media/apply', body);
+}
+
+// Probe a local file before transcribing (ffprobe-only)
+export async function mediaProbeUpload(file: File): Promise<MediaProbeInfo> {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  const res = await fetch(buildUrl('media/probe'), { method: 'POST', body: form });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`POST media/probe failed (${res.status}): ${text}`);
+  }
+  const contentType = res.headers.get('Content-Type') ?? '';
+  if (!contentType.includes('json')) {
+    throw new Error(`Expected JSON response from media/probe but received ${contentType || 'unknown content type'}`);
+  }
+  return (await res.json()) as MediaProbeInfo;
 }
 
 export async function getXttsCustomVoice(id: string): Promise<Record<string, unknown>> {

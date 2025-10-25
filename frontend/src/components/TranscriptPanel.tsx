@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { mediaAlignFull, mediaAlignRegion, mediaApply, mediaEstimateUrl, mediaGetStats, mediaReplacePreview, mediaTranscribeFromUrl, mediaTranscribeUpload, resolveAudioUrl } from '../api/client';
+import { mediaAlignFull, mediaAlignRegion, mediaApply, mediaEstimateUrl, mediaGetStats, mediaProbeUpload, mediaReplacePreview, mediaTranscribeFromUrl, mediaTranscribeUpload, resolveAudioUrl } from '../api/client';
 import { IconWave } from '../icons';
-import type { MediaTranscriptResult } from '../types';
+import type { MediaTranscriptResult, MediaEstimateInfo, MediaProbeInfo } from '../types';
 import './TranscriptPanel.css';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
@@ -24,6 +24,8 @@ export function TranscriptPanel() {
   const [trimPostMs, setTrimPostMs] = useState<string>('8');
   const [duckDbVal, setDuckDbVal] = useLocalStorage<string>('kokoro:mediaDuckDb', '');
   const [ingestMode, setIngestMode] = useLocalStorage<'url' | 'file'>('kokoro:mediaIngestMode', 'url');
+  const [ytInfo, setYtInfo] = useState<MediaEstimateInfo | null>(null);
+  const [probeInfo, setProbeInfo] = useState<MediaProbeInfo | null>(null);
   const [replaceText, setReplaceText] = useState<string>('');
   const [replacePreviewUrl, setReplacePreviewUrl] = useState<string | null>(null);
   const [replaceDiffUrl, setReplaceDiffUrl] = useState<string | null>(null);
@@ -31,6 +33,7 @@ export function TranscriptPanel() {
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
   const [playbackTrack, setPlaybackTrack] = useState<'original' | 'diff' | 'preview'>('original');
   const [viewMode, setViewMode] = useState<'sentences' | 'words'>('words');
+  const [currentStep, setCurrentStep] = useLocalStorage<'1' | '2' | '3'>('kokoro:mediaStep', '1');
   const [voiceMode, setVoiceMode] = useState<'borrow' | 'xtts' | 'favorite'>('borrow');
   const [voiceList, setVoiceList] = useState<{ id: string; label: string }[]>([]);
   const [xttsAvailable, setXttsAvailable] = useState<boolean>(false);
@@ -98,6 +101,7 @@ export function TranscriptPanel() {
   const [cursorIdx, setCursorIdx] = useState<number>(0);
   const [findQuery, setFindQuery] = useState<string>('');
   const [findStartFrom, setFindStartFrom] = useState<number>(0);
+  const [viewPanelOpen, setViewPanelOpen] = useLocalStorage<boolean>('kokoro:mediaViewPanel', false);
 
   function clearSelection() {
     setSelStartIdx(null);
@@ -256,6 +260,41 @@ export function TranscriptPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Auto-analyze YouTube URL (debounced) for Step 1
+  useEffect(() => {
+    if (ingestMode !== 'url') return;
+    const s = url.trim();
+    if (!s) { setYtInfo(null); return; }
+    const looksYoutube = /youtu(\.be|be\.com)/i.test(s);
+    if (!looksYoutube) { setYtInfo(null); return; }
+    const t = window.setTimeout(async () => {
+      try {
+        const info = await mediaEstimateUrl(s);
+        setYtInfo(info);
+      } catch (err) {
+        // keep silent; show nothing
+        setYtInfo(null);
+      }
+    }, 450);
+    return () => window.clearTimeout(t);
+  }, [ingestMode, url]);
+
+  // Auto-probe selected file for Step 1
+  useEffect(() => {
+    if (ingestMode !== 'file') return;
+    if (!file) { setProbeInfo(null); return; }
+    let aborted = false;
+    (async () => {
+      try {
+        const info = await mediaProbeUpload(file);
+        if (!aborted) setProbeInfo(info);
+      } catch {
+        if (!aborted) setProbeInfo(null);
+      }
+    })();
+    return () => { aborted = true; };
+  }, [ingestMode, file]);
+
   async function handleTranscribe(kind: 'url' | 'file') {
     try {
       setBusy(true);
@@ -293,6 +332,7 @@ export function TranscriptPanel() {
         if (typeof elapsed === 'number' && typeof rtf === 'number') {
           setStatus(`Transcribed in ${elapsed.toFixed(2)}s (RTF ${rtf.toFixed(2)}×)`);
         }
+        setCurrentStep('2');
       } else {
         if (!file) {
           setError('Choose a media file to upload');
@@ -308,6 +348,7 @@ export function TranscriptPanel() {
         if (typeof elapsed === 'number' && typeof rtf === 'number') {
           setStatus(`Transcribed in ${elapsed.toFixed(2)}s (RTF ${rtf.toFixed(2)}×)`);
         }
+        setCurrentStep('2');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Transcription failed');
@@ -318,6 +359,23 @@ export function TranscriptPanel() {
       setProgress(null);
     }
   }
+
+  const [alignedFull, setAlignedFull] = useState<boolean>(false);
+  const [alignDiff, setAlignDiff] = useState<{ compared?: number; changed?: number; mean_abs_ms?: number; median_abs_ms?: number; p95_abs_ms?: number; max_abs_ms?: number; top?: { idx?: number; text?: string; boundary?: string; delta_ms?: number; direction?: string }[] } | null>(null);
+  const [alignScope, setAlignScope] = useState<'full' | 'region' | null>(null);
+  const [alignWindow, setAlignWindow] = useState<{ start: number; end: number } | null>(null);
+
+  const describeAlignment = (diff: typeof alignDiff | null, scope: 'full' | 'region' | null, win: { start: number; end: number } | null) => {
+    if (!diff || !diff.compared) return '';
+    const n = diff.compared;
+    const changed = diff.changed ?? 0;
+    const mean = diff.mean_abs_ms ?? 0;
+    const med = diff.median_abs_ms ?? 0;
+    const p95 = diff.p95_abs_ms ?? 0;
+    const mx = diff.max_abs_ms ?? 0;
+    const where = scope === 'region' && win ? ` in the selected region (${win.start.toFixed(2)}–${win.end.toFixed(2)}s)` : '';
+    return `Adjusted ${changed.toLocaleString()} of ${n.toLocaleString()} word boundaries${where}. Typical adjustment was about ${Math.round(mean)} ms (median ${Math.round(med)} ms; 95th percentile ${Math.round(p95)} ms; max ${Math.round(mx)} ms).`;
+  };
 
   async function handleAlignFull() {
     if (!jobId) {
@@ -345,6 +403,23 @@ export function TranscriptPanel() {
         const words = res.stats?.words ?? res.transcript?.words?.length ?? 0;
         setStatus(`Aligned full transcript in ${elapsed.toFixed(2)}s (words ${words})`);
       }
+      setAlignedFull(true);
+      try {
+        const d = (res.stats as any)?.diff as any;
+        if (d && typeof d === 'object') {
+          setAlignDiff({
+            compared: Number(d.compared) || undefined,
+            changed: Number(d.changed) || undefined,
+            mean_abs_ms: Number(d.mean_abs_ms) || undefined,
+            median_abs_ms: Number(d.median_abs_ms) || undefined,
+            p95_abs_ms: Number(d.p95_abs_ms) || undefined,
+            max_abs_ms: Number(d.max_abs_ms) || undefined,
+            top: Array.isArray(d.top) ? d.top.slice(0, 10) : undefined,
+          });
+          setAlignScope('full');
+          setAlignWindow(null);
+        }
+      } catch {}
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Alignment failed');
     } finally {
@@ -385,6 +460,31 @@ export function TranscriptPanel() {
     const s = Number(regionStart); const e = Number(regionEnd);
     return Number.isFinite(s) && Number.isFinite(e) && e > s;
   })();
+  const canStep2 = Boolean((jobId && audioUrl) || transcript);
+  const canStep3 = canStep2 && selectionValid;
+
+  // Guard against blank state if a persisted step is not yet unlocked
+  useEffect(() => {
+    // Normalise invalid values
+    if (currentStep !== '1' && currentStep !== '2' && currentStep !== '3') {
+      setCurrentStep('1');
+      return;
+    }
+    if (currentStep === '2' && !canStep2) {
+      setCurrentStep('1');
+      return;
+    }
+    if (currentStep === '3') {
+      if (!canStep2) {
+        setCurrentStep('1');
+        return;
+      }
+      if (!selectionValid) {
+        setCurrentStep('2');
+        return;
+      }
+    }
+  }, [currentStep, canStep2, selectionValid, setCurrentStep]);
 
   function selectSegment(seg: { start: number; end: number }) {
     if (!transcript?.words?.length) return;
@@ -403,6 +503,7 @@ export function TranscriptPanel() {
       <div className="media-editor">
         <div className="media-editor__left">
           {/* Step 1 — Import media */}
+          {currentStep === '1' ? (
           <div className="step">
             <div className="step__title"><span className="step__badge">1</span> Import media</div>
             <div className="ingest-toolbar">
@@ -453,15 +554,78 @@ export function TranscriptPanel() {
                 <div style={{ width: `${Math.round(progress * 100)}%`, height: '100%', background: 'linear-gradient(90deg, #60a5fa, #22d3ee)' }} />
               </div>
             ) : null}
+            <div className="panel__actions" style={{ justifyContent: 'flex-end' }}>
+              <button className="panel__button" type="button" disabled={!((jobId && audioUrl) || transcript)} onClick={() => setCurrentStep('2')}>Next: Align</button>
+            </div>
           </div>
+          ) : null}
           {/* Step 2 — Whisper alignment (optional) (only after transcript exists) */}
-          {transcript ? (
+          {transcript && currentStep === '2' ? (
           <div className="step">
-            <div className="step__title"><span className="step__badge">2</span> Whisper alignment <span className="step__hint">(optional)</span></div>
+            <div className="step__title"><span className="step__badge">2</span> Whisper alignment <span className="step__hint">(optional)</span> {alignedFull ? (<span className="status-pill status-pill--ok" style={{ marginLeft: 8 }}>Aligned</span>) : null}</div>
+            <p className="panel__meta">Tip: Select a sentence or words below to define a region. You can refine just that region with WhisperX, or proceed to Replace and select there.</p>
             {whisperxEnabled ? (
               <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
                 <button className="panel__button" type="button" disabled={busy || !jobId} onClick={handleAlignFull} title="Align transcript to audio for precise word timings using WhisperX">
                   {busy ? 'Aligning…' : 'Improve full timing (WhisperX)'}
+                </button>
+                <button
+                  className="panel__button"
+                  type="button"
+                  disabled={busy || !jobId || !selectionValid}
+                  title="Refine just the selected region with WhisperX"
+                  onClick={async () => {
+                    if (!jobId) { setError('Transcribe first'); return; }
+                    const s = Number(regionStart), e = Number(regionEnd), m = Number(regionMargin || '0.75');
+                    if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Select a valid region first'); return; }
+                    try {
+                      setBusy(true);
+                      setStatus(`Aligning region ${s.toFixed(2)}–${e.toFixed(2)}s with WhisperX…`);
+                      setError(null);
+                      const dur = (e - s) + (Number.isFinite(m) ? Number(m) * 2 : 1.5);
+                      const total = dur / (avgRtf.region > 0 ? avgRtf.region : 5);
+                      const startAt = Date.now();
+                      setProgress(0);
+                      progressTimer.current = window.setInterval(() => {
+                        const elapsed = (Date.now() - startAt) / 1000;
+                        setProgress(Math.max(0, Math.min(1, elapsed / total)));
+                      }, 1000);
+                      const res = await mediaAlignRegion(jobId, s, e, Number.isFinite(m) ? m : undefined);
+                      setTranscript(res.transcript);
+                      const elapsed = res.stats?.elapsed;
+                      const rtf = res.stats?.rtf;
+                      const words = res.stats?.words ?? 0;
+                      if (typeof elapsed === 'number' && typeof rtf === 'number') {
+                        setStatus(`Aligned ${words} words in ${elapsed.toFixed(2)}s (RTF ${rtf.toFixed(2)}×)`);
+                      }
+                      try {
+                        const d = (res.stats as any)?.diff as any;
+                        if (d && typeof d === 'object') {
+                          setAlignDiff({
+                            compared: Number(d.compared) || undefined,
+                            changed: Number(d.changed) || undefined,
+                            mean_abs_ms: Number(d.mean_abs_ms) || undefined,
+                            median_abs_ms: Number(d.median_abs_ms) || undefined,
+                            p95_abs_ms: Number(d.p95_abs_ms) || undefined,
+                            max_abs_ms: Number(d.max_abs_ms) || undefined,
+                            top: Array.isArray(d.top) ? d.top.slice(0, 10) : undefined,
+                          });
+                          setAlignScope('region');
+                          setAlignWindow({ start: s, end: e });
+                        }
+                      } catch {}
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Region alignment failed');
+                    } finally {
+                      setBusy(false);
+                      setStatus('');
+                      if (progressTimer.current) { window.clearInterval(progressTimer.current); progressTimer.current = null; }
+                      setProgress(null);
+                      void refreshStats();
+                    }
+                  }}
+                >
+                  Refine selection (WhisperX)
                 </button>
                 {!jobId ? <p className="panel__hint panel__hint--muted">Transcribe first to create a job.</p> : null}
                 <details className="subpanel" style={{ width: '100%' }}>
@@ -535,10 +699,74 @@ export function TranscriptPanel() {
             ) : (
               <p className="panel__hint panel__hint--muted">WhisperX not enabled on this host. Install and enable to refine word timings.</p>
             )}
+            {alignDiff && alignDiff.compared ? (
+              <div className="subpanel">
+                <p className="panel__meta">{describeAlignment(alignDiff, alignScope, alignWindow)}</p>
+                {Array.isArray(alignDiff.top) && alignDiff.top.length ? (
+                  <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                    <span className="panel__meta">Examples:</span>
+                    {alignDiff.top.slice(0, 5).map((t, i) => {
+                      const val = Math.round(Math.abs(t.delta_ms || 0));
+                      const dir = (t.delta_ms || 0) >= 0 ? 'later' : 'earlier';
+                      const arrow = (t.delta_ms || 0) >= 0 ? '→' : '←';
+                      const label = `${t.text ?? ''} ${val} ms ${dir} ${arrow}`;
+                      return (
+                        <button
+                          key={`ex-${i}-${t.idx}`}
+                          className="chip-button chip-button--accent"
+                          title={`Adjusted ${t.boundary} by ${val} ms ${dir}`}
+                          type="button"
+                          onMouseEnter={() => {
+                            try {
+                              const idx = typeof t.idx === 'number' ? t.idx : -1;
+                              if (idx >= 0 && transcript?.words?.[idx]) {
+                                const w = transcript.words[idx];
+                                setSelStartIdx(idx);
+                                setSelEndIdx(idx);
+                                setRegionStart(w.start.toFixed(2));
+                                setRegionEnd(w.end.toFixed(2));
+                                setCursorIdx(idx);
+                                const el = document.querySelector(`[data-word-idx="${idx}"]`);
+                                if (el && 'scrollIntoView' in el) (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+                              }
+                            } catch {}
+                          }}
+                          onClick={() => {
+                            // Jump to the word by index if available
+                            try {
+                              const idx = typeof t.idx === 'number' ? t.idx : -1;
+                              if (idx >= 0 && transcript?.words?.[idx]) {
+                                const w = transcript.words[idx];
+                                setSelStartIdx(idx);
+                                setSelEndIdx(idx);
+                                setRegionStart(w.start.toFixed(2));
+                                setRegionEnd(w.end.toFixed(2));
+                                setCursorIdx(idx);
+                                const el = document.querySelector(`[data-word-idx="${idx}"]`);
+                                if (el && 'scrollIntoView' in el) (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+                              }
+                            } catch {}
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                    {alignDiff.top.length > 5 ? (
+                      <span className="panel__meta">…</span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="panel__actions" style={{ justifyContent: 'space-between' }}>
+              <button className="panel__button" type="button" onClick={() => setCurrentStep('1')}>Back</button>
+              <button className="panel__button" type="button" disabled={!canStep2} onClick={() => setCurrentStep('3')}>Next: Replace</button>
+            </div>
           </div>
           ) : null}
           {/* Replace preview (XTTS) */}
-          {transcript && (
+          {transcript && currentStep === '3' && (
             <div className="step">
               <div className="step__title"><span className="step__badge">3</span> Replace & preview</div>
               <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
@@ -667,11 +895,90 @@ export function TranscriptPanel() {
                     : 'XTTS is not available on this server.'}
                 </p>
               ) : null}
+              <div className="panel__actions" style={{ justifyContent: 'space-between' }}>
+                <button className="panel__button" type="button" onClick={() => setCurrentStep('2')}>Back</button>
+              </div>
             </div>
           )}
         </div>
         <div className="media-editor__right">
-          {audioUrl ? (
+          {/* Step 1 info card when no audio yet */}
+          {currentStep === '1' && !audioUrl ? (
+            <div className="media-info-card">
+              {ingestMode === 'url' && ytInfo ? (
+                <div className="media-info">
+                  {ytInfo.thumbnail_url ? (
+                    <img src={ytInfo.thumbnail_url} alt="Video thumbnail" className="media-info__thumb" />
+                  ) : null}
+                  <div className="media-info__meta">
+                    <div className="media-info__row">
+                      <a href={ytInfo.webpage_url || undefined} target="_blank" rel="noreferrer" className="media-info__title">{ytInfo.title || 'YouTube video'}</a>
+                      <span className={`media-info__badge ${ytInfo.cached ? 'media-info__badge--cached' : 'media-info__badge--live'}`}>{ytInfo.cached ? 'Cached' : 'Live'}</span>
+                    </div>
+                    <div className="media-info__row">
+                      <a href={ytInfo.channel_url || undefined} target="_blank" rel="noreferrer" className="media-info__line">{ytInfo.uploader || 'Unknown channel'}</a>
+                      {ytInfo.upload_date ? (
+                        <span className="media-info__line">· Published {(() => { const d = String(ytInfo.upload_date); return d.length===8 ? `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}` : d; })()}</span>
+                      ) : null}
+                    </div>
+                    <div className="media-info__row">
+                      <span className="media-info__line">Duration: {ytInfo.duration ? `${ytInfo.duration.toFixed(1)}s` : '—'}</span>
+                      {typeof ytInfo.view_count === 'number' ? (
+                        <span className="media-info__line">· {ytInfo.view_count.toLocaleString()} views</span>
+                      ) : null}
+                      {typeof ytInfo.like_count === 'number' ? (
+                        <span className="media-info__line">· {ytInfo.like_count.toLocaleString()} likes</span>
+                      ) : null}
+                    </div>
+                    {avgRtf.transcribe > 0 && ytInfo.duration ? (
+                      <p className="media-info__hint">Est. transcribe time: {(ytInfo.duration / avgRtf.transcribe).toFixed(0)}s</p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+              {ingestMode === 'file' && probeInfo ? (
+                <div className="media-info">
+                  <div className="media-info__icon" aria-hidden>🎞️</div>
+                  <div className="media-info__meta">
+                    <p className="media-info__title">Local file</p>
+                    <p className="media-info__line">Format: {probeInfo.format} · Size: {(probeInfo.size_bytes / (1024*1024)).toFixed(1)} MB</p>
+                    <p className="media-info__line">Duration: {probeInfo.duration.toFixed(1)}s {probeInfo.has_video ? '· video' : ''}</p>
+                    {probeInfo.audio ? (
+                      <p className="media-info__line">Audio: {probeInfo.audio.codec ?? '—'} · {probeInfo.audio.sample_rate ?? '—'} Hz · {probeInfo.audio.channels ?? '—'} ch</p>
+                    ) : null}
+                    {probeInfo.video ? (
+                      <p className="media-info__line">Video: {probeInfo.video.codec ?? '—'} · {probeInfo.video.width ?? '—'}×{probeInfo.video.height ?? '—'} @ {probeInfo.video.fps?.toFixed?.(2) ?? '—'} fps</p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {/* Compact source summary shown in later steps */}
+          {audioUrl && (ytInfo || probeInfo) ? (
+            <div className="media-info-mini" title={ytInfo?.title || undefined}>
+              {ytInfo?.thumbnail_url ? (
+                <img src={ytInfo.thumbnail_url} alt="Thumb" className="media-info-mini__thumb" />
+              ) : null}
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <p className="media-info-mini__title">
+                  {ytInfo?.title || (probeInfo ? 'Local file' : 'Source')}
+                </p>
+                <p className="media-info-mini__line">
+                  {ytInfo ? (
+                    <>
+                      {ytInfo.uploader || 'Unknown channel'} · {ytInfo.duration?.toFixed?.(1)}s {ytInfo.cached ? '· cached' : ''}
+                    </>
+                  ) : probeInfo ? (
+                    <>
+                      {probeInfo.format} · {probeInfo.duration.toFixed(1)}s {probeInfo.has_video ? '· video' : ''}
+                    </>
+                  ) : null}
+                </p>
+              </div>
+            </div>
+          ) : null}
+          {audioUrl && (currentStep === '2' || currentStep === '3') ? (
             <div className="media-editor__player">
               {(() => {
                 const playerSrc = playbackTrack === 'preview'
@@ -682,20 +989,35 @@ export function TranscriptPanel() {
                 return (
                   <>
                     <div className="row" style={{ alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                      <div className="segmented segmented--sm" role="radiogroup" aria-label="Playback">
-                        <label className={`segmented__option ${playbackTrack === 'original' ? 'is-selected' : ''}`}>
-                          <input type="radio" name="pb" value="original" checked={playbackTrack === 'original'} onChange={() => setPlaybackTrack('original')} />
-                          Original
-                        </label>
-                        <label className={`segmented__option ${playbackTrack === 'diff' ? 'is-selected' : ''}`}>
-                          <input type="radio" name="pb" value="diff" checked={playbackTrack === 'diff'} onChange={() => setPlaybackTrack('diff')} disabled={!replaceDiffUrl} />
-                          Diff
-                        </label>
-                        <label className={`segmented__option ${playbackTrack === 'preview' ? 'is-selected' : ''}`}>
-                          <input type="radio" name="pb" value="preview" checked={playbackTrack === 'preview'} onChange={() => setPlaybackTrack('preview')} disabled={!replacePreviewUrl} />
-                          Preview
-                        </label>
-                      </div>
+                      {currentStep === '2' ? (
+                        <div className="segmented segmented--sm" aria-label="Playback (Step 2)">
+                          <span className="segmented__option is-selected">Original</span>
+                        </div>
+                      ) : (
+                        <div className="segmented segmented--sm" role="radiogroup" aria-label="Playback">
+                          <label className={`segmented__option ${playbackTrack === 'original' ? 'is-selected' : ''}`}>
+                            <input type="radio" name="pb" value="original" checked={playbackTrack === 'original'} onChange={() => setPlaybackTrack('original')} />
+                            Original
+                          </label>
+                          <label className={`segmented__option ${playbackTrack === 'diff' ? 'is-selected' : ''}`}>
+                            <input type="radio" name="pb" value="diff" checked={playbackTrack === 'diff'} onChange={() => setPlaybackTrack('diff')} disabled={!replaceDiffUrl} />
+                            Diff
+                          </label>
+                          <label className={`segmented__option ${playbackTrack === 'preview' ? 'is-selected' : ''}`}>
+                            <input type="radio" name="pb" value="preview" checked={playbackTrack === 'preview'} onChange={() => setPlaybackTrack('preview')} disabled={!replacePreviewUrl} />
+                            Preview
+                          </label>
+                        </div>
+                      )}
+                      {currentStep === '3' ? (
+                        <span className="panel__hint panel__hint--muted" style={{ marginLeft: 8 }}>
+                          Original: source audio · Diff: only the changes · Preview: patched audio
+                        </span>
+                      ) : (
+                        <span className="panel__hint panel__hint--muted" style={{ marginLeft: 8 }}>
+                          Preview becomes available in Step 3
+                        </span>
+                      )}
                       <button className="panel__button" type="button" onClick={() => void previewSelectionOnce()} disabled={isPreviewingSel || !regionStart || !regionEnd}>
                         {isPreviewingSel ? 'Playing…' : 'Play selection'}
                       </button>
@@ -814,59 +1136,63 @@ export function TranscriptPanel() {
               ) : null}
             </div>
           ) : null}
-          {transcript ? (
+          {transcript && (currentStep === '2' || currentStep === '3') ? (
             <div className="media-editor__words">
               <p className="panel__meta">Language: {transcript.language || 'unknown'} · Duration: {transcript.duration?.toFixed?.(1) ?? transcript.duration}s</p>
-              <div className="row" style={{ alignItems: 'flex-end', gap: 8 }}>
-                <div className="segmented segmented--sm" role="radiogroup" aria-label="View">
-                  <label className={`segmented__option ${viewMode === 'sentences' ? 'is-selected' : ''}`}>
-                    <input type="radio" name="view" value="sentences" checked={viewMode === 'sentences'} onChange={() => setViewMode('sentences')} />
-                    Sentences
+              <details className="viewfind" open={Boolean(viewPanelOpen)} onToggle={(e) => setViewPanelOpen((e.currentTarget as HTMLDetailsElement).open)}>
+                <summary className="viewfind__summary" style={{ cursor: 'pointer' }}>View & Find — {viewMode === 'words' ? 'Words' : 'Sentences'}</summary>
+                <div className="row" style={{ alignItems: 'flex-end', gap: 8, marginTop: 6 }}>
+                  <div className="segmented segmented--sm" role="radiogroup" aria-label="View">
+                    <label className={`segmented__option ${viewMode === 'sentences' ? 'is-selected' : ''}`}>
+                      <input type="radio" name="view" value="sentences" checked={viewMode === 'sentences'} onChange={() => setViewMode('sentences')} />
+                      Sentences
+                    </label>
+                    <label className={`segmented__option ${viewMode === 'words' ? 'is-selected' : ''}`}>
+                      <input type="radio" name="view" value="words" checked={viewMode === 'words'} onChange={() => setViewMode('words')} />
+                      Words
+                    </label>
+                  </div>
+                  <div style={{ flex: 1 }} />
+                  <label className="field field--lg">
+                    <span className="field__label">Find</span>
+                    <input type="text" value={findQuery} onChange={(e) => { setFindQuery(e.target.value); if (!viewPanelOpen) setViewPanelOpen(true); }} placeholder="Type phrase to select…" />
                   </label>
-                  <label className={`segmented__option ${viewMode === 'words' ? 'is-selected' : ''}`}>
-                    <input type="radio" name="view" value="words" checked={viewMode === 'words'} onChange={() => setViewMode('words')} />
-                    Words
-                  </label>
+                  <button
+                    className="panel__button"
+                    type="button"
+                    onClick={() => {
+                      if (!transcript?.words?.length || !findQuery.trim()) return;
+                      const words = transcript.words.map((w) => w.text.toLowerCase());
+                      const tokens = findQuery.toLowerCase().split(/\s+/).filter(Boolean);
+                      if (!tokens.length) return;
+                      let matchLo = -1, matchHi = -1;
+                      for (let i = findStartFrom; i <= words.length - tokens.length; i += 1) {
+                        let ok = true;
+                        for (let j = 0; j < tokens.length; j += 1) { if (words[i + j] !== tokens[j]) { ok = false; break; } }
+                        if (ok) { matchLo = i; matchHi = i + tokens.length - 1; break; }
+                      }
+                      if (matchLo === -1) { setFindStartFrom(0); return; }
+                      setSelStartIdx(matchLo); setSelEndIdx(matchHi); updateRegionFromIdxRange(matchLo, matchHi); setCursorIdx(matchHi); setFindStartFrom(matchHi + 1);
+                    }}
+                  >
+                    Find
+                  </button>
+                  <button className="panel__button" type="button" onClick={() => { setFindStartFrom(0); }}>
+                    Reset
+                  </button>
                 </div>
-                <div style={{ flex: 1 }} />
-                <label className="field field--lg">
-                  <span className="field__label">Find</span>
-                  <input type="text" value={findQuery} onChange={(e) => setFindQuery(e.target.value)} placeholder="Type phrase to select…" />
-                </label>
-                <button
-                  className="panel__button"
-                  type="button"
-                  onClick={() => {
-                    if (!transcript?.words?.length || !findQuery.trim()) return;
-                    const words = transcript.words.map((w) => w.text.toLowerCase());
-                    const tokens = findQuery.toLowerCase().split(/\s+/).filter(Boolean);
-                    if (!tokens.length) return;
-                    let matchLo = -1, matchHi = -1;
-                    for (let i = findStartFrom; i <= words.length - tokens.length; i += 1) {
-                      let ok = true;
-                      for (let j = 0; j < tokens.length; j += 1) { if (words[i + j] !== tokens[j]) { ok = false; break; } }
-                      if (ok) { matchLo = i; matchHi = i + tokens.length - 1; break; }
-                    }
-                    if (matchLo === -1) { setFindStartFrom(0); return; }
-                    setSelStartIdx(matchLo); setSelEndIdx(matchHi); updateRegionFromIdxRange(matchLo, matchHi); setCursorIdx(matchHi); setFindStartFrom(matchHi + 1);
-                  }}
-                >
-                  Find
-                </button>
-                <button className="panel__button" type="button" onClick={() => { setFindStartFrom(0); }}>
-                  Reset
-                </button>
-              </div>
-              <div className="panel__actions" style={{ gap: 8 }}>
-                <span className="panel__meta">Selection: {regionStart || '…'}s → {regionEnd || '…'}s {selectionValid ? `(${(Number(regionEnd) - Number(regionStart)).toFixed(2)}s)` : ''}</span>
-                <button className="panel__button" type="button" onClick={() => { clearSelection(); }}>
-                  Clear
-                </button>
-                <button className="panel__button" type="button" disabled={!audioUrl || isPreviewingSel || !selectionValid} onClick={() => void previewSelectionOnce()}>
-                  {isPreviewingSel ? 'Playing…' : 'Preview selection'}
-                </button>
-                {whisperxEnabled ? (
-                  <button className="panel__button" type="button" disabled={busy || !jobId || !selectionValid} onClick={async () => {
+              </details>
+              <div className="selection-toolbar">
+                <div className="selection-toolbar__meta panel__meta">Selection: {regionStart || '…'}s → {regionEnd || '…'}s {selectionValid ? `(${(Number(regionEnd) - Number(regionStart)).toFixed(2)}s)` : ''}</div>
+                <div className="selection-toolbar__actions">
+                  <button className="panel__button panel__button--sm" type="button" onClick={() => { clearSelection(); }}>
+                    Clear
+                  </button>
+                  <button className="panel__button panel__button--sm" type="button" disabled={!audioUrl || isPreviewingSel || !selectionValid} onClick={() => void previewSelectionOnce()}>
+                    {isPreviewingSel ? 'Playing…' : 'Preview selection'}
+                  </button>
+                  {whisperxEnabled ? (
+                  <button className="panel__button panel__button--sm panel__button--ghost" type="button" disabled={busy || !jobId || !selectionValid} onClick={async () => {
                     if (!jobId) { setError('Transcribe first'); return; }
                     const s = Number(regionStart), e = Number(regionEnd), m = Number(regionMargin || '0.75');
                     if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Enter start/end seconds (end > start)'); return; }
@@ -903,6 +1229,7 @@ export function TranscriptPanel() {
                     {busy ? 'Aligning…' : 'Refine region'}
                   </button>
                 ) : null}
+                </div>
               </div>
 
               {viewMode === 'sentences' && transcript.segments?.length ? (
@@ -980,6 +1307,7 @@ export function TranscriptPanel() {
                     return (
                       <span
                         key={`w-${idx}`}
+                        data-word-idx={idx}
                         role="listitem"
                         title={`t=${w.start.toFixed(2)}–${w.end.toFixed(2)}`}
                         className="chip"
