@@ -40,6 +40,7 @@ export function MediaEditorLayout() {
   const [stats, setStats] = useState<{ transcribe: number; full: number; region: number }>({ transcribe: 10, full: 5, region: 5 });
   const [voiceOptions, setVoiceOptions] = useState<{ id: string; label: string }[]>([]);
   const [favoriteOptions, setFavoriteOptions] = useState<{ id: string; label: string; voiceId: string }[]>([]);
+  const [progressTimer, setProgressTimer] = useState<number | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -126,6 +127,16 @@ export function MediaEditorLayout() {
     const qid = queueAdd('Media · Align Full (WhisperX)');
     dispatch({ type: 'SET_BUSY', busy: true, status: 'Aligning full transcript with WhisperX…' });
     try {
+      // ETA progress timer
+      if (state.transcript?.duration && stats.full > 0) {
+        const total = state.transcript.duration / stats.full;
+        const startAt = Date.now();
+        const handle = window.setInterval(() => {
+          const elapsed = (Date.now() - startAt) / 1000;
+          queueProgress(qid, (elapsed / total) * 100);
+        }, 1000);
+        setProgressTimer(handle as unknown as number);
+      }
       const res = await mediaAlignFull(state.jobId);
       dispatch({ type: 'SET_TRANSCRIPT', transcript: res.transcript });
       queueDone(qid);
@@ -134,6 +145,7 @@ export function MediaEditorLayout() {
       queueErrorLatest(err?.message || 'Failed');
     } finally {
       dispatch({ type: 'SET_BUSY', busy: false, status: '' });
+      if (progressTimer) { window.clearInterval(progressTimer); setProgressTimer(null); }
     }
   }
 
@@ -142,6 +154,17 @@ export function MediaEditorLayout() {
     const qid = queueAdd(`Media · Align Region (${state.selection.start.toFixed(2)}–${state.selection.end.toFixed(2)}s)`);
     dispatch({ type: 'SET_BUSY', busy: true, status: 'Aligning region with WhisperX…' });
     try {
+      // ETA progress timer for region (include margin)
+      const dur = (state.selection.end - state.selection.start) + (state.timing.marginSec * 2);
+      if (dur > 0 && stats.region > 0) {
+        const total = dur / stats.region;
+        const startAt = Date.now();
+        const handle = window.setInterval(() => {
+          const elapsed = (Date.now() - startAt) / 1000;
+          queueProgress(qid, (elapsed / total) * 100);
+        }, 1000);
+        setProgressTimer(handle as unknown as number);
+      }
       const res = await mediaAlignRegion(state.jobId, state.selection.start, state.selection.end, state.timing.marginSec);
       dispatch({ type: 'SET_TRANSCRIPT', transcript: res.transcript });
       queueDone(qid);
@@ -150,6 +173,7 @@ export function MediaEditorLayout() {
       queueErrorLatest(err?.message || 'Failed');
     } finally {
       dispatch({ type: 'SET_BUSY', busy: false, status: '' });
+      if (progressTimer) { window.clearInterval(progressTimer); setProgressTimer(null); }
     }
   }
 
@@ -229,6 +253,19 @@ export function MediaEditorLayout() {
         <div className="stepper__status">
           {state.status ? <span className="panel__hint panel__hint--notice">{state.status}</span> : null}
           {state.error ? <span className="panel__hint panel__hint--warning">{state.error}</span> : null}
+          {(() => {
+            const active = [...queue].filter((q) => q.engine === 'media' && q.status === 'rendering');
+            const job = active.length ? active[active.length - 1] : null;
+            if (!job) return null;
+            const pct = Math.round(Math.max(0, Math.min(100, job.progress ?? 0)));
+            return (
+              <span className="job-pill" aria-live="polite">
+                <span className="job-pill__label">{job.label}</span>
+                <span className="job-pill__pct">{pct}%</span>
+                <span className="job-pill__bar"><i style={{ width: `${pct}%` }} /></span>
+              </span>
+            );
+          })()}
         </div>
       </div>
 
