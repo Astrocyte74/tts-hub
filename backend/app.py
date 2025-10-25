@@ -69,6 +69,10 @@ YT_DLP_EXTRACTOR_ARGS = os.environ.get("YT_DLP_EXTRACTOR_ARGS", "")
 XTTS_MIN_REF_SECONDS = float(os.environ.get("XTTS_MIN_REF_SECONDS", "5"))
 XTTS_MAX_REF_SECONDS = float(os.environ.get("XTTS_MAX_REF_SECONDS", "30"))
 
+# Media artifact cleanup config
+MEDIA_TTL_DAYS = float(os.environ.get("MEDIA_TTL_DAYS", "7"))
+MEDIA_CLEANUP_INTERVAL_HOURS = float(os.environ.get("MEDIA_CLEANUP_INTERVAL_HOURS", "12"))
+
 # Media edit / STT config
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base").strip()
 ALLOW_STUB_STT = os.environ.get("ALLOW_STUB_STT", "1").strip() not in {"0", "false", "False"}
@@ -96,6 +100,8 @@ except Exception:  # pragma: no cover
 
 _xtts_voice_cache: Dict[str, Path] = {}
 _xtts_voice_lock = threading.Lock()
+_cleanup_lock = threading.Lock()
+_last_cleanup_ts: Optional[float] = None
 
 _openvoice_voice_cache: Dict[str, Dict[str, Any]] = {}
 _openvoice_voice_lock = threading.Lock()
@@ -216,6 +222,59 @@ def _record_stat(kind: str, sample: Dict[str, Any]) -> None:
         stats_path.parent.mkdir(parents=True, exist_ok=True)
         stats_path.write_text(json.dumps(data), encoding="utf-8")
     except Exception:
+        pass
+
+
+def _maybe_cleanup_media_artifacts() -> None:
+    """Delete old media artifacts in out/media_edits and out/media_cache based on TTL.
+
+    Runs at most once per MEDIA_CLEANUP_INTERVAL_HOURS.
+    """
+    global _last_cleanup_ts
+    try:
+        now = time.time()
+        with _cleanup_lock:
+            if _last_cleanup_ts is not None:
+                if (now - _last_cleanup_ts) < (MEDIA_CLEANUP_INTERVAL_HOURS * 3600.0):
+                    return
+            _last_cleanup_ts = now
+
+        ttl_seconds = MEDIA_TTL_DAYS * 86400.0
+        # Clean media_edits job directories
+        edits_root = OUTPUT_DIR / "media_edits"
+        if edits_root.exists():
+            for child in edits_root.iterdir():
+                try:
+                    if not child.is_dir():
+                        continue
+                    # Compute newest mtime within the directory
+                    newest = child.stat().st_mtime
+                    for p in child.rglob("*"):
+                        try:
+                            newest = max(newest, p.stat().st_mtime)
+                        except Exception:
+                            pass
+                    if (now - newest) > ttl_seconds:
+                        shutil.rmtree(child, ignore_errors=True)
+                        _log(f"Cleanup: removed old media job '{child.name}'")
+                except Exception:
+                    pass
+
+        # Clean YouTube cache files
+        yt_root = OUTPUT_DIR / "media_cache" / "youtube"
+        if yt_root.exists():
+            for f in yt_root.glob("*"):
+                try:
+                    if not f.is_file():
+                        continue
+                    age = now - f.stat().st_mtime
+                    if age > ttl_seconds:
+                        f.unlink(missing_ok=True)
+                        _log(f"Cleanup: removed old YouTube cache '{f.name}'")
+                except Exception:
+                    pass
+    except Exception:
+        # Never raise from cleanup
         pass
 
 
@@ -2370,6 +2429,8 @@ def media_transcribe_endpoint():
       - application/json: { source: 'youtube', url, start?, end? }
     """
     content_type = (request.content_type or "").lower()
+    # Opportunistic cleanup of old media artifacts
+    _maybe_cleanup_media_artifacts()
     job_id = uuid.uuid4().hex[:12]
     job_dir = _media_job_dir(job_id)
     input_path: Optional[Path] = None
@@ -2758,6 +2819,8 @@ def media_estimate_endpoint():
     Body: { source: 'youtube', url }
     Returns: { duration, cached?: boolean }
     """
+    # Opportunistic cleanup of old media artifacts
+    _maybe_cleanup_media_artifacts()
     payload = parse_json_request()
     source = str(payload.get('source') or '').strip().lower()
     if source != 'youtube':
