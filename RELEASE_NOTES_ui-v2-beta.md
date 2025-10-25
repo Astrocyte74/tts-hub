@@ -7,7 +7,7 @@ This release delivers a modernized, state‑aware UI and the first phase of prev
 What’s new
 - Voice Browser 2.0: hover previews, favorites, facet chips, bulk “Generate previews for filtered voices”.
 - Script Authoring: SSML helper chips (Pause/Emphasis/Pitch/Rate), live counters, basic SSML validation.
-- Queue & Results: bottom drawer with Queue | History, optimistic progress, session persistence, mini waveform trim/loop/export (WAV).
+- Queue & Results: bottom drawer with Queue | Clips, optimistic progress, session persistence, mini waveform trim/loop/export (WAV).
 - Preview Generation (Kokoro): `POST /api/voices/preview` to cache ~5s previews in `out/voice_previews/kokoro/`; per‑card and bulk UI actions.
 - Top bar: live queue badge on Clips chip; Quick Generate; Settings.
 - Launchers: shared model reuse, `SKIP_BACKEND=1` for UI‑only, `TAKE_OVER=1` for XTTS, status summary, dev port auto‑pick.

@@ -20,9 +20,9 @@ cp .env.example .env           # optional; launcher auto-seeds this file
 npm run dev
 ```
 
-> Tip: Double-clicking `../Start Kokoro Playground.command` launches both the Flask backend and this Vite dev server automatically.
+> Tip: Double-clicking `../Start Kokoro Playground (XTTS Server).command` launches both the Flask backend and this Vite dev server automatically.
 
-By default Vite serves the SPA on `http://127.0.0.1:5173`. The app expects the Flask playground to be running (e.g. via `Start Kokoro Playground.command` or `scripts/playground`) and accessible at the host configured in `.env`.
+By default Vite serves the SPA on `http://127.0.0.1:5175`. The app expects the Flask playground to be running (e.g. via `Start Kokoro Playground (XTTS Server).command`) and accessible at the host configured in `.env`.
 
 ## Environment
 
@@ -31,7 +31,7 @@ By default Vite serves the SPA on `http://127.0.0.1:5173`. The app expects the F
 | `VITE_API_BASE_URL` | Base URL for the Flask backend (e.g. `http://127.0.0.1:7860`). Leave empty to proxy through the same origin. |
 | `VITE_API_PREFIX` | Path segment prepended before endpoint names. Defaults to `api` to match the Flask blueprint. |
 | `VITE_HOST` | Hostname Vite should bind to (defaults to `127.0.0.1`). |
-| `VITE_PORT` | Port for the dev server (defaults to `5173`). |
+| `VITE_PORT` | Port for the dev server (defaults to `5175`). |
 
 Both values are optional. When omitted the SPA calls relative paths such as `/voices` and relies on Vite proxying during development.
 
