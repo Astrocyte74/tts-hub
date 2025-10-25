@@ -1,0 +1,64 @@
+.media-editor {
+  display: grid;
+  grid-template-columns: minmax(340px, 420px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1080px) {
+  .media-editor {
+    grid-template-columns: 1fr;
+  }
+}
+
+.media-editor__left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.media-editor__right {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 420px;
+}
+
+/* Sticky player + transport under the page header */
+.media-editor__player {
+  position: sticky;
+  top: 72px; /* below the topbar */
+  z-index: 10;
+  background: rgba(2, 6, 23, 0.6);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.media-editor__timeline {
+  position: relative;
+  height: 8px;
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 6px;
+  margin-top: 6px;
+  cursor: pointer;
+}
+
+.media-editor__words {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0;
+  user-select: none;
+  max-height: 62vh;
+  overflow: auto;
+  border-radius: 12px;
+}
+
+/* Slightly softer chip defaults within the media editor context */
+.media-editor__words .chip {
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+

@@ -344,8 +344,8 @@ export function TranscriptPanel() {
 
   return (
     <div className="panel panel--compact" style={{ marginTop: 12 }}>
-      <div className="dialog-stack" style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 460px) 1fr', gap: 16, alignItems: 'start' }}>
-        <div>
+      <div className="media-editor">
+        <div className="media-editor__left">
           <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
             <label className="field" style={{ minWidth: 280 }}>
               <span className="field__label">YouTube URL</span>
@@ -547,13 +547,13 @@ export function TranscriptPanel() {
             ) : null}
           </div>
         </div>
-        <div>
+        <div className="media-editor__right">
           {audioUrl ? (
-            <div>
+            <div className="media-editor__player">
               <audio ref={audioRef} controls src={audioUrl} style={{ width: '100%' }} onPlay={handleAudioPlay} />
               {/* Custom selection timeline overlay */}
               <div
-                style={{ position: 'relative', height: 8, background: 'rgba(148,163,184,0.25)', borderRadius: 6, marginTop: 6, cursor: 'pointer' }}
+                className="media-editor__timeline"
                 ref={timelineRef}
                 onClick={(e) => {
                   if (!audioDuration || !audioRef.current) return;
@@ -642,12 +642,11 @@ export function TranscriptPanel() {
             </div>
           ) : null}
           {transcript ? (
-            <div>
+            <div className="media-editor__words">
               <p className="panel__meta">Language: {transcript.language || 'unknown'} · Duration: {transcript.duration?.toFixed?.(1) ?? transcript.duration}s</p>
               <div
                 role="list"
                 aria-label="Transcript words (drag to select a region)"
-                style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 0', userSelect: 'none' }}
                 onMouseUp={() => setIsSelecting(false)}
                 tabIndex={0}
                 onKeyDown={(e) => {
