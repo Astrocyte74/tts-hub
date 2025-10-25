@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { mediaAlignFull, mediaAlignRegion, mediaApply, mediaEstimateUrl, mediaGetStats, mediaReplacePreview, mediaTranscribeFromUrl, mediaTranscribeUpload, resolveAudioUrl } from '../api/client';
 import type { MediaTranscriptResult } from '../types';
+import { useSessionStorage } from '../hooks/useSessionStorage';
 
 export function TranscriptPanel() {
   // no collapsible state (full-page)
@@ -73,6 +74,35 @@ export function TranscriptPanel() {
   const [avgRtf, setAvgRtf] = useState<{ full: number; region: number; transcribe: number }>({ full: 5, region: 5, transcribe: 10 });
   const progressTimer = useRef<number | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
+  // Results drawer queue integration (shared session key)
+  type QueueItem = {
+    id: string;
+    label: string;
+    engine: string;
+    status: 'pending' | 'rendering' | 'done' | 'error' | 'canceled';
+    progress?: number;
+    startedAt?: string;
+    finishedAt?: string;
+    error?: string;
+  };
+  const [queue, setQueue] = useSessionStorage<QueueItem[]>('kokoro:queue.v1', []);
+  function queueAdd(label: string): string {
+    const id = `media-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
+    setQueue((prev) => [
+      ...prev,
+      { id, label, engine: 'media', status: 'rendering', progress: 0, startedAt: new Date().toISOString() },
+    ]);
+    return id;
+  }
+  function queueProgress(id: string, pct: number) {
+    setQueue((prev) => prev.map((q) => (q.id === id ? { ...q, progress: Math.max(0, Math.min(100, Math.round(pct))) } : q)));
+  }
+  function queueDone(id: string) {
+    setQueue((prev) => prev.map((q) => (q.id === id ? { ...q, status: 'done', progress: 100, finishedAt: new Date().toISOString() } : q)));
+  }
+  function queueError(id: string, message: string) {
+    setQueue((prev) => prev.map((q) => (q.id === id ? { ...q, status: 'error', error: message, finishedAt: new Date().toISOString() } : q)));
+  }
   // Word selection state (drag to select)
   const [isSelecting, setIsSelecting] = useState(false);
   const [selStartIdx, setSelStartIdx] = useState<number | null>(null);
@@ -230,13 +260,11 @@ export function TranscriptPanel() {
     }
   }
 
-  // Fetch stats once when panel opens
+  // Fetch stats once when component mounts (page-based panel)
   useEffect(() => {
-    if (open) {
-      void refreshStats();
-    }
+    void refreshStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, []);
 
   async function handleTranscribe(kind: 'url' | 'file') {
     try {
@@ -245,9 +273,11 @@ export function TranscriptPanel() {
       setError(null);
       setTranscript(null);
       setAudioUrl(null);
+      const qid = queueAdd(kind === 'url' ? 'Media · Transcribe URL' : 'Media · Transcribe File');
       if (kind === 'url') {
         if (!url.trim()) {
           setError('Paste a YouTube URL first');
+          queueError(qid, 'No URL');
           return;
         }
         // ETA progress for YouTube using estimate and avgRtf
@@ -260,7 +290,9 @@ export function TranscriptPanel() {
               setProgress(0);
               progressTimer.current = window.setInterval(() => {
                 const elapsed = (Date.now() - startAt) / 1000;
-                setProgress(Math.max(0, Math.min(1, elapsed / total)));
+                const frac = Math.max(0, Math.min(1, elapsed / total));
+                setProgress(frac);
+                queueProgress(qid, frac * 100);
               }, 1000);
             }
           }
@@ -275,9 +307,11 @@ export function TranscriptPanel() {
         if (typeof elapsed === 'number' && typeof rtf === 'number') {
           setStatus(`Transcribed in ${elapsed.toFixed(2)}s (RTF ${rtf.toFixed(2)}×)`);
         }
+        queueDone(qid);
       } else {
         if (!file) {
           setError('Choose a media file to upload');
+          queueError(qid, 'No file');
           return;
         }
         const res = await mediaTranscribeUpload(file);
@@ -290,9 +324,15 @@ export function TranscriptPanel() {
         if (typeof elapsed === 'number' && typeof rtf === 'number') {
           setStatus(`Transcribed in ${elapsed.toFixed(2)}s (RTF ${rtf.toFixed(2)}×)`);
         }
+        queueDone(qid);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Transcription failed');
+      // Best effort to set latest queue item to error if any
+      setQueue((prev) => {
+        const last = [...prev].reverse().find((q) => q.engine === 'media' && q.status === 'rendering');
+        return last ? prev.map((q) => (q.id === last.id ? { ...q, status: 'error', error: err instanceof Error ? err.message : 'Failed' } : q)) : prev;
+      });
     } finally {
       setBusy(false);
       setStatus('');
@@ -310,6 +350,7 @@ export function TranscriptPanel() {
       setBusy(true);
       setStatus('Aligning full transcript with WhisperX…');
       setError(null);
+      const qid = queueAdd('Media · Align Full (WhisperX)');
       // ETA progress: estimate using avgRtf.full and transcript duration
       if (transcript?.duration && avgRtf.full > 0) {
         const total = transcript.duration / avgRtf.full;
@@ -317,7 +358,9 @@ export function TranscriptPanel() {
         setProgress(0);
         progressTimer.current = window.setInterval(() => {
           const elapsed = (Date.now() - start) / 1000;
-          setProgress(Math.max(0, Math.min(1, elapsed / total)));
+          const frac = Math.max(0, Math.min(1, elapsed / total));
+          setProgress(frac);
+          queueProgress(qid, frac * 100);
         }, 1000);
       }
       const res = await mediaAlignFull(jobId);
@@ -327,8 +370,13 @@ export function TranscriptPanel() {
         const words = res.stats?.words ?? res.transcript?.words?.length ?? 0;
         setStatus(`Aligned full transcript in ${elapsed.toFixed(2)}s (words ${words})`);
       }
+      queueDone(qid);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Alignment failed');
+      setQueue((prev) => {
+        const last = [...prev].reverse().find((q) => q.engine === 'media' && q.status === 'rendering');
+        return last ? prev.map((q) => (q.id === last.id ? { ...q, status: 'error', error: err instanceof Error ? err.message : 'Failed' } : q)) : prev;
+      });
     } finally {
       setBusy(false);
       setStatus('');
@@ -405,6 +453,7 @@ export function TranscriptPanel() {
                     setBusy(true);
                     setStatus(`Aligning region ${s.toFixed(2)}–${e.toFixed(2)}s with WhisperX…`);
                     setError(null);
+                    const qid = queueAdd(`Media · Align Region (${s.toFixed(2)}–${e.toFixed(2)}s)`);
                     // ETA progress for region: include margin
                     const dur = (e - s) + (Number.isFinite(m) ? Number(m) * 2 : 1.5);
                     const total = dur / (avgRtf.region > 0 ? avgRtf.region : 5);
@@ -412,7 +461,9 @@ export function TranscriptPanel() {
                     setProgress(0);
                     progressTimer.current = window.setInterval(() => {
                       const elapsed = (Date.now() - startAt) / 1000;
-                      setProgress(Math.max(0, Math.min(1, elapsed / total)));
+                      const frac = Math.max(0, Math.min(1, elapsed / total));
+                      setProgress(frac);
+                      queueProgress(qid, frac * 100);
                     }, 1000);
                     const res = await mediaAlignRegion(jobId, s, e, Number.isFinite(m) ? m : undefined);
                     setTranscript(res.transcript);
@@ -422,8 +473,13 @@ export function TranscriptPanel() {
                     if (typeof elapsed === 'number' && typeof rtf === 'number') {
                       setStatus(`Aligned ${words} words in ${elapsed.toFixed(2)}s (RTF ${rtf.toFixed(2)}×)`);
                     }
+                    queueDone(qid);
                   } catch (err) {
                     setError(err instanceof Error ? err.message : 'Region alignment failed');
+                    setQueue((prev) => {
+                      const last = [...prev].reverse().find((q) => q.engine === 'media' && q.status === 'rendering');
+                      return last ? prev.map((q) => (q.id === last.id ? { ...q, status: 'error', error: err instanceof Error ? err.message : 'Failed' } : q)) : prev;
+                    });
                   } finally {
                     setBusy(false);
                     setStatus('');
@@ -509,6 +565,7 @@ export function TranscriptPanel() {
                   setStatus('Generating replace preview…');
                   setError(null);
                   setReplacePreviewUrl(null);
+                  const qid = queueAdd(`Media · Replace Preview (${s.toFixed(2)}–${e.toFixed(2)}s)`);
                   const chosen = voiceMode === 'xtts' ? (voiceId || undefined) : voiceMode === 'favorite' ? (favVoiceId || undefined) : undefined;
                   const trimDb = Number((document.getElementById('trim-db') as HTMLInputElement)?.value || '40');
                   const trimPre = Number((document.getElementById('trim-pre') as HTMLInputElement)?.value || '8');
@@ -519,8 +576,13 @@ export function TranscriptPanel() {
                   if (typeof se === 'number') {
                     setStatus(`Synthesized and patched preview in ${se.toFixed(2)}s`);
                   }
+                  queueDone(qid);
                 } catch (err) {
                   setError(err instanceof Error ? err.message : 'Replace preview failed');
+                  setQueue((prev) => {
+                    const last = [...prev].reverse().find((q) => q.engine === 'media' && q.status === 'rendering');
+                    return last ? prev.map((q) => (q.id === last.id ? { ...q, status: 'error', error: err instanceof Error ? err.message : 'Failed' } : q)) : prev;
+                  });
                 } finally {
                   setBusy(false);
                 }
@@ -601,11 +663,17 @@ export function TranscriptPanel() {
                     try {
                       setBusy(true);
                       setStatus('Applying preview to final output…');
+                      const qid = queueAdd('Media · Apply to Final');
                       const res = await mediaApply(jobId);
                       setFinalUrl(res.final_url ? resolveAudioUrl(res.final_url) : null);
                       setStatus(`Applied to ${res.mode === 'video' ? 'video' : 'audio'} (${res.container})`);
+                      queueDone(qid);
                     } catch (err) {
                       setError(err instanceof Error ? err.message : 'Apply failed');
+                      setQueue((prev) => {
+                        const last = [...prev].reverse().find((q) => q.engine === 'media' && q.status === 'rendering');
+                        return last ? prev.map((q) => (q.id === last.id ? { ...q, status: 'error', error: err instanceof Error ? err.message : 'Failed' } : q)) : prev;
+                      });
                     } finally {
                       setBusy(false);
                     }
@@ -705,6 +773,11 @@ export function TranscriptPanel() {
                 >
                   Clear selection
                 </button>
+                {!whisperxEnabled ? (
+                  <p className="panel__hint panel__hint--muted" title="Enable WhisperX on the server to get word-level timings and alignment.">
+                    WhisperX disabled on server. Enable with WHISPERX_ENABLE=1 and install whisperx + torch.
+                  </p>
+                ) : null}
                 {selStartIdx !== null && selEndIdx !== null ? (
                   <>
                     <span className="panel__meta">Selection: {regionStart || '…'}s → {regionEnd || '…'}s</span>

@@ -463,6 +463,11 @@ export async function mediaReplacePreview(payload: {
   speed?: number;
   marginMs?: number;
   fadeMs?: number;
+  // Optional trimming/timing refinement controls (supported by backend)
+  trimEnable?: boolean;
+  trimTopDb?: number;
+  trimPrepadMs?: number;
+  trimPostpadMs?: number;
 }): Promise<MediaReplacePreviewResponse> {
   return postJson<MediaReplacePreviewResponse>('media/replace_preview', payload);
 }
