@@ -327,7 +327,26 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
       ctx.fillStyle = '#22d3ee';
       ctx.fillRect(x, 0, 2, h);
     }
-  }, [peaks, duration, width, height, dpr, selection, words, currentTime, timeToX]);
+  }, [
+    peaks,
+    duration,
+    width,
+    height,
+    dpr,
+    selection,
+    words,
+    currentTime,
+    timeToX,
+    styleMode,
+    showTicks,
+    showWhiskers,
+    showBlocks,
+    showRepl,
+    showDelta,
+    replaceWords,
+    blocks,
+    diffMarkers,
+  ]);
 
   // Minimap draw (full duration)
   useEffect(() => {
