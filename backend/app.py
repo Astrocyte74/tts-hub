@@ -2266,6 +2266,13 @@ def _apply_replace_with_crossfade(source: np.ndarray, rep: np.ndarray, sr: int, 
     for t in range(fade):
         a = (t + 1) / float(fade)
         out[i1 - fade + t] = rep[target_len - fade + t] * (1.0 - a) + source[i1 - fade + t] * a
+    # Peak-normalize to prevent clipping if needed
+    try:
+        peak = float(np.max(np.abs(out)))
+    except Exception:
+        peak = 0.0
+    if peak > 1.0:
+        out = (out / peak) * 0.98
     return out
 
 
