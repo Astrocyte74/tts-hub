@@ -508,6 +508,7 @@ export function TranscriptPanel() {
   })();
   const canStep2 = Boolean((jobId && audioUrl) || transcript);
   const canStep3 = canStep2 && selectionValid;
+  const showLegacyTimeline = false;
 
   // Guard against blank state if a persisted step is not yet unlocked
   useEffect(() => {
@@ -1189,7 +1190,8 @@ export function TranscriptPanel() {
                   </>
                 );
               })()}
-              {/* Custom selection timeline overlay */}
+              {/* Custom selection timeline overlay (legacy; hidden when waveform is used) */}
+              {showLegacyTimeline ? (
               <div
                 className="media-editor__timeline"
                 ref={timelineRef}
@@ -1257,6 +1259,7 @@ export function TranscriptPanel() {
                   <div style={{ position: 'absolute', left: `${(audioTime / audioDuration) * 100}%`, top: -2, bottom: -2, width: 2, background: '#93c5fd' }} />
                 ) : null}
               </div>
+              ) : null}
               {/* Secondary play selection was redundant; kept single button next to player */}
             </div>
           ) : null}

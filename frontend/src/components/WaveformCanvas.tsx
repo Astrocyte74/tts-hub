@@ -25,6 +25,7 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
   const [zoom, setZoom] = useState<number>(Math.max(1, defaultZoom || 1)); // 1 = fit all
   const [viewStart, setViewStart] = useState<number>(0); // seconds
   const [isHot, setIsHot] = useState<boolean>(false); // keyboard scope when hovered
+  const [styleMode, setStyleMode] = useState<'bars' | 'line'>('bars');
 
   // Resize observer to keep canvas crisp
   useEffect(() => {
@@ -90,18 +91,47 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
 
     // Envelope — render only the visible subset
     if (peaks && peaks.length && duration) {
-      ctx.fillStyle = 'rgba(59,130,246,0.8)';
       const center = Math.floor(h / 2);
       const n = peaks.length;
       const startIdx = Math.max(0, Math.floor(((viewStart) / duration) * (n - 1)));
       const endIdx = Math.min(n - 1, Math.ceil(((viewStart + viewDuration) / duration) * (n - 1)));
       const span = Math.max(1, endIdx - startIdx);
-      for (let i = startIdx; i <= endIdx; i += 1) {
-        const v = peaks[i];
-        const rel = (i - startIdx) / span;
-        const x = Math.floor(rel * w);
-        const y = Math.floor(v * (h / 2 - 2));
-        ctx.fillRect(x, center - y, 1, y * 2);
+      if (styleMode === 'bars') {
+        ctx.fillStyle = 'rgba(59,130,246,0.8)';
+        for (let i = startIdx; i <= endIdx; i += 1) {
+          const v = peaks[i];
+          const rel = (i - startIdx) / span;
+          const x = Math.floor(rel * w);
+          const y = Math.floor(v * (h / 2 - 2));
+          ctx.fillRect(x, center - y, 1, y * 2);
+        }
+      } else {
+        // line mode
+        ctx.strokeStyle = 'rgba(59,130,246,0.95)';
+        ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
+        ctx.beginPath();
+        for (let i = startIdx; i <= endIdx; i += 1) {
+          const v = peaks[i];
+          const rel = (i - startIdx) / span;
+          const x = Math.floor(rel * w);
+          const y = Math.floor(v * (h / 2 - 2));
+          const yy = center - y; // top line
+          if (i === startIdx) ctx.moveTo(x, yy);
+          else ctx.lineTo(x, yy);
+        }
+        ctx.stroke();
+        // mirror line for symmetry
+        ctx.beginPath();
+        for (let i = startIdx; i <= endIdx; i += 1) {
+          const v = peaks[i];
+          const rel = (i - startIdx) / span;
+          const x = Math.floor(rel * w);
+          const y = Math.floor(v * (h / 2 - 2));
+          const yy = center + y; // bottom line
+          if (i === startIdx) ctx.moveTo(x, yy);
+          else ctx.lineTo(x, yy);
+        }
+        ctx.stroke();
       }
     }
 
@@ -293,6 +323,10 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
         <button type="button" className="wf-btn" onClick={() => { setZoom(1); setViewStart(0); }}>Fit</button>
         <button type="button" className="wf-btn" onClick={() => { if (selection && duration) { const len = Math.max(0.01, selection.end - selection.start); const nextZoom = Math.min(100, duration / len); setZoom(nextZoom); setViewStart(clampViewStart(selection.start - 0.05 * len)); } }} disabled={!selection || !(selection.end > selection.start)}>Sel</button>
         <button type="button" className="wf-btn" onClick={() => { setZoom((z) => Math.min(100, z * 1.5)); }}>+</button>
+        <div className="wf-seg" role="radiogroup" aria-label="Waveform style">
+          <button type="button" className={`wf-btn ${styleMode === 'bars' ? 'is-active' : ''}`} onClick={() => setStyleMode('bars')} title="Bars">Bars</button>
+          <button type="button" className={`wf-btn ${styleMode === 'line' ? 'is-active' : ''}`} onClick={() => setStyleMode('line')} title="Line">Line</button>
+        </div>
       </div>
       {/* Footer: shortcuts and legend */}
       <div className="waveform__footer">

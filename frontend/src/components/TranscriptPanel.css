@@ -190,6 +190,8 @@
   border-radius: 999px;
 }
 .wf-btn:hover { background: rgba(59,130,246,0.25); }
+.wf-seg .wf-btn { border-radius: 6px; }
+.wf-btn.is-active { background: rgba(59,130,246,0.35); }
 
 .waveform__footer {
   display: flex;
