@@ -2238,7 +2238,15 @@ def _rms(x: np.ndarray) -> float:
     return float(np.sqrt(np.mean(np.square(x) + 1e-9)))
 
 
-def _apply_replace_with_crossfade(source: np.ndarray, rep: np.ndarray, sr: int, i0: int, i1: int, fade_ms: float = 30.0) -> np.ndarray:
+def _apply_replace_with_crossfade(
+    source: np.ndarray,
+    rep: np.ndarray,
+    sr: int,
+    i0: int,
+    i1: int,
+    fade_ms: float = 30.0,
+    duck_gain: Optional[float] = None,
+) -> np.ndarray:
     out = source.copy()
     target_len = max(i1 - i0, 1)
     if len(rep) != target_len:
@@ -2254,27 +2262,53 @@ def _apply_replace_with_crossfade(source: np.ndarray, rep: np.ndarray, sr: int, 
         r_rep = _rms(rep)
         if r_rep > 0:
             rep = rep * (r_ref / r_rep)
-    # Crossfade
+    # Crossfade with optional ducking of the original within the region
     fade = int(min(int(fade_ms / 1000.0 * sr), target_len // 4))
     fade = max(fade, 1)
     # Start crossfade
     for t in range(fade):
         a = (t + 1) / float(fade)
-        out[i0 + t] = source[i0 + t] * (1.0 - a) + rep[t] * a
+        if duck_gain and duck_gain > 0:
+            # Transition from source to (rep + ducked source)
+            out[i0 + t] = (source[i0 + t] * ((1.0 - a) + a * duck_gain)) + (rep[t] * a)
+        else:
+            out[i0 + t] = source[i0 + t] * (1.0 - a) + rep[t] * a
     # Middle
     if target_len > 2 * fade:
-        out[i0 + fade : i1 - fade] = rep[fade : target_len - fade]
+        if duck_gain and duck_gain > 0:
+            out[i0 + fade : i1 - fade] = rep[fade : target_len - fade] + (source[i0 + fade : i1 - fade] * duck_gain)
+        else:
+            out[i0 + fade : i1 - fade] = rep[fade : target_len - fade]
     # End crossfade
     for t in range(fade):
         a = (t + 1) / float(fade)
-        out[i1 - fade + t] = rep[target_len - fade + t] * (1.0 - a) + source[i1 - fade + t] * a
-    # Peak-normalize to prevent clipping if needed
+        if duck_gain and duck_gain > 0:
+            # Transition from (rep + ducked source) back to source
+            s = source[i1 - fade + t]
+            r = rep[target_len - fade + t]
+            out[i1 - fade + t] = (r * (1.0 - a)) + s * (duck_gain * (1.0 - a) + a)
+        else:
+            out[i1 - fade + t] = rep[target_len - fade + t] * (1.0 - a) + source[i1 - fade + t] * a
+
+    # Soft limiter to prevent clipping while preserving loudness
+    def _soft_limit(x: np.ndarray, ceiling: float = 0.98, drive: float = 2.0) -> np.ndarray:
+        if x.size == 0:
+            return x
+        peak = float(np.max(np.abs(x)))
+        if peak <= ceiling:
+            return x
+        # Apply tanh-based soft saturation normalized to the ceiling
+        y = np.tanh((x / ceiling) * drive) / np.tanh(drive)
+        return (y * ceiling).astype('float32')
+
+    out = _soft_limit(out)
+    # Final safety in extreme cases
     try:
-        peak = float(np.max(np.abs(out)))
+        peak2 = float(np.max(np.abs(out)))
+        if peak2 > 1.0:
+            out = (out / peak2) * 0.98
     except Exception:
-        peak = 0.0
-    if peak > 1.0:
-        out = (out / peak) * 0.98
+        pass
     return out
 
 
@@ -2777,6 +2811,15 @@ def media_replace_preview_endpoint():
 
     margin_ms = float(payload.get("marginMs", 0))
     fade_ms = float(payload.get("fadeMs", 30))
+    duck_db = payload.get("duckDb")
+    duck_gain: Optional[float] = None
+    try:
+        if duck_db is not None:
+            duck_db_f = float(duck_db)
+            # Convert dB to linear gain; clamp to [0, 1]
+            duck_gain = max(0.0, min(1.0, 10.0 ** (duck_db_f / 20.0)))
+    except Exception:
+        duck_gain = None
     language = str(payload.get("language") or "")
     speed = float(payload.get("speed") or 1.0)
     explicit_voice = payload.get("voice")  # could be id or path
@@ -2872,7 +2915,7 @@ def media_replace_preview_endpoint():
         rep = _trim_silence(rep, top_db=trim_top_db, sr=sr, prepad_ms=trim_pre_ms, postpad_ms=trim_post_ms)
     i0 = int(max(0.0, start) * sr)
     i1 = int(min(source_dur, end) * sr)
-    preview = _apply_replace_with_crossfade(src, rep, sr, i0, i1, fade_ms=fade_ms)
+    preview = _apply_replace_with_crossfade(src, rep, sr, i0, i1, fade_ms=fade_ms, duck_gain=duck_gain)
 
     # Write preview and diff
     ts = int(time.time())
@@ -2907,7 +2950,7 @@ def media_replace_preview_endpoint():
         'jobId': job_id,
         'preview_url': f"/audio/{rel_prev}",
         'diff_url': f"/audio/{rel_diff}",
-        'stats': { 'synth_elapsed': elapsed_synth, 'fade_ms': fade_ms }
+        'stats': { 'synth_elapsed': elapsed_synth, 'fade_ms': fade_ms, 'duck_db': duck_db }
     })
 
 
