@@ -180,7 +180,7 @@ function coerceChatttsPreset(entry: unknown, index: number): ChatttsPreset | nul
   return preset;
 }
 
-function resolveAudioUrl(candidate: string | undefined): string {
+export function resolveAudioUrl(candidate: string | undefined): string {
   if (!candidate) {
     throw new Error('No audio URL provided by the server response');
   }
@@ -447,6 +447,10 @@ export async function mediaAlignRegion(jobId: string, start: number, end: number
 
 export async function mediaGetStats(): Promise<MediaStatsSummary> {
   return getJson<MediaStatsSummary>('media/stats');
+}
+
+export async function mediaEstimateUrl(url: string): Promise<{ duration: number; cached?: boolean }> {
+  return postJson<{ duration: number; cached?: boolean }>('media/estimate', { source: 'youtube', url });
 }
 
 export async function mediaReplacePreview(payload: {

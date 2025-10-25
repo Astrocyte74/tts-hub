@@ -165,6 +165,32 @@ def _ffprobe_duration_seconds(path: Path) -> float:
         return 0.0
 
 
+def _ffprobe_has_video(path: Path) -> bool:
+    """Return True if the media file contains at least one video stream."""
+    try:
+        proc = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "csv=p=0",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        out = (proc.stdout or "").strip()
+        return bool(out)
+    except Exception:
+        return False
+
+
 def _log(msg: str) -> None:
     print(f"[media] {msg}")
 
@@ -2147,21 +2173,48 @@ def _load_wav_mono(path: Path, target_sr: Optional[int] = None) -> Tuple[np.ndar
 
 
 def _time_stretch_to_len(samples: np.ndarray, sr: int, target_len: int) -> np.ndarray:
-    import librosa as _lb
+    """High-quality time stretch using ffmpeg atempo chain, fallback to librosa.
+
+    Keeps pitch. Builds a chain of atempo steps within [0.5, 2.0] to reach the desired ratio.
+    """
+    import tempfile as _tf
+    import soundfile as _sf
     cur = len(samples)
     if cur <= 1 or target_len <= 1:
         return np.zeros(target_len, dtype='float32')
-    rate = cur / float(target_len)
-    # clamp extreme rates
-    rate = float(max(0.5, min(2.5, rate)))
-    stretched = _lb.effects.time_stretch(samples, rate=rate)
+    ratio = cur / float(target_len)  # playback rate needed
+    try:
+        # Decompose into steps in [0.5, 2.0]
+        steps: list[float] = []
+        r = ratio
+        while r > 2.0:
+            steps.append(2.0)
+            r /= 2.0
+        while r < 0.5:
+            steps.append(0.5)
+            r /= 0.5
+        steps.append(r)
+        filt = ",".join([f"atempo={s:.6f}" for s in steps])
+        with _tf.TemporaryDirectory(prefix="ffts-") as td:
+            inp = Path(td) / "in.wav"
+            outp = Path(td) / "out.wav"
+            _sf.write(inp, samples.astype('float32'), sr)
+            cmd = ["ffmpeg","-hide_banner","-nostdin","-loglevel","error","-y","-i", str(inp), "-filter:a", filt, "-ar", str(sr), str(outp)]
+            subprocess.run(cmd, check=True)
+            stretched, _ = _sf.read(outp, dtype='float32', always_2d=False)
+        stretched = stretched.astype('float32')
+    except Exception:
+        # Fallback: librosa
+        import librosa as _lb
+        rate = float(max(0.5, min(2.5, ratio)))
+        stretched = _lb.effects.time_stretch(samples, rate=rate).astype('float32')
     # Adjust to exactly target_len
     if len(stretched) > target_len:
         stretched = stretched[:target_len]
     elif len(stretched) < target_len:
         pad = target_len - len(stretched)
         stretched = np.pad(stretched, (0, pad), mode='constant')
-    return stretched.astype('float32')
+    return stretched
 
 
 def _rms(x: np.ndarray) -> float:
@@ -2200,6 +2253,25 @@ def _apply_replace_with_crossfade(source: np.ndarray, rep: np.ndarray, sr: int, 
         a = (t + 1) / float(fade)
         out[i1 - fade + t] = rep[target_len - fade + t] * (1.0 - a) + source[i1 - fade + t] * a
     return out
+
+
+def _trim_silence(samples: np.ndarray, *, top_db: float = 40.0, sr: int = 24000, prepad_ms: float = 10.0, postpad_ms: float = 10.0) -> np.ndarray:
+    """Energy-based trimming for leading/trailing silence.
+
+    Uses librosa.effects.trim; adds small pre/post padding to avoid hard cuts.
+    """
+    import librosa as _lb
+    if samples.size == 0:
+        return samples
+    try:
+        trimmed, idx = _lb.effects.trim(samples, top_db=top_db)
+        if idx is not None and len(idx) == 2:
+            start = max(0, idx[0] - int(prepad_ms / 1000.0 * sr))
+            end = min(len(samples), idx[1] + int(postpad_ms / 1000.0 * sr))
+            return samples[start:end].astype('float32')
+    except Exception:
+        pass
+    return samples.astype('float32')
 
 
 # ---------------------------------------------------------------------------
@@ -2326,9 +2398,7 @@ def media_transcribe_endpoint():
         try:
             meta = {
                 "input_path": str(input_path),
-                "has_video": str(input_path).lower().endswith((
-                    '.mp4', '.mkv', '.mov', '.avi', '.webm', '.m4v'
-                )),
+                "has_video": _ffprobe_has_video(input_path),
             }
             with open(job_dir / "job_meta.json", "w", encoding="utf-8") as f:
                 json.dump(meta, f)
@@ -2604,6 +2674,61 @@ def media_stats_endpoint():
     return jsonify(summary)
 
 
+def _yt_id_from_url(u: str) -> Optional[str]:
+    try:
+        m = re.search(r"(?:v=|youtu\.be/|shorts/)([A-Za-z0-9_-]{6,})", u)
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
+def _youtube_cache_find(vid: str) -> Optional[Path]:
+    try:
+        cache_dir = OUTPUT_DIR / "media_cache" / "youtube"
+        if not cache_dir.exists():
+            return None
+        candidates = list(cache_dir.glob(f"{vid}.*"))
+        if not candidates:
+            return None
+        return max(candidates, key=lambda p: p.stat().st_size)
+    except Exception:
+        return None
+
+@api.route("/media/estimate", methods=["POST"])
+def media_estimate_endpoint():
+    """Estimate media duration for ETA.
+
+    Body: { source: 'youtube', url }
+    Returns: { duration, cached?: boolean }
+    """
+    payload = parse_json_request()
+    source = str(payload.get('source') or '').strip().lower()
+    if source != 'youtube':
+        raise PlaygroundError("Only YouTube source is supported for estimate.", status=400)
+    url = str(payload.get('url') or '').strip()
+    if not url:
+        raise PlaygroundError("Field 'url' is required.", status=400)
+    vid = _yt_id_from_url(url)
+    # Try from cache first
+    if vid:
+        cached = _youtube_cache_find(vid)
+        if cached and cached.exists():
+            return jsonify({ 'duration': _ffprobe_duration_seconds(cached), 'cached': True })
+    # Fallback: yt-dlp JSON
+    if not _have_tool('yt-dlp'):
+        raise PlaygroundError("yt-dlp is required to estimate duration.", status=503)
+    try:
+        proc = subprocess.run(['yt-dlp','-j', url], capture_output=True, text=True, check=True)
+        data = json.loads(proc.stdout.splitlines()[0]) if proc.stdout else {}
+        dur = float(data.get('duration') or 0)
+        if dur <= 0:
+            # fallback to ffprobe if webpage_url_basename exists in cache path
+            raise ValueError('No duration from yt-dlp')
+        return jsonify({ 'duration': dur, 'cached': False })
+    except Exception as exc:
+        raise PlaygroundError(f"Could not estimate duration: {exc}", status=500)
+
+
 @api.route("/media/replace_preview", methods=["POST"])
 def media_replace_preview_endpoint():
     """Synthesize replacement audio (XTTS), fit to region, and return a patched preview.
@@ -2683,13 +2808,21 @@ def media_replace_preview_endpoint():
     src, sr = _load_wav_mono(audio_wav, target_sr=24000)
     rep_path = OUTPUT_DIR / synth['filename']
     rep, r_sr = _load_wav_mono(rep_path, target_sr=sr)
+    # Optional: trim silence of synthesized segment to improve boundary precision
+    trim_enable = bool(payload.get('trimEnable', True))
+    trim_top_db = float(payload.get('trimTopDb', 40.0))
+    trim_pre_ms = float(payload.get('trimPrepadMs', 8.0))
+    trim_post_ms = float(payload.get('trimPostpadMs', 8.0))
+    if trim_enable:
+        rep = _trim_silence(rep, top_db=trim_top_db, sr=sr, prepad_ms=trim_pre_ms, postpad_ms=trim_post_ms)
     i0 = int(max(0.0, start) * sr)
     i1 = int(min(source_dur, end) * sr)
     preview = _apply_replace_with_crossfade(src, rep, sr, i0, i1, fade_ms=fade_ms)
 
     # Write preview and diff
-    preview_path = job_dir / f"preview-{int(time.time())}.wav"
-    diff_path = job_dir / f"diff-{int(time.time())}.wav"
+    ts = int(time.time())
+    preview_path = job_dir / f"preview-{ts}.wav"
+    diff_path = job_dir / f"diff-{ts}.wav"
     sf.write(preview_path, preview, sr)
     # diff clip (for debugging): only the inserted region with fades applied
     diff = np.zeros_like(src)
@@ -2752,21 +2885,50 @@ def media_apply_endpoint():
         except Exception:
             pass
 
+    # Re-probe to be robust in case meta was wrong or stale
+    if src_path and src_path.exists():
+        has_video = _ffprobe_has_video(src_path)
     if has_video and src_path and src_path.exists():
         # Produce final video with original video stream and preview audio
-        ext = src_path.suffix.lower() or '.mp4'
-        out_ext = f".{fmt}" if fmt in {'mp4','mkv','mov','webm'} else ext
+        src_ext = src_path.suffix.lower() or '.mp4'
+        out_ext = f".{fmt}" if fmt in {'mp4','mkv','mov','webm'} else src_ext
         final_path = job_dir / f"final{out_ext}"
+        # Choose audio codec by container
+        if out_ext in {'.webm'}:
+            # WebM requires Opus/Vorbis; use Opus at 160 kbps and 48 kHz
+            acodec = ['-c:a','libopus','-b:a','160k','-ar','48000']
+        elif out_ext in {'.mp4','.m4v','.mov'}:
+            # MP4/MOV commonly uses AAC
+            acodec = ['-c:a','aac','-b:a','192k']
+        else:
+            # Fallback to AAC
+            acodec = ['-c:a','aac','-b:a','192k']
         cmd = [
             'ffmpeg','-y',
             '-i', str(src_path),
             '-i', str(latest),
             '-map','0:v:0','-map','1:a:0',
-            '-c:v','copy','-shortest',
+            '-c:v','copy',
+            *acodec,
+            '-shortest',
             str(final_path)
         ]
         _log(f"Apply: mux video src='{src_path}' audio='{latest}' out='{final_path}'")
-        subprocess.run(cmd, check=True)
+        try:
+            # Capture stderr for diagnostics
+            res = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as exc:
+            _log(f"ffmpeg mux error: {exc.stderr or exc.stdout}")
+            # Fallback: if copy fails, try re-encode video to a compatible codec (vp9 for webm, h264 for mp4/mov)
+            if out_ext == '.webm':
+                vcodec = ['-c:v', 'libvpx-vp9', '-b:v', '1M']
+                acodec = ['-c:a','libopus','-b:a','160k','-ar','48000']
+            else:
+                vcodec = ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23']
+                acodec = ['-c:a','aac','-b:a','192k']
+            cmd2 = ['ffmpeg','-y','-i', str(src_path), '-i', str(latest), '-map','0:v:0','-map','1:a:0', *vcodec, *acodec, '-shortest', str(final_path)]
+            _log(f"Apply fallback: re-encode video src='{src_path}' out='{final_path}'")
+            res2 = subprocess.run(cmd2, check=True, capture_output=True, text=True)
         rel = (final_path.relative_to(OUTPUT_DIR)).as_posix()
         return jsonify({'jobId': job_id, 'final_url': f"/audio/{rel}", 'mode': 'video', 'container': out_ext.lstrip('.')})
     else:

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { mediaAlignFull, mediaAlignRegion, mediaApply, mediaGetStats, mediaReplacePreview, mediaTranscribeFromUrl, mediaTranscribeUpload } from '../api/client';
+import { mediaAlignFull, mediaAlignRegion, mediaApply, mediaEstimateUrl, mediaGetStats, mediaReplacePreview, mediaTranscribeFromUrl, mediaTranscribeUpload, resolveAudioUrl } from '../api/client';
 import type { MediaTranscriptResult } from '../types';
 
 export function TranscriptPanel() {
-  const [open, setOpen] = useState(false);
+  // no collapsible state (full-page)
   const [url, setUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -47,9 +47,38 @@ export function TranscriptPanel() {
       // ignore
     }
   }
+
+  function joinWordsToPhrase(words: string[]): string {
+    const needsNoSpace = (t: string) => /^[,.;:!?)]$/.test(t) || t.startsWith("'");
+    const openNoSpaceAfter = /^[(\[\{]$/;
+    let out = '';
+    for (let i = 0; i < words.length; i += 1) {
+      const t = String(words[i] ?? '').trim();
+      if (!t) continue;
+      const prev = i > 0 ? String(words[i - 1]) : '';
+      const addSpace = i > 0 && !needsNoSpace(t) && !openNoSpaceAfter.test(prev);
+      out += (addSpace ? ' ' : '') + t;
+    }
+    return out;
+  }
+
+  // Auto-populate Replace text from selection
+  useEffect(() => {
+    if (!transcript?.words?.length) return;
+    if (selStartIdx === null || selEndIdx === null) return;
+    const lo = Math.max(0, Math.min(selStartIdx, selEndIdx));
+    const hi = Math.min(transcript.words.length - 1, Math.max(selStartIdx, selEndIdx));
+    const ws = transcript.words.slice(lo, hi + 1).map((w) => w.text);
+    const phrase = joinWordsToPhrase(ws);
+    setReplaceText(phrase);
+  }, [selStartIdx, selEndIdx, transcript]);
   const [transcript, setTranscript] = useState<MediaTranscriptResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [audioDuration, setAudioDuration] = useState<number>(0);
+  const [audioTime, setAudioTime] = useState<number>(0);
+  const timelineRef = useRef<HTMLDivElement | null>(null);
+  const [dragTarget, setDragTarget] = useState<null | 'start' | 'end'>(null);
   const [avgRtf, setAvgRtf] = useState<{ full: number; region: number; transcribe: number }>({ full: 5, region: 5, transcribe: 10 });
   const progressTimer = useRef<number | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
@@ -109,6 +138,82 @@ export function TranscriptPanel() {
     }
   }
 
+  useEffect(() => {
+    // Reload audio metadata when source changes
+    if (audioRef.current) {
+      try { audioRef.current.load(); } catch {}
+    }
+  }, [audioUrl]);
+
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    const onMeta = () => setAudioDuration(Number.isFinite(el.duration) ? el.duration : 0);
+    const onTime = () => setAudioTime(el.currentTime);
+    el.addEventListener('loadedmetadata', onMeta);
+    el.addEventListener('timeupdate', onTime);
+    // initialize if already loaded
+    if (el.readyState >= 1) {
+      onMeta();
+      onTime();
+    }
+    return () => {
+      el.removeEventListener('loadedmetadata', onMeta);
+      el.removeEventListener('timeupdate', onTime);
+    };
+  }, [audioRef.current]);
+
+  // Drag handles for selection on custom timeline
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      if (!dragTarget || !timelineRef.current || !audioDuration) return;
+      const rect = timelineRef.current.getBoundingClientRect();
+      const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const t = (pct * audioDuration);
+      if (dragTarget === 'start') {
+        const newStart = Math.min(t, Number(regionEnd) || t);
+        setRegionStart(newStart.toFixed(2));
+      } else {
+        const newEnd = Math.max(t, Number(regionStart) || 0);
+        setRegionEnd(newEnd.toFixed(2));
+      }
+    }
+    function onUp() { setDragTarget(null); }
+    if (dragTarget) {
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp, { once: true });
+    }
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      // mouseup listener removed by once:true automatically
+    };
+  }, [dragTarget, audioDuration, regionStart, regionEnd]);
+
+  function handleAudioPlay() {
+    if (selStartIdx === null || selEndIdx === null) return; // normal play when no selection
+    const audio = audioRef.current;
+    if (!audio) return;
+    const start = Number(regionStart);
+    const end = Number(regionEnd);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
+    const stopAt = end - 0.02;
+    // Seek into start of selection if outside
+    try {
+      if (audio.currentTime < start - 0.05 || audio.currentTime > stopAt) {
+        audio.currentTime = start;
+      }
+    } catch { /* ignore */ }
+    const onTime = () => {
+      if (audio.currentTime >= stopAt) {
+        audio.pause();
+        audio.removeEventListener('timeupdate', onTime);
+        setIsPreviewingSel(false);
+      }
+    };
+    audio.addEventListener('timeupdate', onTime);
+    setIsPreviewingSel(true);
+  }
+
   // Fetch stats for ETA when panel first opens
   async function refreshStats() {
     try {
@@ -143,9 +248,24 @@ export function TranscriptPanel() {
           setError('Paste a YouTube URL first');
           return;
         }
+        // ETA progress for YouTube using estimate and avgRtf
+        try {
+          if (avgRtf.transcribe > 0) {
+            const est = await mediaEstimateUrl(url.trim());
+            if (est?.duration && Number.isFinite(est.duration)) {
+              const total = est.duration / avgRtf.transcribe;
+              const startAt = Date.now();
+              setProgress(0);
+              progressTimer.current = window.setInterval(() => {
+                const elapsed = (Date.now() - startAt) / 1000;
+                setProgress(Math.max(0, Math.min(1, elapsed / total)));
+              }, 1000);
+            }
+          }
+        } catch { /* ignore estimate failures */ }
         const res = await mediaTranscribeFromUrl(url.trim());
         setTranscript(res.transcript);
-        setAudioUrl(res.media?.audio_url ?? null);
+        setAudioUrl(res.media?.audio_url ? resolveAudioUrl(res.media.audio_url) : null);
         setJobId(res.jobId);
         setWhisperxEnabled(Boolean(res.whisperx?.enabled));
         const elapsed = res.transcript?.stats?.elapsed ?? res.stats?.elapsed;
@@ -160,7 +280,7 @@ export function TranscriptPanel() {
         }
         const res = await mediaTranscribeUpload(file);
         setTranscript(res.transcript);
-        setAudioUrl(res.media?.audio_url ?? null);
+        setAudioUrl(res.media?.audio_url ? resolveAudioUrl(res.media.audio_url) : null);
         setJobId(res.jobId);
         setWhisperxEnabled(Boolean(res.whisperx?.enabled));
         const elapsed = res.transcript?.stats?.elapsed ?? res.stats?.elapsed;
@@ -174,6 +294,8 @@ export function TranscriptPanel() {
     } finally {
       setBusy(false);
       setStatus('');
+      if (progressTimer.current) { window.clearInterval(progressTimer.current); progressTimer.current = null; }
+      setProgress(null);
     }
   }
 
@@ -216,14 +338,6 @@ export function TranscriptPanel() {
 
   return (
     <div className="panel panel--compact" style={{ marginTop: 12 }}>
-      <div className="panel__header panel__header--dense" style={{ cursor: 'pointer' }} onClick={() => setOpen((v) => !v)}>
-        <h3 className="panel__title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ display: 'inline-block', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s ease' }}>▶</span>
-          Transcript (beta)
-        </h3>
-        <p className="panel__meta">Transcribe and preview word timings</p>
-      </div>
-      {open ? (
       <div className="dialog-stack" style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 460px) 1fr', gap: 16, alignItems: 'start' }}>
         <div>
           <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
@@ -257,13 +371,21 @@ export function TranscriptPanel() {
               </button>
               {!jobId ? <p className="panel__hint panel__hint--muted">Transcribe first to create a job.</p> : null}
               <div className="panel__meta" style={{ marginLeft: 12 }}>or refine a region:</div>
-              <label className="field" aria-label="Region start" style={{ width: 120 }}>
+              <label className="field" aria-label="Region start" style={{ width: 160 }}>
                 <span className="field__label">Start (s)</span>
-                <input type="number" step="0.01" value={regionStart} onChange={(e) => setRegionStart(e.target.value)} />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button className="panel__button" type="button" onClick={() => setRegionStart((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
+                  <input type="number" step="0.01" value={regionStart} onChange={(e) => setRegionStart(e.target.value)} style={{ flex: 1 }} />
+                  <button className="panel__button" type="button" onClick={() => setRegionStart((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
+                </div>
               </label>
-              <label className="field" aria-label="Region end" style={{ width: 120 }}>
+              <label className="field" aria-label="Region end" style={{ width: 160 }}>
                 <span className="field__label">End (s)</span>
-                <input type="number" step="0.01" value={regionEnd} onChange={(e) => setRegionEnd(e.target.value)} />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
+                  <input type="number" step="0.01" value={regionEnd} onChange={(e) => setRegionEnd(e.target.value)} style={{ flex: 1 }} />
+                  <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
+                </div>
               </label>
               <label className="field" aria-label="Margin" style={{ width: 120 }}>
                 <span className="field__label">Margin (s)</span>
@@ -343,9 +465,34 @@ export function TranscriptPanel() {
                 </select>
               ) : null}
             </fieldset>
-            <label className="field" aria-label="Replace text" style={{ minWidth: 320 }}>
+            <details style={{ marginTop: 6 }}>
+              <summary className="panel__meta" style={{ cursor: 'pointer' }}>Timing</summary>
+              <div className="panel__actions panel__actions--wrap" style={{ gap: 8, marginTop: 6 }}>
+                <label className="field" aria-label="Fade ms" style={{ width: 160 }}>
+                  <span className="field__label">Fade (ms)</span>
+                  <input type="number" step="1" defaultValue={30} onChange={(e) => {/* handled on submit via passing fadeMs */}} />
+                </label>
+                <label className="field" aria-label="Margin s" style={{ width: 160 }}>
+                  <span className="field__label">Margin (s)</span>
+                  <input type="number" step="0.01" value={regionMargin} onChange={(e) => setRegionMargin(e.target.value)} />
+                </label>
+                <label className="field" aria-label="Trim dB" style={{ width: 160 }}>
+                  <span className="field__label">Trim dB</span>
+                  <input id="trim-db" type="number" step="1" defaultValue={40} />
+                </label>
+                <label className="field" aria-label="Pre-pad ms" style={{ width: 160 }}>
+                  <span className="field__label">Pre-pad (ms)</span>
+                  <input id="trim-pre" type="number" step="1" defaultValue={8} />
+                </label>
+                <label className="field" aria-label="Post-pad ms" style={{ width: 160 }}>
+                  <span className="field__label">Post-pad (ms)</span>
+                  <input id="trim-post" type="number" step="1" defaultValue={8} />
+                </label>
+              </div>
+            </details>
+            <label className="field" aria-label="Replace text" style={{ minWidth: 320, width: '100%' }}>
               <span className="field__label">Replace text</span>
-              <input type="text" value={replaceText} onChange={(e) => setReplaceText(e.target.value)} placeholder="New line to speak…" />
+              <textarea value={replaceText} onChange={(e) => setReplaceText(e.target.value)} placeholder="New line to speak…" rows={3} style={{ width: '100%', resize: 'vertical' }} />
             </label>
             <button
               className="panel__button panel__button--primary"
@@ -361,8 +508,11 @@ export function TranscriptPanel() {
                   setError(null);
                   setReplacePreviewUrl(null);
                   const chosen = voiceMode === 'xtts' ? (voiceId || undefined) : voiceMode === 'favorite' ? (favVoiceId || undefined) : undefined;
-                  const res = await mediaReplacePreview({ jobId, start: s, end: e, text: replaceText, marginMs: Number(regionMargin) * 1000, voice: chosen });
-                  setReplacePreviewUrl(res.preview_url);
+                  const trimDb = Number((document.getElementById('trim-db') as HTMLInputElement)?.value || '40');
+                  const trimPre = Number((document.getElementById('trim-pre') as HTMLInputElement)?.value || '8');
+                  const trimPost = Number((document.getElementById('trim-post') as HTMLInputElement)?.value || '8');
+                  const res = await mediaReplacePreview({ jobId, start: s, end: e, text: replaceText, marginMs: Number(regionMargin) * 1000, fadeMs: Number((document.querySelector('input[aria-label="Fade ms"]') as HTMLInputElement)?.value || '30'), trimTopDb: trimDb, trimPrepadMs: trimPre, trimPostpadMs: trimPost, trimEnable: true, voice: chosen });
+                  setReplacePreviewUrl(res.preview_url ? resolveAudioUrl(res.preview_url) : null);
                   const se = res.stats?.synth_elapsed;
                   if (typeof se === 'number') {
                     setStatus(`Synthesized and patched preview in ${se.toFixed(2)}s`);
@@ -380,7 +530,60 @@ export function TranscriptPanel() {
         </div>
         <div>
           {audioUrl ? (
-            <audio ref={audioRef} controls src={audioUrl} style={{ width: '100%' }} />
+            <div>
+              <audio ref={audioRef} controls src={audioUrl} style={{ width: '100%' }} onPlay={handleAudioPlay} />
+              {/* Custom selection timeline overlay */}
+              <div
+                style={{ position: 'relative', height: 8, background: 'rgba(148,163,184,0.25)', borderRadius: 6, marginTop: 6, cursor: 'pointer' }}
+                ref={timelineRef}
+                onClick={(e) => {
+                  if (!audioDuration || !audioRef.current) return;
+                  const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                  const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                  audioRef.current.currentTime = pct * audioDuration;
+                }}
+                aria-label="Timeline"
+              >
+                {/* selection highlight */}
+                {(() => {
+                  const s = Number(regionStart); const en = Number(regionEnd);
+                  if (!audioDuration || !Number.isFinite(s) || !Number.isFinite(en) || en <= s) return null;
+                  const left = `${(Math.max(0, s) / audioDuration) * 100}%`;
+                  const width = `${(Math.max(0, Math.min(audioDuration, en) - Math.max(0, s)) / audioDuration) * 100}%`;
+                  return (
+                    <>
+                      <div style={{ position: 'absolute', left, width, top: 0, bottom: 0, background: 'linear-gradient(90deg,#60a5fa,#22d3ee)', opacity: 0.6, borderRadius: 6 }} />
+                      {/* drag handles */}
+                      <div
+                        role="slider"
+                        aria-label="Selection start"
+                        title="Drag to adjust start"
+                        onMouseDown={(e) => { e.preventDefault(); setDragTarget('start'); }}
+                        style={{ position: 'absolute', left, top: -4, width: 10, height: 16, background: '#60a5fa', borderRadius: 3, cursor: 'ew-resize', transform: 'translateX(-50%)' }}
+                      />
+                      <div
+                        role="slider"
+                        aria-label="Selection end"
+                        title="Drag to adjust end"
+                        onMouseDown={(e) => { e.preventDefault(); setDragTarget('end'); }}
+                        style={{ position: 'absolute', left: `calc(${left} + ${width})`, top: -4, width: 10, height: 16, background: '#22d3ee', borderRadius: 3, cursor: 'ew-resize', transform: 'translateX(-50%)' }}
+                      />
+                    </>
+                  );
+                })()}
+                {/* playhead */}
+                {audioDuration ? (
+                  <div style={{ position: 'absolute', left: `${(audioTime / audioDuration) * 100}%`, top: -2, bottom: -2, width: 2, background: '#93c5fd' }} />
+                ) : null}
+              </div>
+              {selStartIdx !== null && selEndIdx !== null ? (
+                <div className="panel__actions" style={{ gap: 8, marginTop: 6 }}>
+                  <button className="panel__button" type="button" onClick={() => void previewSelectionOnce()}>
+                    Play selection
+                  </button>
+                </div>
+              ) : null}
+            </div>
           ) : null}
           {replacePreviewUrl ? (
             <div>
@@ -397,7 +600,7 @@ export function TranscriptPanel() {
                       setBusy(true);
                       setStatus('Applying preview to final output…');
                       const res = await mediaApply(jobId);
-                      setFinalUrl(res.final_url);
+                      setFinalUrl(res.final_url ? resolveAudioUrl(res.final_url) : null);
                       setStatus(`Applied to ${res.mode === 'video' ? 'video' : 'audio'} (${res.container})`);
                     } catch (err) {
                       setError(err instanceof Error ? err.message : 'Apply failed');
@@ -513,7 +716,6 @@ export function TranscriptPanel() {
           ) : null}
         </div>
         </div>
-      ) : null}
     </div>
   );
 }
