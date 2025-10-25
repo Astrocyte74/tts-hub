@@ -356,48 +356,53 @@ export function TranscriptPanel() {
     <div className="panel panel--compact" style={{ marginTop: 12 }}>
       <div className="media-editor">
         <div className="media-editor__left">
-          <div className="ingest-toolbar">
-            <span className="ingest-toolbar__label">Source</span>
-            <div className="segmented segmented--sm" role="tablist" aria-label="Ingest source">
-              <label className={`segmented__option ${ingestMode === 'url' ? 'is-selected' : ''}`}>
-                <input type="radio" name="ingest" value="url" checked={ingestMode === 'url'} onChange={() => setIngestMode('url')} /> URL
-              </label>
-              <label className={`segmented__option ${ingestMode === 'file' ? 'is-selected' : ''}`}>
-                <input type="radio" name="ingest" value="file" checked={ingestMode === 'file'} onChange={() => setIngestMode('file')} /> File
-              </label>
-            </div>
-          </div>
-          <div className="form-grid">
-            {ingestMode === 'url' ? (
-              <>
-                <label className="field" style={{ minWidth: 280 }}>
-                  <span className="field__label">YouTube URL</span>
-                  <input type="url" placeholder="https://www.youtube.com/watch?v=..." value={url} onChange={(e) => setUrl(e.target.value)} />
+          {/* Step 1 — Import media */}
+          <div className="step">
+            <div className="step__title"><span className="step__badge">1</span> Import media</div>
+            <div className="ingest-toolbar">
+              <span className="ingest-toolbar__label">Source</span>
+              <div className="segmented segmented--sm" role="tablist" aria-label="Ingest source">
+                <label className={`segmented__option ${ingestMode === 'url' ? 'is-selected' : ''}`}>
+                  <input type="radio" name="ingest" value="url" checked={ingestMode === 'url'} onChange={() => setIngestMode('url')} /> URL
                 </label>
-                <button className="panel__button action" type="button" disabled={busy || !url.trim()} onClick={() => handleTranscribe('url')}>Transcribe</button>
-              </>
-            ) : (
-              <>
-                <label className="field">
-                  <span className="field__label">Upload file</span>
-                  <input ref={fileInputRef} type="file" accept="audio/*,video/*,.mp4,.mkv,.mov,.mp3,.wav,.flac,.ogg" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                <label className={`segmented__option ${ingestMode === 'file' ? 'is-selected' : ''}`}>
+                  <input type="radio" name="ingest" value="file" checked={ingestMode === 'file'} onChange={() => setIngestMode('file')} /> File
                 </label>
-                <button className="panel__button action" type="button" disabled={busy || !file} onClick={() => handleTranscribe('file')}>Transcribe</button>
-              </>
-            )}
-          </div>
-          {error ? <p className="panel__hint panel__hint--warning">{error}</p> : null}
-          {status ? (
-            <p className="panel__hint panel__hint--notice" aria-live="polite">
-              {busy ? '⏳ ' : ''}{status}
-            </p>
-          ) : null}
-          {progress !== null ? (
-            <div style={{ height: 6, background: 'rgba(148,163,184,0.2)', borderRadius: 6, overflow: 'hidden' }} aria-label="Estimated progress">
-              <div style={{ width: `${Math.round(progress * 100)}%`, height: '100%', background: 'linear-gradient(90deg, #60a5fa, #22d3ee)' }} />
+              </div>
             </div>
-          ) : null}
-          {/* Step 2 — Whisper alignment (optional) */}
+            <div className="form-grid">
+              {ingestMode === 'url' ? (
+                <>
+                  <label className="field" style={{ minWidth: 280 }}>
+                    <span className="field__label">YouTube URL</span>
+                    <input type="url" placeholder="https://www.youtube.com/watch?v=..." value={url} onChange={(e) => setUrl(e.target.value)} />
+                  </label>
+                  <button className="panel__button action" type="button" disabled={busy || !url.trim()} onClick={() => handleTranscribe('url')}>Transcribe</button>
+                </>
+              ) : (
+                <>
+                  <label className="field">
+                    <span className="field__label">Upload file</span>
+                    <input ref={fileInputRef} type="file" accept="audio/*,video/*,.mp4,.mkv,.mov,.mp3,.wav,.flac,.ogg" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                  </label>
+                  <button className="panel__button action" type="button" disabled={busy || !file} onClick={() => handleTranscribe('file')}>Transcribe</button>
+                </>
+              )}
+            </div>
+            {error ? <p className="panel__hint panel__hint--warning">{error}</p> : null}
+            {status ? (
+              <p className="panel__hint panel__hint--notice" aria-live="polite">
+                {busy ? '⏳ ' : ''}{status}
+              </p>
+            ) : null}
+            {progress !== null ? (
+              <div style={{ height: 6, background: 'rgba(148,163,184,0.2)', borderRadius: 6, overflow: 'hidden' }} aria-label="Estimated progress">
+                <div style={{ width: `${Math.round(progress * 100)}%`, height: '100%', background: 'linear-gradient(90deg, #60a5fa, #22d3ee)' }} />
+              </div>
+            ) : null}
+          </div>
+          {/* Step 2 — Whisper alignment (optional) (only after transcript exists) */}
+          {transcript ? (
           <div className="step">
             <div className="step__title"><span className="step__badge">2</span> Whisper alignment <span className="step__hint">(optional)</span></div>
             {whisperxEnabled ? (
@@ -612,6 +617,10 @@ export function TranscriptPanel() {
                   : 'XTTS is not available on this server.'}
               </p>
             ) : null}
+              </div>
+          ) : (
+            <p className="panel__hint panel__hint--muted">WhisperX not enabled on this host. Install and enable to refine word timings.</p>
+          )}
           </div>
           ) : null}
         </div>
