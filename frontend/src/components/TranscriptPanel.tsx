@@ -377,7 +377,7 @@ export function TranscriptPanel() {
               </button>
               {!jobId ? <p className="panel__hint panel__hint--muted">Transcribe first to create a job.</p> : null}
               <div className="panel__meta" style={{ marginLeft: 12 }}>or refine a region:</div>
-              <label className="field" aria-label="Region start" style={{ width: 160 }}>
+              <label className="field field--sm" aria-label="Region start">
                 <span className="field__label">Start (s)</span>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button className="panel__button" type="button" onClick={() => setRegionStart((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
@@ -385,7 +385,7 @@ export function TranscriptPanel() {
                   <button className="panel__button" type="button" onClick={() => setRegionStart((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
                 </div>
               </label>
-              <label className="field" aria-label="Region end" style={{ width: 160 }}>
+              <label className="field field--sm" aria-label="Region end">
                 <span className="field__label">End (s)</span>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
@@ -393,7 +393,7 @@ export function TranscriptPanel() {
                   <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
                 </div>
               </label>
-              <label className="field" aria-label="Margin" style={{ width: 120 }}>
+              <label className="field field--sm" aria-label="Margin">
                 <span className="field__label">Margin (s)</span>
                 <input type="number" step="0.01" value={regionMargin} onChange={(e) => setRegionMargin(e.target.value)} />
               </label>
@@ -443,14 +443,21 @@ export function TranscriptPanel() {
           ) : null}
           {/* Replace preview (XTTS) */}
           <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
-            <fieldset className="panel__actions" style={{ gap: 8, border: '1px dashed rgba(148,163,184,0.35)', padding: 8, borderRadius: 8 }}>
-              <legend className="panel__meta">Voice</legend>
-              <label className="field" aria-label="Borrow voice">
-                <input type="radio" name="voice-mode" checked={voiceMode === 'borrow'} onChange={() => setVoiceMode('borrow')} /> Borrow from selection
-              </label>
-              <label className="field" aria-label="Select XTTS voice">
-                <input type="radio" name="voice-mode" checked={voiceMode === 'xtts'} onChange={() => { setVoiceMode('xtts'); void ensureVoices(); }} /> Use XTTS voice:
-              </label>
+            <div className="panel__actions" style={{ gap: 8 }}>
+              <div className="segmented" role="tablist" aria-label="Voice source">
+                <label className={`segmented__option ${voiceMode === 'borrow' ? 'is-selected' : ''}`} aria-label="Borrow from selection">
+                  <input type="radio" name="voice-mode" value="borrow" checked={voiceMode === 'borrow'} onChange={() => setVoiceMode('borrow')} />
+                  Borrow
+                </label>
+                <label className={`segmented__option ${voiceMode === 'xtts' ? 'is-selected' : ''}`} aria-label="Use XTTS voice">
+                  <input type="radio" name="voice-mode" value="xtts" checked={voiceMode === 'xtts'} onChange={() => { setVoiceMode('xtts'); void ensureVoices(); }} />
+                  XTTS
+                </label>
+                <label className={`segmented__option ${voiceMode === 'favorite' ? 'is-selected' : ''}`} aria-label="Use Favorite">
+                  <input type="radio" name="voice-mode" value="favorite" checked={voiceMode === 'favorite'} onChange={() => { setVoiceMode('favorite'); void ensureFavorites(); }} />
+                  Favorite
+                </label>
+              </div>
               {voiceMode === 'xtts' ? (
                 <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)} aria-label="XTTS voice" style={{ minWidth: 240 }}>
                   <option value="">Choose a voice…</option>
@@ -459,9 +466,6 @@ export function TranscriptPanel() {
                   ))}
                 </select>
               ) : null}
-              <label className="field" aria-label="Select Favorite">
-                <input type="radio" name="voice-mode" checked={voiceMode === 'favorite'} onChange={() => { setVoiceMode('favorite'); void ensureFavorites(); }} /> Use Favorite:
-              </label>
               {voiceMode === 'favorite' ? (
                 <select value={favVoiceId} onChange={(e) => setFavVoiceId(e.target.value)} aria-label="Favorite voice" style={{ minWidth: 240 }}>
                   <option value="">Choose a favorite…</option>
@@ -470,31 +474,31 @@ export function TranscriptPanel() {
                   ))}
                 </select>
               ) : null}
-            </fieldset>
+            </div>
             <details style={{ marginTop: 6 }}>
               <summary className="panel__meta" style={{ cursor: 'pointer' }}>Timing</summary>
               <div className="panel__actions panel__actions--wrap" style={{ gap: 8, marginTop: 6 }}>
-                <label className="field" aria-label="Fade ms" style={{ width: 160 }}>
+                <label className="field field--sm" aria-label="Fade ms">
                   <span className="field__label">Fade (ms)</span>
                   <input type="number" step="1" defaultValue={30} onChange={(e) => {/* handled on submit via passing fadeMs */}} />
                 </label>
-                <label className="field" aria-label="Margin s" style={{ width: 160 }}>
+                <label className="field field--sm" aria-label="Margin s">
                   <span className="field__label">Margin (s)</span>
                   <input type="number" step="0.01" value={regionMargin} onChange={(e) => setRegionMargin(e.target.value)} />
                 </label>
-                <label className="field" aria-label="Duck dB" style={{ width: 180 }}>
+                <label className="field field--md" aria-label="Duck dB">
                   <span className="field__label">Duck original (dB)</span>
                   <input id="duck-db" type="number" step="1" placeholder="e.g. -18" />
                 </label>
-                <label className="field" aria-label="Trim dB" style={{ width: 160 }}>
+                <label className="field field--sm" aria-label="Trim dB">
                   <span className="field__label">Trim dB</span>
                   <input id="trim-db" type="number" step="1" defaultValue={40} />
                 </label>
-                <label className="field" aria-label="Pre-pad ms" style={{ width: 160 }}>
+                <label className="field field--sm" aria-label="Pre-pad ms">
                   <span className="field__label">Pre-pad (ms)</span>
                   <input id="trim-pre" type="number" step="1" defaultValue={8} />
                 </label>
-                <label className="field" aria-label="Post-pad ms" style={{ width: 160 }}>
+                <label className="field field--sm" aria-label="Post-pad ms">
                   <span className="field__label">Post-pad (ms)</span>
                   <input id="trim-post" type="number" step="1" defaultValue={8} />
                 </label>

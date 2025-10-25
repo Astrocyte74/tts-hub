@@ -62,3 +62,41 @@
   border: 1px solid rgba(148, 163, 184, 0.22);
 }
 
+/* Segmented control for radio-like options */
+.segmented {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.segmented__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #cbd5e1;
+  padding: 6px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.segmented__option + .segmented__option {
+  border-left: 1px solid rgba(148, 163, 184, 0.25);
+}
+.segmented__option input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented__option.is-selected {
+  background: linear-gradient(135deg, rgba(56,189,248,0.35), rgba(99,102,241,0.35));
+  color: #e2e8f0;
+}
+
+/* Compact field width helpers */
+.field--sm { width: 160px; }
+.field--md { width: 200px; }
+.field--lg { width: 320px; }
+
+/* Inline help note */
+.inline-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: rgba(148,163,184,0.8);
+}
