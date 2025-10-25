@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useWaveformData } from '../hooks/useWaveformData';
 
 type Word = { text: string; start: number; end: number };
@@ -41,7 +42,7 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
   const [showWhiskers, setShowWhiskers] = useState<boolean>(true);
   const [showBlocks, setShowBlocks] = useState<boolean>(false);
   const [showRepl, setShowRepl] = useState<boolean>(true);
-  const [blockGap, setBlockGap] = useState<number>(0.25); // seconds gap to split blocks
+  const [blockGap, setBlockGap] = useLocalStorage<number>('kokoro:wf:blockGap', 0.25); // seconds gap to split blocks
 
   // Resize observer to keep canvas crisp
   useEffect(() => {
@@ -484,6 +485,14 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
             <button type="button" className={`wf-btn ${showBlocks ? 'is-active' : ''}`} onClick={() => setShowBlocks(v => !v)} title="Speech blocks">Blocks</button>
             <button type="button" className={`wf-btn ${showRepl ? 'is-active' : ''}`} onClick={() => setShowRepl(v => !v)} title="Replacement overlay">Repl</button>
           </div>
+          {showBlocks ? (
+            <div className="wf-seg" role="radiogroup" aria-label="Speech block gap">
+              <span className="panel__hint panel__hint--muted" style={{ marginRight: 4 }}>Gap</span>
+              <button type="button" className={`wf-btn ${Math.abs(blockGap - 0.15) < 1e-6 ? 'is-active' : ''}`} onClick={() => setBlockGap(0.15)} title="0.15s">0.15s</button>
+              <button type="button" className={`wf-btn ${Math.abs(blockGap - 0.25) < 1e-6 ? 'is-active' : ''}`} onClick={() => setBlockGap(0.25)} title="0.25s">0.25s</button>
+              <button type="button" className={`wf-btn ${Math.abs(blockGap - 0.5) < 1e-6 ? 'is-active' : ''}`} onClick={() => setBlockGap(0.5)} title="0.5s">0.5s</button>
+            </div>
+          ) : null}
           {showLegend ? (
             <div className="waveform__legend" aria-hidden>
               <span className="wave-legend__item"><i className="wl wl--env" /> Envelope</span>
