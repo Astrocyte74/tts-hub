@@ -8,7 +8,7 @@ Elevate kokoro_twvv to become the primary, production-ready Kokoro repo by integ
 1️⃣ Core Feature Additions
 
 Feature    Implementation Goals    Notes
-Model Bootstrap    - Add auto-download of kokoro-v1.0.onnx and voices-v1.0.bin in Start Kokoro Playground.command.- Create models/ directory automatically.- Support override via .env and skip download if present.    Mimic bootstrap logic from kokoro but use POSIX-safe syntax; include optional KOKORO_AUTO_DOWNLOAD=1 flag.
+Model Bootstrap    - Add auto-download of kokoro-v1.0.onnx and voices-v1.0.bin in Start Kokoro Playground (XTTS Server).command.- Create models/ directory automatically.- Support override via .env and skip download if present.    Mimic bootstrap logic from kokoro but use POSIX-safe syntax; include optional KOKORO_AUTO_DOWNLOAD=1 flag.
 Meta Endpoint (/api/meta)    - Expose API prefix, port, model/voice presence, and available random-text categories.- Frontend should fetch /api/meta on mount to populate dropdowns and disable synthesis when models missing.    Return JSON like { api_prefix, port, has_model, has_voices, random_categories }.
 Grouped-Voice UI    - Add /api/voices_grouped returning accent-aware voice data (id/label/flag).- Frontend: modify VoiceSelector.tsx to render filter chips with flags and counts.    Map voice prefixes/locales to accent metadata (e.g., 🇺🇸 American, 🇬🇧 British, 🇦🇺 Australian).
 Documentation & Env Templates    - Write full README.md and PROJECT_OVERVIEW.md based on kokoro docs.- Ensure .env.example lists all variables with explanations.    Include dev vs prod instructions, ports, model paths, and launcher usage.

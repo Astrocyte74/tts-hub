@@ -110,6 +110,21 @@ Notes
 - All errors return JSON via `PlaygroundError` with `{ error, status }`.
 - In dev, set `VITE_API_BASE_URL` so the SPA on 5175 fetches `/audio/...` from the backend on 7860.
 
+## Media Editing
+
+Transcript-driven media editing endpoints used by the Media Editor (beta).
+
+- POST `/media/transcribe` — Upload audio or `{ source: 'youtube', url }` to produce a transcript with word timings; returns `media.audio_url` (WAV).
+- POST `/media/align` — Force-align the full transcript with WhisperX for improved word boundaries.
+- POST `/media/align_region` — Align only a selected region; merges refined words; returns stats and optional `diff_url`.
+- POST `/media/replace_preview` — Generate an audio preview that replaces or overlays a selected region with XTTS; supports fade/duck/trim parameters.
+- POST `/media/apply` — Mux the preview audio into the original container (video or audio-only); auto-selects codec, falls back to re-encode when needed.
+- GET `/media/stats` — Returns recent runtime factors (RTFs) used for ETAs.
+- POST `/media/estimate` — Estimate YouTube duration using `yt-dlp` (supports cookies and extractor args).
+- POST `/media/probe` — Return `ffprobe` JSON for an uploaded file to inspect tracks/format.
+
+See `docs/MEDIA_EDITING_WITH_XTTS.md` for payload shapes and the full UI flow.
+
 ## XTTS Custom Voices
 
 Create and manage XTTS reference voices that appear in the XTTS catalogue (`/voices?engine=xtts`). References are stored under `XTTS/tts-service/voices/` with an optional sidecar JSON for metadata (`<voice>.meta.json`).

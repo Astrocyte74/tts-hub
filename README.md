@@ -4,7 +4,7 @@ Modern Kokoro text-to-speech playground built with a Flask backend and a React +
 
 - **Backend** — Flask service exposing `/api` endpoints for synthesis, auditions, voice metadata, and health checks.
 - **Frontend** — React + TypeScript SPA with React Query, announcer-aware auditions, grouped voice browser, and WaveSurfer playback.
-- **Launcher** — POSIX shell script (`Start Kokoro Playground.command`) that provisions dependencies, downloads Kokoro models, and runs both backend and frontend (or production-only Flask hosting).
+- **Launcher** — POSIX shell script (`Start Kokoro Playground (XTTS Server).command`) that provisions dependencies, downloads Kokoro models, and runs both backend and frontend (or production-only Flask hosting).
 
 ---
 
@@ -37,7 +37,7 @@ Key toggles:
 ### 2. Launch (Dev Mode)
 
 ```bash
-./Start\ Kokoro\ Playground.command
+./Start\ Kokoro\ Playground\ (XTTS\ Server).command
 ```
 
 The script will:
@@ -47,14 +47,14 @@ The script will:
 3. Install frontend dependencies on first run.
 4. Download Kokoro assets when `KOKORO_AUTO_DOWNLOAD=1` and files are missing.
 5. Start the Flask API on `http://127.0.0.1:7860`.
-6. Start the Vite dev server on `http://127.0.0.1:5173`.
+6. Start the Vite dev server on `http://127.0.0.1:5175`.
 
 Leave the terminal window open—closing it stops both services.
 
 ### 3. Production Mode
 
 ```bash
-KOKORO_MODE=prod ./Start\ Kokoro\ Playground.command
+KOKORO_MODE=prod ./Start\ Kokoro\ Playground\ (XTTS\ Server).command
 ```
 
 Production mode builds `frontend/dist/`, skips Vite, and serves the static bundle directly via Flask. Visit `http://127.0.0.1:7860` to use the UI.
@@ -86,7 +86,7 @@ npm run dev
 | `KOKORO_MODEL` / `KOKORO_VOICES` | Absolute or relative paths to assets (overrides defaults). | `./models/...` |
 | `KOKORO_MODE` | `dev` (Flask + Vite) or `prod` (Flask with built SPA). | `dev` |
 | `API_PREFIX` | Prefix for backend API routes (without slashes). | `api` |
-| `VITE_HOST` / `VITE_PORT` | Vite dev server host & port. | `127.0.0.1` / `5173` |
+| `VITE_HOST` / `VITE_PORT` | Vite dev server host & port. | `127.0.0.1` / `5175` |
 | `VITE_API_BASE_URL` | Optional full URL the SPA should use (defaults to same-origin). | – |
 | `VITE_API_PREFIX` | SPA-side API prefix (defaults to `API_PREFIX`). | `api` |
 | `OLLAMA_URL` / `OLLAMA_MODEL` | Configure Ollama integration for random text prompts. | `http://127.0.0.1:11434` / `phi3:latest` |
@@ -166,6 +166,7 @@ The backend also serves `frontend/dist/` assets when Vite is not running (produc
 - Announcer-aware audition builder with template strings and gap control.
 - Voice browser with accent/flag filters (powered by `/api/voices_grouped`), quick search, and multi-select.
 - Random text helpers with automatic category updates from `/api/meta`.
+- Media Editor (beta): transcript-based replace with XTTS. See `docs/MEDIA_EDITING_WITH_XTTS.md`.
 
 ### What’s New (UI v2 revamp)
 
@@ -178,7 +179,7 @@ The backend also serves `frontend/dist/` assets when Vite is not running (produc
 
 ### Keyboard Shortcuts
 
-- 1 = Script, 2 = Voice, 3 = Engine, 4 = Clips
+- 1 = Script, 2 = Engine, 3 = Voice, 4 = Clips
 - G = Create clip, V = Voices, R = Clips, S = Settings, Shift+/? = AI Assist
 - Shortcuts are ignored while typing in inputs/textarea (we check editable targets).
 
@@ -211,7 +212,7 @@ The backend also serves `frontend/dist/` assets when Vite is not running (produc
 ### Kokoro UI v2 (Phase 2) Additions
 
 - Top context bar with engine, voice summary, clips, and quick actions.
-- Queue + History drawer at the bottom with optimistic progress, cancel stub, and session persistence.
+- Queue + Clips drawer at the bottom with optimistic progress, cancel stub, and session persistence.
 - Voice Browser 2.0: hover micro‑preview (when samples exist), favorites with a pinned row, facet chips (Language/Gender/Style) with counts and multi-select, plus a clear‑filters button.
 - Script authoring SSML helpers (Pause, Emphasis, Pitch, Rate) with word/char/duration counters and basic SSML validation.
 - Results: Waveform player and a mini waveform with Loop/Start/End controls and “Export selection” to WAV.
@@ -235,7 +236,7 @@ backend/    Flask API and requirements
 frontend/   React + Vite SPA
 models/     Kokoro model and voice assets (auto-created)
 out/        Generated WAV files
-Start Kokoro Playground.command  Launcher script (POSIX shell)
+Start Kokoro Playground (XTTS Server).command  Launcher script (POSIX shell)
 PROJECT_OVERVIEW.md              Architectural overview
 ```
 

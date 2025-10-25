@@ -6,7 +6,7 @@ This project delivers a refreshed Kokoro Playground experience by pairing a mode
 - `backend/app.py` — Flask API that loads the ONNX model/voice bank, exposes `/api/meta`, `/api/voices`, `/api/voices_grouped`, `/api/random_text`, `/api/synthesise`, `/api/audition`, `/api/ollama_models`, and serves both generated audio and the production SPA bundle when Vite is not running.
 - `backend/requirements.txt` — Python dependencies for the backend virtual environment.
 - `frontend/` — Vite + React SPA that consumes the API. Includes voice browsing, announcer-aware auditions, random text helpers, and WaveSurfer-powered playback with React Query caching.
-- `Start Kokoro Playground.command` — POSIX launcher. Sources `.env`, ensures the Python virtualenv exists, installs backend/frontend dependencies with a stamp file, optionally auto-downloads models into `./models/`, then starts the Flask API plus the Vite dev server (dev mode) or builds the SPA and serves it via Flask only (prod mode).
+- `Start Kokoro Playground (XTTS Server).command` — POSIX launcher. Sources `.env`, ensures the Python virtualenv exists, installs backend/frontend dependencies with a stamp file, optionally auto-downloads models into `./models/`, then starts the Flask API plus the Vite dev server (dev mode) or builds the SPA and serves it via Flask only (prod mode).
 - `out/` — Default output folder for generated WAVs (git-ignored).
 
 ## Runtime Expectations
@@ -18,8 +18,8 @@ This project delivers a refreshed Kokoro Playground experience by pairing a mode
 
 ## Typical Workflow
 1. **Launch**
-   - Double-click `Start Kokoro Playground.command` (or execute it from Terminal).
-   - The script sources `.env`, creates/updates `.venv`, installs backend/frontend dependencies only when definitions change, downloads models into `./models/` (when enabled), starts Flask on `http://127.0.0.1:7860`, then either boots Vite on `http://127.0.0.1:5173` (`KOKORO_MODE=dev`) or serves the built SPA directly (`KOKORO_MODE=prod`).
+   - Double-click `Start Kokoro Playground (XTTS Server).command` (or execute it from Terminal).
+   - The script sources `.env`, creates/updates `.venv`, installs backend/frontend dependencies only when definitions change, downloads models into `./models/` (when enabled), starts Flask on `http://127.0.0.1:7860`, then either boots Vite on `http://127.0.0.1:5175` (`KOKORO_MODE=dev`) or serves the built SPA directly (`KOKORO_MODE=prod`).
 2. **Generate Speech**
    - Edit text in the Script panel or use “Insert random”/“Append random” (Ollama optional).
    - Select one voice to create a single clip; multiple voices enable the audition stitcher and optional announcer line.

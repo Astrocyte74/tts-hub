@@ -23,7 +23,7 @@ This document orients future agents working in this repo so you can ship changes
 - `AnnouncerControls.tsx` — announcer template/voice.
 - `SynthesisActions.tsx` — Generate and Audition buttons.
 - `VoiceSelector.tsx` — voice cards, search, facet chips, favorites, preview chip, and bulk “Generate previews”.
-- `ResultsDrawer.tsx` — bottom dock with Queue/History (optimistic progress + persistence).
+- `ResultsDrawer.tsx` — bottom dock with Queue/Clips (optimistic progress + persistence).
 - `AudioResultCard.tsx` — clip card; includes `WaveformPlayer` and `WaveformTrim` (loop/trim/export WAV).
 - `SettingsPopover.tsx`, `InfoDialog.tsx`, `FavoritesManagerDialog.tsx`, `PresetDialog.tsx` — overlays/dialogs.
 
