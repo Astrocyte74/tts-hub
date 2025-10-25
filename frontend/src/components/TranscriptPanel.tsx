@@ -1188,7 +1188,7 @@ export function TranscriptPanel() {
                       diffMarkers={lastBoundaryChanges}
                       replaceWords={replaceWords}
                       showLegend
-                      defaultZoom={8}
+                      defaultZoom={12}
                       height={80}
                     />
                   </>

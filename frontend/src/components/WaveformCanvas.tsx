@@ -29,7 +29,7 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
   const [viewStart, setViewStart] = useState<number>(0); // seconds
   const [isHot, setIsHot] = useState<boolean>(false); // keyboard scope when hovered
   const [styleMode, setStyleMode] = useState<'bars' | 'line' | 'filled'>('bars');
-  const [showTicks, setShowTicks] = useState<boolean>(true);
+  const [showTicks, setShowTicks] = useState<boolean>(false);
   const [showWhiskers, setShowWhiskers] = useState<boolean>(true);
   const [showBlocks, setShowBlocks] = useState<boolean>(false);
   const [showRepl, setShowRepl] = useState<boolean>(true);
@@ -170,30 +170,27 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
       } else {
         // filled area mode (top and bottom mirrored)
         ctx.fillStyle = 'rgba(59,130,246,0.35)';
-        const topPath = new Path2D();
+        const path = new Path2D();
+        // top line left->right
         for (let i = startIdx; i <= endIdx; i += 1) {
           const v = peaks[i];
           const rel = (i - startIdx) / span;
           const x = Math.floor(rel * w);
           const y = Math.floor(v * (h / 2 - 2));
           const yy = center - y;
-          if (i === startIdx) topPath.moveTo(x, yy);
-          else topPath.lineTo(x, yy);
+          if (i === startIdx) path.moveTo(x, yy);
+          else path.lineTo(x, yy);
         }
-        const botPath = new Path2D();
+        // bottom line right->left
         for (let i = endIdx; i >= startIdx; i -= 1) {
           const v = peaks[i];
           const rel = (i - startIdx) / span;
           const x = Math.floor(rel * w);
           const y = Math.floor(v * (h / 2 - 2));
           const yy = center + y;
-          if (i === endIdx) botPath.moveTo(x, yy);
-          else botPath.lineTo(x, yy);
+          path.lineTo(x, yy);
         }
-        // Combine paths and fill
-        const path = new Path2D();
-        path.addPath(topPath);
-        path.addPath(botPath);
+        path.closePath();
         ctx.fill(path);
       }
     }
@@ -447,17 +444,6 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
         <button type="button" className="wf-btn" onClick={() => { setZoom(1); setViewStart(0); }}>Fit</button>
         <button type="button" className="wf-btn" onClick={() => { if (selection && duration) { const len = Math.max(0.01, selection.end - selection.start); const nextZoom = Math.min(100, duration / len); setZoom(nextZoom); setViewStart(clampViewStart(selection.start - 0.05 * len)); } }} disabled={!selection || !(selection.end > selection.start)}>Sel</button>
         <button type="button" className="wf-btn" onClick={() => { setZoom((z) => Math.min(100, z * 1.5)); }}>+</button>
-        <div className="wf-seg" role="radiogroup" aria-label="Waveform style">
-          <button type="button" className={`wf-btn ${styleMode === 'bars' ? 'is-active' : ''}`} onClick={() => setStyleMode('bars')} title="Bars">Bars</button>
-          <button type="button" className={`wf-btn ${styleMode === 'line' ? 'is-active' : ''}`} onClick={() => setStyleMode('line')} title="Line">Line</button>
-          <button type="button" className={`wf-btn ${styleMode === 'filled' ? 'is-active' : ''}`} onClick={() => setStyleMode('filled')} title="Filled">Filled</button>
-        </div>
-        <div className="wf-seg" role="group" aria-label="Overlays">
-          <button type="button" className={`wf-btn ${showTicks ? 'is-active' : ''}`} onClick={() => setShowTicks(v => !v)} title="Word boundary ticks">Ticks</button>
-          <button type="button" className={`wf-btn ${showWhiskers ? 'is-active' : ''}`} onClick={() => setShowWhiskers(v => !v)} title="Alignment adjustments">Adj</button>
-          <button type="button" className={`wf-btn ${showBlocks ? 'is-active' : ''}`} onClick={() => setShowBlocks(v => !v)} title="Speech blocks">Blocks</button>
-          <button type="button" className={`wf-btn ${showRepl ? 'is-active' : ''}`} onClick={() => setShowRepl(v => !v)} title="Replacement overlay">Repl</button>
-        </div>
       </div>
       {/* Footer: shortcuts and legend */}
       <div className="waveform__footer">
@@ -465,15 +451,28 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
           <span>Scroll to pan; Cmd/Ctrl+Scroll to zoom.</span>
           <span>Shortcuts: Z in, Shift+Z out, F fit, S selection.</span>
         </div>
-        {showLegend ? (
-          <div className="waveform__legend" aria-hidden>
-            <span className="wave-legend__item"><i className="wl wl--env" /> Envelope</span>
-            <span className="wave-legend__item"><i className="wl wl--tick" /> Word boundary</span>
-            <span className="wave-legend__item"><i className="wl wl--sel" /> Selection</span>
-            <span className="wave-legend__item"><i className="wl wl--whisk" /> Adjustment</span>
-            <span className="wave-legend__item"><i className="wl wl--play" /> Playhead</span>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div className="wf-seg" role="radiogroup" aria-label="Waveform style">
+            <button type="button" className={`wf-btn ${styleMode === 'bars' ? 'is-active' : ''}`} onClick={() => setStyleMode('bars')} title="Bars">Bars</button>
+            <button type="button" className={`wf-btn ${styleMode === 'line' ? 'is-active' : ''}`} onClick={() => setStyleMode('line')} title="Line">Line</button>
+            <button type="button" className={`wf-btn ${styleMode === 'filled' ? 'is-active' : ''}`} onClick={() => setStyleMode('filled')} title="Filled">Filled</button>
           </div>
-        ) : null}
+          <div className="wf-seg" role="group" aria-label="Overlays">
+            <button type="button" className={`wf-btn ${showTicks ? 'is-active' : ''}`} onClick={() => setShowTicks(v => !v)} title="Word boundary ticks">Ticks</button>
+            <button type="button" className={`wf-btn ${showWhiskers ? 'is-active' : ''}`} onClick={() => setShowWhiskers(v => !v)} title="Alignment adjustments">Adj</button>
+            <button type="button" className={`wf-btn ${showBlocks ? 'is-active' : ''}`} onClick={() => setShowBlocks(v => !v)} title="Speech blocks">Blocks</button>
+            <button type="button" className={`wf-btn ${showRepl ? 'is-active' : ''}`} onClick={() => setShowRepl(v => !v)} title="Replacement overlay">Repl</button>
+          </div>
+          {showLegend ? (
+            <div className="waveform__legend" aria-hidden>
+              <span className="wave-legend__item"><i className="wl wl--env" /> Envelope</span>
+              <span className="wave-legend__item"><i className="wl wl--tick" /> Word boundary</span>
+              <span className="wave-legend__item"><i className="wl wl--sel" /> Selection</span>
+              <span className="wave-legend__item"><i className="wl wl--whisk" /> Adjustment</span>
+              <span className="wave-legend__item"><i className="wl wl--play" /> Playhead</span>
+            </div>
+          ) : null}
+        </div>
       </div>
       {/* Minimap overview (panning) */}
       <div className="waveform__minimap"
