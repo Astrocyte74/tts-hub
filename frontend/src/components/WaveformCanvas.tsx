@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useSessionStorage } from '../hooks/useSessionStorage';
 import { useWaveformData } from '../hooks/useWaveformData';
 
 type Word = { text: string; start: number; end: number };
@@ -16,6 +16,7 @@ interface Props {
   showLegend?: boolean;
   defaultZoom?: number;
   replaceWords?: ReplacementWord[] | null; // optional overlay lane (absolute times)
+  persistKey?: string; // jobId for per-job persistence
 }
 
 export interface WaveformHandle {
@@ -24,7 +25,7 @@ export interface WaveformHandle {
 }
 
 export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function WaveformCanvas(
-  { audioUrl, words, currentTime, selection, onChangeSelection, height = 80, diffMarkers = [], showLegend = true, defaultZoom = 1, replaceWords = null }: Props,
+  { audioUrl, words, currentTime, selection, onChangeSelection, height = 80, diffMarkers = [], showLegend = true, defaultZoom = 1, replaceWords = null, persistKey }: Props,
   ref
 ) {
   const { peaks, duration } = useWaveformData(audioUrl, 1024);
@@ -34,15 +35,17 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
   const [width, setWidth] = useState<number>(600);
   const dpr = Math.max(1, Math.min(2, (window.devicePixelRatio || 1)));
   const [hover, setHover] = useState<{ x: number; t: number; idx: number } | null>(null);
-  const [zoom, setZoom] = useState<number>(Math.max(1, defaultZoom || 1)); // 1 = fit all
-  const [viewStart, setViewStart] = useState<number>(0); // seconds
+  const prefix = `kokoro:wf:${persistKey || 'global'}`;
+  const [zoom, setZoom] = useSessionStorage<number>(`${prefix}:zoom`, Math.max(1, defaultZoom || 1)); // 1 = fit all
+  const [viewStart, setViewStart] = useSessionStorage<number>(`${prefix}:start`, 0); // seconds
   const [isHot, setIsHot] = useState<boolean>(false); // keyboard scope when hovered
-  const [styleMode, setStyleMode] = useState<'bars' | 'line' | 'filled'>('filled');
-  const [showTicks, setShowTicks] = useState<boolean>(false);
-  const [showWhiskers, setShowWhiskers] = useState<boolean>(true);
-  const [showBlocks, setShowBlocks] = useState<boolean>(false);
-  const [showRepl, setShowRepl] = useState<boolean>(true);
-  const [blockGap, setBlockGap] = useLocalStorage<number>('kokoro:wf:blockGap', 0.25); // seconds gap to split blocks
+  const [styleMode, setStyleMode] = useSessionStorage<'bars' | 'line' | 'filled'>(`${prefix}:style`, 'filled');
+  const [showTicks, setShowTicks] = useSessionStorage<boolean>(`${prefix}:ticks`, false);
+  const [showWhiskers, setShowWhiskers] = useSessionStorage<boolean>(`${prefix}:whisk`, true);
+  const [showBlocks, setShowBlocks] = useSessionStorage<boolean>(`${prefix}:blocks`, false);
+  const [showRepl, setShowRepl] = useSessionStorage<boolean>(`${prefix}:repl`, true);
+  const [showDelta, setShowDelta] = useSessionStorage<boolean>(`${prefix}:delta`, true);
+  const [blockGap, setBlockGap] = useSessionStorage<number>(`${prefix}:blockGap`, 0.25); // seconds gap to split blocks
 
   // Resize observer to keep canvas crisp
   useEffect(() => {
@@ -270,6 +273,44 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
       }
     }
 
+    // Delta between replacement boundaries and nearest original boundaries
+    if (showRepl && showDelta && replaceWords && replaceWords.length && words && words.length && duration) {
+      const boundaries: number[] = [];
+      for (const w of words) { boundaries.push(Number(w.start)||0, Number(w.end)||0); }
+      boundaries.sort((a,b)=>a-b);
+      const findNearest = (t: number) => {
+        // binary search could be used; linear is fine given counts
+        let best = boundaries[0] ?? 0; let d = Math.abs(best - t);
+        for (const b of boundaries) { const dd = Math.abs(b - t); if (dd < d) { d = dd; best = b; } }
+        return {nearest: best, delta: t - best};
+      };
+      const drawDelta = (t: number, delta: number) => {
+        const xNow = Math.floor(timeToX(t) * dpr);
+        const dxPx = Math.max(2, Math.min(10, Math.abs(delta) / duration * (width * dpr)));
+        const sign = delta >= 0 ? 1 : -1;
+        ctx.strokeStyle = 'rgba(167,139,250,0.95)'; // violet
+        ctx.fillStyle = 'rgba(167,139,250,0.95)';
+        ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
+        const y = Math.floor(h * 0.12);
+        ctx.beginPath();
+        ctx.moveTo(xNow, y);
+        ctx.lineTo(xNow + sign * dxPx, y);
+        ctx.stroke();
+        ctx.fillRect(Math.floor(xNow + sign * dxPx - 1*dpr), y-2, 2, 4);
+      };
+      const thresh = 0.08; // seconds
+      for (const rw of replaceWords) {
+        if (rw.start >= viewStart && rw.start <= viewStart + viewDuration) {
+          const { delta } = findNearest(rw.start);
+          if (Math.abs(delta) > thresh) drawDelta(rw.start, delta);
+        }
+        if (rw.end >= viewStart && rw.end <= viewStart + viewDuration) {
+          const { delta } = findNearest(rw.end);
+          if (Math.abs(delta) > thresh) drawDelta(rw.end, delta);
+        }
+      }
+    }
+
     // Playhead
     if (duration && Number.isFinite(currentTime)) {
       const x = Math.floor(timeToX(currentTime) * dpr);
@@ -484,6 +525,9 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
             <button type="button" className={`wf-btn ${showWhiskers ? 'is-active' : ''}`} onClick={() => setShowWhiskers(v => !v)} title="Alignment adjustments">Adj</button>
             <button type="button" className={`wf-btn ${showBlocks ? 'is-active' : ''}`} onClick={() => setShowBlocks(v => !v)} title="Speech blocks">Blocks</button>
             <button type="button" className={`wf-btn ${showRepl ? 'is-active' : ''}`} onClick={() => setShowRepl(v => !v)} title="Replacement overlay">Repl</button>
+          </div>
+          <div className="wf-seg" role="group" aria-label="Delta">
+            <button type="button" className={`wf-btn ${showDelta ? 'is-active' : ''}`} onClick={() => setShowDelta(v => !v)} title="Show Δ between replacement and original boundaries">Δ</button>
           </div>
           {showBlocks ? (
             <div className="wf-seg" role="radiogroup" aria-label="Speech block gap">

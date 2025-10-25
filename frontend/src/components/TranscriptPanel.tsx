@@ -1169,6 +1169,7 @@ export function TranscriptPanel() {
                       words={transcript?.words ?? null}
                       currentTime={audioTime}
                       selection={(Number(regionEnd) > Number(regionStart)) ? { start: Number(regionStart), end: Number(regionEnd) } : null}
+                      persistKey={jobId || undefined}
                       onChangeSelection={(s, e) => {
                         // Snap to nearest word indices and mirror selection in chips
                         const ws = transcript?.words || [];
