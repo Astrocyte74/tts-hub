@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { mediaAlignFull, mediaAlignRegion, mediaApply, mediaEstimateUrl, mediaGetStats, mediaReplacePreview, mediaTranscribeFromUrl, mediaTranscribeUpload, resolveAudioUrl } from '../api/client';
+import { IconWave } from '../icons';
 import type { MediaTranscriptResult } from '../types';
+import './TranscriptPanel.css';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 
 export function TranscriptPanel() {
   // no collapsible state (full-page)
@@ -15,11 +18,20 @@ export function TranscriptPanel() {
   const [regionStart, setRegionStart] = useState<string>('');
   const [regionEnd, setRegionEnd] = useState<string>('');
   const [regionMargin, setRegionMargin] = useState<string>('0.75');
+  const [fadeMs, setFadeMs] = useState<string>('30');
+  const [trimDb, setTrimDb] = useState<string>('40');
+  const [trimPreMs, setTrimPreMs] = useState<string>('8');
+  const [trimPostMs, setTrimPostMs] = useState<string>('8');
+  const [duckDbVal, setDuckDbVal] = useLocalStorage<string>('kokoro:mediaDuckDb', '');
+  const [ingestMode, setIngestMode] = useLocalStorage<'url' | 'file'>('kokoro:mediaIngestMode', 'url');
   const [replaceText, setReplaceText] = useState<string>('');
   const [replacePreviewUrl, setReplacePreviewUrl] = useState<string | null>(null);
+  const [replaceStatus, setReplaceStatus] = useState<string>('');
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
   const [voiceMode, setVoiceMode] = useState<'borrow' | 'xtts' | 'favorite'>('borrow');
   const [voiceList, setVoiceList] = useState<{ id: string; label: string }[]>([]);
+  const [xttsAvailable, setXttsAvailable] = useState<boolean>(false);
+  const [xttsMessage, setXttsMessage] = useState<string | null>(null);
   const [voiceId, setVoiceId] = useState<string>('');
   const [favList, setFavList] = useState<{ id: string; label: string; voiceId: string }[]>([]);
   const [favVoiceId, setFavVoiceId] = useState<string>('');
@@ -31,6 +43,8 @@ export function TranscriptPanel() {
       const { fetchVoices } = await import('../api/client');
       const cat = await fetchVoices('xtts');
       setVoiceList(cat.voices.map((v) => ({ id: v.id, label: v.label })));
+      setXttsAvailable(Boolean((cat as any).available));
+      setXttsMessage(typeof (cat as any).message === 'string' ? String((cat as any).message) : null);
     } catch {
       // ignore
     }
@@ -340,64 +354,99 @@ export function TranscriptPanel() {
 
   return (
     <div className="panel panel--compact" style={{ marginTop: 12 }}>
-      <div className="dialog-stack" style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 460px) 1fr', gap: 16, alignItems: 'start' }}>
-        <div>
-          <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
-            <label className="field" style={{ minWidth: 280 }}>
-              <span className="field__label">YouTube URL</span>
-              <input type="url" placeholder="https://www.youtube.com/watch?v=..." value={url} onChange={(e) => setUrl(e.target.value)} />
-            </label>
-            <button className="panel__button" type="button" disabled={busy} onClick={() => handleTranscribe('url')}>Transcribe URL</button>
-            <span className="panel__meta">or</span>
-            <label className="field">
-              <span className="field__label">Upload file</span>
-              <input ref={fileInputRef} type="file" accept="audio/*,video/*,.mp4,.mkv,.mov,.mp3,.wav,.flac,.ogg" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-            </label>
-            <button className="panel__button" type="button" disabled={busy} onClick={() => handleTranscribe('file')}>Transcribe File</button>
-          </div>
-          {error ? <p className="panel__hint panel__hint--warning">{error}</p> : null}
-          {status ? (
-            <p className="panel__hint panel__hint--notice" aria-live="polite">
-              {busy ? '⏳ ' : ''}{status}
-            </p>
-          ) : null}
-          {progress !== null ? (
-            <div style={{ height: 6, background: 'rgba(148,163,184,0.2)', borderRadius: 6, overflow: 'hidden' }} aria-label="Estimated progress">
-              <div style={{ width: `${Math.round(progress * 100)}%`, height: '100%', background: 'linear-gradient(90deg, #60a5fa, #22d3ee)' }} />
+      <div className="media-editor">
+        <div className="media-editor__left">
+          {/* Step 1 — Import media */}
+          <div className="step">
+            <div className="step__title"><span className="step__badge">1</span> Import media</div>
+            <div className="ingest-toolbar">
+              <span className="ingest-toolbar__label">Source</span>
+              <div className="segmented segmented--sm" role="tablist" aria-label="Ingest source">
+                <label className={`segmented__option ${ingestMode === 'url' ? 'is-selected' : ''}`}>
+                  <input type="radio" name="ingest" value="url" checked={ingestMode === 'url'} onChange={() => setIngestMode('url')} /> URL
+                </label>
+                <label className={`segmented__option ${ingestMode === 'file' ? 'is-selected' : ''}`}>
+                  <input type="radio" name="ingest" value="file" checked={ingestMode === 'file'} onChange={() => setIngestMode('file')} /> File
+                </label>
+              </div>
             </div>
-          ) : null}
-          {whisperxEnabled ? (
-            <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
-              <button className="panel__button" type="button" disabled={busy || !jobId} onClick={handleAlignFull}>
-                {busy ? 'Aligning…' : 'Refine timings (WhisperX)'}
-              </button>
-              {!jobId ? <p className="panel__hint panel__hint--muted">Transcribe first to create a job.</p> : null}
-              <div className="panel__meta" style={{ marginLeft: 12 }}>or refine a region:</div>
-              <label className="field" aria-label="Region start" style={{ width: 160 }}>
-                <span className="field__label">Start (s)</span>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="panel__button" type="button" onClick={() => setRegionStart((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
-                  <input type="number" step="0.01" value={regionStart} onChange={(e) => setRegionStart(e.target.value)} style={{ flex: 1 }} />
-                  <button className="panel__button" type="button" onClick={() => setRegionStart((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
+            <div className="form-grid">
+              {ingestMode === 'url' ? (
+                <>
+                  <label className="field" style={{ minWidth: 280 }}>
+                    <span className="field__label">YouTube URL</span>
+                    <input type="url" placeholder="https://www.youtube.com/watch?v=..." value={url} onChange={(e) => setUrl(e.target.value)} />
+                  </label>
+                  <button className="panel__button action" type="button" disabled={busy || !url.trim()} onClick={() => handleTranscribe('url')}>Transcribe</button>
+                </>
+              ) : (
+                <>
+                  <label className="field">
+                    <span className="field__label">Upload file</span>
+                    <input ref={fileInputRef} type="file" accept="audio/*,video/*,.mp4,.mkv,.mov,.mp3,.wav,.flac,.ogg" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                  </label>
+                  <button className="panel__button action" type="button" disabled={busy || !file} onClick={() => handleTranscribe('file')}>Transcribe</button>
+                </>
+              )}
+            </div>
+            {error ? <p className="panel__hint panel__hint--warning">{error}</p> : null}
+            {status ? (
+              <p className="panel__hint panel__hint--notice" aria-live="polite">
+                {busy ? '⏳ ' : ''}{status}
+              </p>
+            ) : null}
+            {progress !== null ? (
+              <div style={{ height: 6, background: 'rgba(148,163,184,0.2)', borderRadius: 6, overflow: 'hidden' }} aria-label="Estimated progress">
+                <div style={{ width: `${Math.round(progress * 100)}%`, height: '100%', background: 'linear-gradient(90deg, #60a5fa, #22d3ee)' }} />
+              </div>
+            ) : null}
+          </div>
+          {/* Step 2 — Whisper alignment (optional) (only after transcript exists) */}
+          {transcript ? (
+          <div className="step">
+            <div className="step__title"><span className="step__badge">2</span> Whisper alignment <span className="step__hint">(optional)</span></div>
+            {whisperxEnabled ? (
+              <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
+                <button className="panel__button" type="button" disabled={busy || !jobId} onClick={handleAlignFull} title="Align transcript to audio for precise word timings using WhisperX">
+                  {busy ? 'Aligning…' : 'Refine word timings (WhisperX)'}
+                </button>
+                {!jobId ? <p className="panel__hint panel__hint--muted">Transcribe first to create a job.</p> : null}
+                <div className="panel__meta" style={{ marginLeft: 12 }}>or refine a region:</div>
+                <div className="subpanel" style={{ width: '100%' }}>
+                  <div className="row spaced">
+                    <span className="panel__meta" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <IconWave size={14} /> Selection
+                    </span>
+                    <span className="inline-hint">Chips or nudgers · drag handles on timeline.</span>
+                  </div>
+                  <div className="row">
+                    <label className="field field--sm" aria-label="Region start">
+                      <span className="field__label">Start (s)</span>
+                      <div className="row" style={{ gap: 6 }}>
+                        <button className="panel__button" type="button" onClick={() => setRegionStart((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
+                        <input type="number" step="0.01" value={regionStart} onChange={(e) => setRegionStart(e.target.value)} className="grow" />
+                        <button className="panel__button" type="button" onClick={() => setRegionStart((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
+                      </div>
+                    </label>
+                    <label className="field field--sm" aria-label="Region end">
+                      <span className="field__label">End (s)</span>
+                      <div className="row" style={{ gap: 6 }}>
+                        <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
+                        <input type="number" step="0.01" value={regionEnd} onChange={(e) => setRegionEnd(e.target.value)} className="grow" />
+                        <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
+                      </div>
+                    </label>
+                    <label className="field field--sm" aria-label="Margin">
+                      <span className="field__label">Margin (s)</span>
+                      <input type="number" step="0.01" value={regionMargin} onChange={(e) => setRegionMargin(e.target.value)} />
+                    </label>
+                  </div>
                 </div>
-              </label>
-              <label className="field" aria-label="Region end" style={{ width: 160 }}>
-                <span className="field__label">End (s)</span>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
-                  <input type="number" step="0.01" value={regionEnd} onChange={(e) => setRegionEnd(e.target.value)} style={{ flex: 1 }} />
-                  <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
-                </div>
-              </label>
-              <label className="field" aria-label="Margin" style={{ width: 120 }}>
-                <span className="field__label">Margin (s)</span>
-                <input type="number" step="0.01" value={regionMargin} onChange={(e) => setRegionMargin(e.target.value)} />
-              </label>
-              <button
-                className="panel__button"
-                type="button"
-                disabled={busy || !jobId}
-                onClick={async () => {
+                <button
+                  className="panel__button"
+                  type="button"
+                  disabled={busy || !jobId}
+                  onClick={async () => {
                   if (!jobId) { setError('Transcribe first'); return; }
                   const s = Number(regionStart), e = Number(regionEnd), m = Number(regionMargin || '0.75');
                   if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Enter start/end seconds (end > start)'); return; }
@@ -432,111 +481,158 @@ export function TranscriptPanel() {
                     void refreshStats();
                   }
                 }}
-              >
-                {busy ? 'Aligning…' : 'Refine region'}
-              </button>
-            </div>
+                >
+                  {busy ? 'Aligning…' : 'Refine region'}
+                </button>
+              </div>
+            ) : (
+              <p className="panel__hint panel__hint--muted">WhisperX not enabled on this host. Install and enable to refine word timings.</p>
+            )}
+          </div>
           ) : null}
           {/* Replace preview (XTTS) */}
-          <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
-            <fieldset className="panel__actions" style={{ gap: 8, border: '1px dashed rgba(148,163,184,0.35)', padding: 8, borderRadius: 8 }}>
-              <legend className="panel__meta">Voice</legend>
-              <label className="field" aria-label="Borrow voice">
-                <input type="radio" name="voice-mode" checked={voiceMode === 'borrow'} onChange={() => setVoiceMode('borrow')} /> Borrow from selection
-              </label>
-              <label className="field" aria-label="Select XTTS voice">
-                <input type="radio" name="voice-mode" checked={voiceMode === 'xtts'} onChange={() => { setVoiceMode('xtts'); void ensureVoices(); }} /> Use XTTS voice:
-              </label>
-              {voiceMode === 'xtts' ? (
-                <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)} aria-label="XTTS voice" style={{ minWidth: 240 }}>
-                  <option value="">Choose a voice…</option>
-                  {voiceList.map((v) => (
-                    <option key={v.id} value={v.id}>{v.label}</option>
-                  ))}
-                </select>
-              ) : null}
-              <label className="field" aria-label="Select Favorite">
-                <input type="radio" name="voice-mode" checked={voiceMode === 'favorite'} onChange={() => { setVoiceMode('favorite'); void ensureFavorites(); }} /> Use Favorite:
-              </label>
-              {voiceMode === 'favorite' ? (
-                <select value={favVoiceId} onChange={(e) => setFavVoiceId(e.target.value)} aria-label="Favorite voice" style={{ minWidth: 240 }}>
-                  <option value="">Choose a favorite…</option>
-                  {favList.map((f) => (
-                    <option key={f.id} value={f.voiceId}>{f.label}</option>
-                  ))}
-                </select>
-              ) : null}
-            </fieldset>
-            <details style={{ marginTop: 6 }}>
-              <summary className="panel__meta" style={{ cursor: 'pointer' }}>Timing</summary>
-              <div className="panel__actions panel__actions--wrap" style={{ gap: 8, marginTop: 6 }}>
-                <label className="field" aria-label="Fade ms" style={{ width: 160 }}>
-                  <span className="field__label">Fade (ms)</span>
-                  <input type="number" step="1" defaultValue={30} onChange={(e) => {/* handled on submit via passing fadeMs */}} />
-                </label>
-                <label className="field" aria-label="Margin s" style={{ width: 160 }}>
-                  <span className="field__label">Margin (s)</span>
-                  <input type="number" step="0.01" value={regionMargin} onChange={(e) => setRegionMargin(e.target.value)} />
-                </label>
-                <label className="field" aria-label="Trim dB" style={{ width: 160 }}>
-                  <span className="field__label">Trim dB</span>
-                  <input id="trim-db" type="number" step="1" defaultValue={40} />
-                </label>
-                <label className="field" aria-label="Pre-pad ms" style={{ width: 160 }}>
-                  <span className="field__label">Pre-pad (ms)</span>
-                  <input id="trim-pre" type="number" step="1" defaultValue={8} />
-                </label>
-                <label className="field" aria-label="Post-pad ms" style={{ width: 160 }}>
-                  <span className="field__label">Post-pad (ms)</span>
-                  <input id="trim-post" type="number" step="1" defaultValue={8} />
-                </label>
+          {transcript && (
+            <div className="step">
+              <div className="step__title"><span className="step__badge">3</span> Replace & preview</div>
+              <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
+                <div className="segmented" role="tablist" aria-label="Voice source">
+                  <label className={`segmented__option ${voiceMode === 'borrow' ? 'is-selected' : ''}`} aria-label="Borrow from selection">
+                    <input type="radio" name="voice-mode" value="borrow" checked={voiceMode === 'borrow'} onChange={() => setVoiceMode('borrow')} />
+                    Borrow
+                  </label>
+                  <label className={`segmented__option ${voiceMode === 'xtts' ? 'is-selected' : ''}`} aria-label="Use XTTS voice">
+                    <input type="radio" name="voice-mode" value="xtts" checked={voiceMode === 'xtts'} onChange={() => { setVoiceMode('xtts'); void ensureVoices(); }} />
+                    XTTS
+                  </label>
+                  <label className={`segmented__option ${voiceMode === 'favorite' ? 'is-selected' : ''}`} aria-label="Use Favorite">
+                    <input type="radio" name="voice-mode" value="favorite" checked={voiceMode === 'favorite'} onChange={() => { setVoiceMode('favorite'); void ensureFavorites(); }} />
+                    Favorite
+                  </label>
+                </div>
+                <div className="voice-select-area">
+                  {voiceMode === 'xtts' ? (
+                    <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)} aria-label="XTTS voice" style={{ minWidth: 240 }}>
+                      <option value="">Choose a voice…</option>
+                      {voiceList.map((v) => (
+                        <option key={v.id} value={v.id}>{v.label}</option>
+                      ))}
+                    </select>
+                  ) : voiceMode === 'favorite' ? (
+                    <select value={favVoiceId} onChange={(e) => setFavVoiceId(e.target.value)} aria-label="Favorite voice" style={{ minWidth: 240 }}>
+                      <option value="">Choose a favorite…</option>
+                      {favList.map((f) => (
+                        <option key={f.id} value={f.voiceId}>{f.label}</option>
+                      ))}
+                    </select>
+                  ) : null}
+                </div>
               </div>
-            </details>
-            <label className="field" aria-label="Replace text" style={{ minWidth: 320, width: '100%' }}>
-              <span className="field__label">Replace text</span>
-              <textarea value={replaceText} onChange={(e) => setReplaceText(e.target.value)} placeholder="New line to speak…" rows={3} style={{ width: '100%', resize: 'vertical' }} />
-            </label>
-            <button
-              className="panel__button panel__button--primary"
-              type="button"
-              disabled={busy || !jobId || !replaceText.trim()}
-              onClick={async () => {
-                if (!jobId) { setError('Transcribe first'); return; }
-                const s = Number(regionStart), e = Number(regionEnd);
-                if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Enter start/end seconds (end > start)'); return; }
-                try {
-                  setBusy(true);
-                  setStatus('Generating replace preview…');
-                  setError(null);
-                  setReplacePreviewUrl(null);
-                  const chosen = voiceMode === 'xtts' ? (voiceId || undefined) : voiceMode === 'favorite' ? (favVoiceId || undefined) : undefined;
-                  const trimDb = Number((document.getElementById('trim-db') as HTMLInputElement)?.value || '40');
-                  const trimPre = Number((document.getElementById('trim-pre') as HTMLInputElement)?.value || '8');
-                  const trimPost = Number((document.getElementById('trim-post') as HTMLInputElement)?.value || '8');
-                  const res = await mediaReplacePreview({ jobId, start: s, end: e, text: replaceText, marginMs: Number(regionMargin) * 1000, fadeMs: Number((document.querySelector('input[aria-label="Fade ms"]') as HTMLInputElement)?.value || '30'), trimTopDb: trimDb, trimPrepadMs: trimPre, trimPostpadMs: trimPost, trimEnable: true, voice: chosen });
-                  setReplacePreviewUrl(res.preview_url ? resolveAudioUrl(res.preview_url) : null);
-                  const se = res.stats?.synth_elapsed;
-                  if (typeof se === 'number') {
-                    setStatus(`Synthesized and patched preview in ${se.toFixed(2)}s`);
+              <details style={{ marginTop: 6 }}>
+                <summary className="panel__meta" style={{ cursor: 'pointer' }}>Timing</summary>
+                <div className="panel__actions panel__actions--wrap" style={{ gap: 8, marginTop: 6 }}>
+                  <label className="field field--sm" aria-label="Fade ms">
+                    <span className="field__label">Fade (ms)</span>
+                    <input type="number" step="1" value={fadeMs} onChange={(e) => setFadeMs(e.target.value)} />
+                  </label>
+                  <label className="field field--sm" aria-label="Margin s">
+                    <span className="field__label">Margin (s)</span>
+                    <input type="number" step="0.01" value={regionMargin} onChange={(e) => setRegionMargin(e.target.value)} />
+                  </label>
+                  <label className="field field--md" aria-label="Duck dB">
+                    <span className="field__label">Duck original (dB)</span>
+                    <div className="row">
+                      <input id="duck-db" type="number" step="1" placeholder="e.g. -18" value={duckDbVal} onChange={(e) => setDuckDbVal(e.target.value)} className="grow" />
+                      <div className="btns-mini" role="group" aria-label="Duck presets">
+                        <button className="panel__button" type="button" onClick={() => setDuckDbVal('')}>None</button>
+                        <button className="panel__button" type="button" onClick={() => setDuckDbVal('-12')}>−12</button>
+                        <button className="panel__button" type="button" onClick={() => setDuckDbVal('-18')}>−18</button>
+                      </div>
+                    </div>
+                  </label>
+                  <label className="field field--sm" aria-label="Trim dB">
+                    <span className="field__label">Trim dB</span>
+                    <input id="trim-db" type="number" step="1" value={trimDb} onChange={(e) => setTrimDb(e.target.value)} />
+                  </label>
+                  <label className="field field--sm" aria-label="Pre-pad ms">
+                    <span className="field__label">Pre-pad (ms)</span>
+                    <input id="trim-pre" type="number" step="1" value={trimPreMs} onChange={(e) => setTrimPreMs(e.target.value)} />
+                  </label>
+                  <label className="field field--sm" aria-label="Post-pad ms">
+                    <span className="field__label">Post-pad (ms)</span>
+                    <input id="trim-post" type="number" step="1" value={trimPostMs} onChange={(e) => setTrimPostMs(e.target.value)} />
+                  </label>
+                </div>
+              </details>
+              <label className="field" aria-label="Replace text" style={{ minWidth: 320, width: '100%' }}>
+                <span className="field__label">Replace text</span>
+                <textarea value={replaceText} onChange={(e) => setReplaceText(e.target.value)} placeholder="New line to speak…" rows={3} style={{ width: '100%', resize: 'vertical' }} />
+              </label>
+              <button
+                className="panel__button panel__button--primary"
+                type="button"
+                disabled={busy || !jobId || !replaceText.trim()}
+                onClick={async () => {
+                  if (!jobId) { setError('Transcribe first'); return; }
+                  const s = Number(regionStart), e = Number(regionEnd);
+                  if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Enter start/end seconds (end > start)'); return; }
+                  try {
+                    setBusy(true);
+                    setReplaceStatus('Generating replace preview…');
+                    setError(null);
+                    setReplacePreviewUrl(null);
+                    const chosen = voiceMode === 'xtts' ? (voiceId || undefined) : voiceMode === 'favorite' ? (favVoiceId || undefined) : undefined;
+                    const duckDb = duckDbVal.trim() !== '' ? Number(duckDbVal) : undefined;
+                    const res = await mediaReplacePreview({
+                      jobId,
+                      start: s,
+                      end: e,
+                      text: replaceText,
+                      marginMs: Number(regionMargin) * 1000,
+                      fadeMs: Number(fadeMs || '30'),
+                      duckDb,
+                      trimTopDb: Number(trimDb || '40'),
+                      trimPrepadMs: Number(trimPreMs || '8'),
+                      trimPostpadMs: Number(trimPostMs || '8'),
+                      trimEnable: true,
+                      voice: chosen,
+                    });
+                    setReplacePreviewUrl(res.preview_url ? resolveAudioUrl(res.preview_url) : null);
+                    const se = res.stats?.synth_elapsed;
+                    if (typeof se === 'number') {
+                      setReplaceStatus(`Synthesized and patched preview in ${se.toFixed(2)}s`);
+                    }
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Replace preview failed');
+                  } finally {
+                    setBusy(false);
                   }
-                } catch (err) {
-                  setError(err instanceof Error ? err.message : 'Replace preview failed');
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              {busy ? 'Working…' : 'Preview replace'}
-            </button>
-          </div>
+                }}
+              >
+                {busy ? 'Working…' : 'Preview replace'}
+              </button>
+              {replaceStatus ? <p className="panel__hint panel__hint--notice">{replaceStatus}</p> : null}
+              {voiceMode === 'xtts' && voiceList.length === 0 ? (
+                <p className="panel__hint panel__hint--muted">
+                  {xttsAvailable
+                    ? (xttsMessage || 'XTTS is available but no custom voices were found. Use “Borrow from selection” or add voices in the XTTS manager.')
+                    : 'XTTS is not available on this server.'}
+                </p>
+              ) : null}
+            </div>
+          )}
         </div>
-        <div>
+        <div className="media-editor__right">
           {audioUrl ? (
-            <div>
-              <audio ref={audioRef} controls src={audioUrl} style={{ width: '100%' }} onPlay={handleAudioPlay} />
+            <div className="media-editor__player">
+              <div className="row spaced" style={{ alignItems: 'center' }}>
+                <audio ref={audioRef} controls src={audioUrl} style={{ width: '100%' }} onPlay={handleAudioPlay} />
+                <button className="panel__button" type="button" onClick={() => void previewSelectionOnce()} disabled={isPreviewingSel || !regionStart || !regionEnd}>
+                  {isPreviewingSel ? 'Playing…' : 'Play selection'}
+                </button>
+              </div>
               {/* Custom selection timeline overlay */}
               <div
-                style={{ position: 'relative', height: 8, background: 'rgba(148,163,184,0.25)', borderRadius: 6, marginTop: 6, cursor: 'pointer' }}
+                className="media-editor__timeline"
                 ref={timelineRef}
                 onClick={(e) => {
                   if (!audioDuration || !audioRef.current) return;
@@ -578,13 +674,7 @@ export function TranscriptPanel() {
                   <div style={{ position: 'absolute', left: `${(audioTime / audioDuration) * 100}%`, top: -2, bottom: -2, width: 2, background: '#93c5fd' }} />
                 ) : null}
               </div>
-              {selStartIdx !== null && selEndIdx !== null ? (
-                <div className="panel__actions" style={{ gap: 8, marginTop: 6 }}>
-                  <button className="panel__button" type="button" onClick={() => void previewSelectionOnce()}>
-                    Play selection
-                  </button>
-                </div>
-              ) : null}
+              {/* Secondary play selection was redundant; kept single button next to player */}
             </div>
           ) : null}
           {replacePreviewUrl ? (
@@ -625,12 +715,11 @@ export function TranscriptPanel() {
             </div>
           ) : null}
           {transcript ? (
-            <div>
+            <div className="media-editor__words">
               <p className="panel__meta">Language: {transcript.language || 'unknown'} · Duration: {transcript.duration?.toFixed?.(1) ?? transcript.duration}s</p>
               <div
                 role="list"
                 aria-label="Transcript words (drag to select a region)"
-                style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 0', userSelect: 'none' }}
                 onMouseUp={() => setIsSelecting(false)}
                 tabIndex={0}
                 onKeyDown={(e) => {

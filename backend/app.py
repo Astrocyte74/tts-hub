@@ -69,6 +69,10 @@ YT_DLP_EXTRACTOR_ARGS = os.environ.get("YT_DLP_EXTRACTOR_ARGS", "")
 XTTS_MIN_REF_SECONDS = float(os.environ.get("XTTS_MIN_REF_SECONDS", "5"))
 XTTS_MAX_REF_SECONDS = float(os.environ.get("XTTS_MAX_REF_SECONDS", "30"))
 
+# Media artifact cleanup config
+MEDIA_TTL_DAYS = float(os.environ.get("MEDIA_TTL_DAYS", "7"))
+MEDIA_CLEANUP_INTERVAL_HOURS = float(os.environ.get("MEDIA_CLEANUP_INTERVAL_HOURS", "12"))
+
 # Media edit / STT config
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base").strip()
 ALLOW_STUB_STT = os.environ.get("ALLOW_STUB_STT", "1").strip() not in {"0", "false", "False"}
@@ -81,6 +85,11 @@ except Exception:  # pragma: no cover
     WhisperModel = None  # type: ignore
     _have_faster_whisper = False
 
+# Cache a singleton faster-whisper model to avoid reloading per request
+_fw_model_lock = threading.Lock()
+_fw_model_name: Optional[str] = None
+_fw_model: Any = None
+
 try:  # Optional alignment dependency
     import whisperx  # type: ignore
 
@@ -91,6 +100,8 @@ except Exception:  # pragma: no cover
 
 _xtts_voice_cache: Dict[str, Path] = {}
 _xtts_voice_lock = threading.Lock()
+_cleanup_lock = threading.Lock()
+_last_cleanup_ts: Optional[float] = None
 
 _openvoice_voice_cache: Dict[str, Dict[str, Any]] = {}
 _openvoice_voice_lock = threading.Lock()
@@ -214,11 +225,69 @@ def _record_stat(kind: str, sample: Dict[str, Any]) -> None:
         pass
 
 
+def _maybe_cleanup_media_artifacts() -> None:
+    """Delete old media artifacts in out/media_edits and out/media_cache based on TTL.
+
+    Runs at most once per MEDIA_CLEANUP_INTERVAL_HOURS.
+    """
+    global _last_cleanup_ts
+    try:
+        now = time.time()
+        with _cleanup_lock:
+            if _last_cleanup_ts is not None:
+                if (now - _last_cleanup_ts) < (MEDIA_CLEANUP_INTERVAL_HOURS * 3600.0):
+                    return
+            _last_cleanup_ts = now
+
+        ttl_seconds = MEDIA_TTL_DAYS * 86400.0
+        # Clean media_edits job directories
+        edits_root = OUTPUT_DIR / "media_edits"
+        if edits_root.exists():
+            for child in edits_root.iterdir():
+                try:
+                    if not child.is_dir():
+                        continue
+                    # Compute newest mtime within the directory
+                    newest = child.stat().st_mtime
+                    for p in child.rglob("*"):
+                        try:
+                            newest = max(newest, p.stat().st_mtime)
+                        except Exception:
+                            pass
+                    if (now - newest) > ttl_seconds:
+                        shutil.rmtree(child, ignore_errors=True)
+                        _log(f"Cleanup: removed old media job '{child.name}'")
+                except Exception:
+                    pass
+
+        # Clean YouTube cache files
+        yt_root = OUTPUT_DIR / "media_cache" / "youtube"
+        if yt_root.exists():
+            for f in yt_root.glob("*"):
+                try:
+                    if not f.is_file():
+                        continue
+                    age = now - f.stat().st_mtime
+                    if age > ttl_seconds:
+                        f.unlink(missing_ok=True)
+                        _log(f"Cleanup: removed old YouTube cache '{f.name}'")
+                except Exception:
+                    pass
+    except Exception:
+        # Never raise from cleanup
+        pass
+
+
 def _transcribe_faster_whisper(audio_wav: Path) -> Dict[str, Any]:
     if not _have_faster_whisper or WhisperModel is None:  # type: ignore[name-defined]
         raise PlaygroundError("STT 'faster-whisper' is not available on this host.", status=503)
-    # Lazy init model with CPU-friendly defaults
-    model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")  # type: ignore[call-arg]
+    # Lazy init model with CPU-friendly defaults (cached singleton)
+    global _fw_model, _fw_model_name
+    with _fw_model_lock:
+        if _fw_model is None or _fw_model_name != WHISPER_MODEL:
+            _fw_model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")  # type: ignore[call-arg]
+            _fw_model_name = WHISPER_MODEL
+        model = _fw_model
     _log(f"STT faster-whisper: transcribing wav='{audio_wav}'")
     t0 = time.time()
     segments, info = model.transcribe(str(audio_wav), vad_filter=True, word_timestamps=True)
@@ -1116,9 +1185,11 @@ def build_xtts_voice_payload() -> Dict[str, Any]:
     message = None
     if not voices:
         message = 'Place reference clips in XTTS/tts-service/voices/ and reload.'
+    # Reflect engine availability based on server or local CLI presence, regardless of whether voices exist
+    available = bool(XTTS_SERVER_URL) or (XTTS_PYTHON.exists() and XTTS_SERVICE_DIR.exists())
     return {
         'engine': 'xtts',
-        'available': bool(mapping) and XTTS_PYTHON.exists() and XTTS_SERVICE_DIR.exists(),
+        'available': available,
         'voices': voices,
         'accentGroups': groups,
         'groups': groups,
@@ -1128,12 +1199,16 @@ def build_xtts_voice_payload() -> Dict[str, Any]:
 
 
 def xtts_is_available() -> bool:
+    # Remote server configured: treat as available (borrow-from-region works without local voice cache)
+    if XTTS_SERVER_URL:
+        return True
+    # Local CLI present: consider engine available even if voices dir is empty,
+    # since media replace can borrow a reference from the selected region.
     if not XTTS_PYTHON.exists() or not XTTS_PYTHON.is_file():
         return False
     if not XTTS_SERVICE_DIR.exists():
         return False
-    voice_map = get_xtts_voice_map()
-    return bool(voice_map)
+    return True
 
 
 def _resolve_xtts_voice_path(identifier: str) -> Tuple[str, Path]:
@@ -2222,7 +2297,15 @@ def _rms(x: np.ndarray) -> float:
     return float(np.sqrt(np.mean(np.square(x) + 1e-9)))
 
 
-def _apply_replace_with_crossfade(source: np.ndarray, rep: np.ndarray, sr: int, i0: int, i1: int, fade_ms: float = 30.0) -> np.ndarray:
+def _apply_replace_with_crossfade(
+    source: np.ndarray,
+    rep: np.ndarray,
+    sr: int,
+    i0: int,
+    i1: int,
+    fade_ms: float = 30.0,
+    duck_gain: Optional[float] = None,
+) -> np.ndarray:
     out = source.copy()
     target_len = max(i1 - i0, 1)
     if len(rep) != target_len:
@@ -2238,20 +2321,53 @@ def _apply_replace_with_crossfade(source: np.ndarray, rep: np.ndarray, sr: int, 
         r_rep = _rms(rep)
         if r_rep > 0:
             rep = rep * (r_ref / r_rep)
-    # Crossfade
+    # Crossfade with optional ducking of the original within the region
     fade = int(min(int(fade_ms / 1000.0 * sr), target_len // 4))
     fade = max(fade, 1)
     # Start crossfade
     for t in range(fade):
         a = (t + 1) / float(fade)
-        out[i0 + t] = source[i0 + t] * (1.0 - a) + rep[t] * a
+        if duck_gain and duck_gain > 0:
+            # Transition from source to (rep + ducked source)
+            out[i0 + t] = (source[i0 + t] * ((1.0 - a) + a * duck_gain)) + (rep[t] * a)
+        else:
+            out[i0 + t] = source[i0 + t] * (1.0 - a) + rep[t] * a
     # Middle
     if target_len > 2 * fade:
-        out[i0 + fade : i1 - fade] = rep[fade : target_len - fade]
+        if duck_gain and duck_gain > 0:
+            out[i0 + fade : i1 - fade] = rep[fade : target_len - fade] + (source[i0 + fade : i1 - fade] * duck_gain)
+        else:
+            out[i0 + fade : i1 - fade] = rep[fade : target_len - fade]
     # End crossfade
     for t in range(fade):
         a = (t + 1) / float(fade)
-        out[i1 - fade + t] = rep[target_len - fade + t] * (1.0 - a) + source[i1 - fade + t] * a
+        if duck_gain and duck_gain > 0:
+            # Transition from (rep + ducked source) back to source
+            s = source[i1 - fade + t]
+            r = rep[target_len - fade + t]
+            out[i1 - fade + t] = (r * (1.0 - a)) + s * (duck_gain * (1.0 - a) + a)
+        else:
+            out[i1 - fade + t] = rep[target_len - fade + t] * (1.0 - a) + source[i1 - fade + t] * a
+
+    # Soft limiter to prevent clipping while preserving loudness
+    def _soft_limit(x: np.ndarray, ceiling: float = 0.98, drive: float = 2.0) -> np.ndarray:
+        if x.size == 0:
+            return x
+        peak = float(np.max(np.abs(x)))
+        if peak <= ceiling:
+            return x
+        # Apply tanh-based soft saturation normalized to the ceiling
+        y = np.tanh((x / ceiling) * drive) / np.tanh(drive)
+        return (y * ceiling).astype('float32')
+
+    out = _soft_limit(out)
+    # Final safety in extreme cases
+    try:
+        peak2 = float(np.max(np.abs(out)))
+        if peak2 > 1.0:
+            out = (out / peak2) * 0.98
+    except Exception:
+        pass
     return out
 
 
@@ -2313,6 +2429,8 @@ def media_transcribe_endpoint():
       - application/json: { source: 'youtube', url, start?, end? }
     """
     content_type = (request.content_type or "").lower()
+    # Opportunistic cleanup of old media artifacts
+    _maybe_cleanup_media_artifacts()
     job_id = uuid.uuid4().hex[:12]
     job_dir = _media_job_dir(job_id)
     input_path: Optional[Path] = None
@@ -2701,6 +2819,8 @@ def media_estimate_endpoint():
     Body: { source: 'youtube', url }
     Returns: { duration, cached?: boolean }
     """
+    # Opportunistic cleanup of old media artifacts
+    _maybe_cleanup_media_artifacts()
     payload = parse_json_request()
     source = str(payload.get('source') or '').strip().lower()
     if source != 'youtube':
@@ -2754,6 +2874,15 @@ def media_replace_preview_endpoint():
 
     margin_ms = float(payload.get("marginMs", 0))
     fade_ms = float(payload.get("fadeMs", 30))
+    duck_db = payload.get("duckDb")
+    duck_gain: Optional[float] = None
+    try:
+        if duck_db is not None:
+            duck_db_f = float(duck_db)
+            # Convert dB to linear gain; clamp to [0, 1]
+            duck_gain = max(0.0, min(1.0, 10.0 ** (duck_db_f / 20.0)))
+    except Exception:
+        duck_gain = None
     language = str(payload.get("language") or "")
     speed = float(payload.get("speed") or 1.0)
     explicit_voice = payload.get("voice")  # could be id or path
@@ -2771,7 +2900,39 @@ def media_replace_preview_endpoint():
     region_end = min(source_dur, region_end)
     ref_voice = None
     if explicit_voice:
-        ref_voice = str(explicit_voice)
+        # Validate explicit voice input: allow known voice ids, or paths under job_dir or XTTS_VOICE_DIR
+        ev = str(explicit_voice)
+        # Heuristic: treat as path if it looks like one (absolute or contains a separator or has an audio extension)
+        looks_path = False
+        try:
+            cand = Path(ev).expanduser()
+            if cand.is_absolute() or os.sep in ev or cand.suffix.lower() in XTTS_SUPPORTED_EXTENSIONS:
+                looks_path = True
+        except Exception:
+            looks_path = False
+        if looks_path:
+            try:
+                real = cand.resolve()
+            except Exception:
+                raise PlaygroundError("Invalid 'voice' path provided.", status=400)
+            allowed = False
+            try:
+                real.relative_to(job_dir.resolve())
+                allowed = True
+            except Exception:
+                try:
+                    real.relative_to(XTTS_VOICE_DIR.resolve())
+                    allowed = True
+                except Exception:
+                    allowed = False
+            if not allowed:
+                raise PlaygroundError("'voice' path must be inside the current job folder or XTTS voices directory.", status=400)
+            if not real.exists():
+                raise PlaygroundError("Provided 'voice' path does not exist.", status=400)
+            ref_voice = str(real)
+        else:
+            # Assume an XTTS voice identifier; let XTTS resolver validate later
+            ref_voice = ev
     else:
         region_wav = job_dir / f"ref-{int(region_start*1000)}-{int(region_end*1000)}.wav"
         _extract_input_to_wav(audio_wav, region_wav, start=region_start, end=region_end)
@@ -2817,7 +2978,7 @@ def media_replace_preview_endpoint():
         rep = _trim_silence(rep, top_db=trim_top_db, sr=sr, prepad_ms=trim_pre_ms, postpad_ms=trim_post_ms)
     i0 = int(max(0.0, start) * sr)
     i1 = int(min(source_dur, end) * sr)
-    preview = _apply_replace_with_crossfade(src, rep, sr, i0, i1, fade_ms=fade_ms)
+    preview = _apply_replace_with_crossfade(src, rep, sr, i0, i1, fade_ms=fade_ms, duck_gain=duck_gain)
 
     # Write preview and diff
     ts = int(time.time())
@@ -2852,7 +3013,7 @@ def media_replace_preview_endpoint():
         'jobId': job_id,
         'preview_url': f"/audio/{rel_prev}",
         'diff_url': f"/audio/{rel_diff}",
-        'stats': { 'synth_elapsed': elapsed_synth, 'fade_ms': fade_ms }
+        'stats': { 'synth_elapsed': elapsed_synth, 'fade_ms': fade_ms, 'duck_db': duck_db }
     })
 
 

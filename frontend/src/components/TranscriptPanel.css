@@ -1,0 +1,206 @@
+.media-editor {
+  display: grid;
+  grid-template-columns: minmax(360px, 460px) 1fr;
+  gap: 20px;
+  align-items: start;
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 1080px) {
+  .media-editor {
+    grid-template-columns: 1fr;
+  }
+}
+
+.media-editor__left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Step blocks */
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0 6px;
+  border-top: 1px dashed rgba(148,163,184,0.2);
+}
+.step:first-child { border-top: none; padding-top: 0; }
+.step__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+.step__badge {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #38bdf8, #6366f1);
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.step__hint { color: rgba(148,163,184,0.85); font-size: 13px; }
+
+/* Alignment viz */
+.align-viz {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.align-bar { height: 6px; border-radius: 6px; background: rgba(148,163,184,0.25); overflow: hidden; }
+.align-bar__fill { height: 100%; background: linear-gradient(90deg, #60a5fa, #22d3ee); }
+
+.media-editor__right {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 420px;
+  min-width: 0; /* allow grid child to shrink and wrap content */
+}
+
+/* Sticky player + transport under the page header */
+.media-editor__player {
+  position: sticky;
+  top: 72px; /* below the topbar */
+  z-index: 10;
+  background: rgba(2, 6, 23, 0.6);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.media-editor__player audio { display: block; width: 100%; min-width: 0; }
+
+.media-editor__timeline {
+  position: relative;
+  height: 8px;
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 6px;
+  margin-top: 6px;
+  cursor: pointer;
+}
+
+.media-editor__words {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0;
+  user-select: none;
+  max-height: 62vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-radius: 12px;
+  min-width: 0; /* prevent overflow in grid/flex parents */
+}
+
+/* Slightly softer chip defaults within the media editor context */
+.media-editor__words .chip {
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+/* Ensure very long tokens don't force horizontal overflow */
+.media-editor__words .chip { overflow-wrap: anywhere; word-break: break-word; }
+
+/* Segmented control for radio-like options */
+.segmented {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(2,6,23,0.25);
+}
+.segmented__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #cbd5e1;
+  padding: 6px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.segmented__option + .segmented__option {
+  border-left: 1px solid rgba(148, 163, 184, 0.25);
+}
+.segmented__option input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented__option.is-selected {
+  background: linear-gradient(135deg, rgba(56,189,248,0.35), rgba(99,102,241,0.35));
+  color: #e2e8f0;
+}
+.segmented:focus-within { outline: 2px solid rgba(59,130,246,.6); outline-offset: 2px; }
+
+/* Smaller variant for toolbars */
+.segmented--sm .segmented__option { padding: 4px 10px; font-size: 13px; }
+.segmented--sm { border-radius: 12px; }
+
+.ingest-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.ingest-toolbar__label { color: rgba(148,163,184,0.85); font-size: 13px; }
+
+/* Unify control heights in ingest form */
+.media-editor .form-grid input[type="url"],
+.media-editor .form-grid input[type="file"] { height: 36px; }
+.media-editor .panel__button.action { height: 36px; display: inline-flex; align-items: center; }
+
+/* Compact field width helpers */
+.field--sm { width: 160px; }
+.field--md { width: 200px; }
+.field--lg { width: 320px; }
+
+/* Inline help note */
+.inline-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: rgba(148,163,184,0.8);
+}
+
+/* Compact form grid for ingest rows */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 12px;
+  row-gap: 10px;
+  align-items: end;
+}
+.form-grid .action { justify-self: end; }
+.form-grid .inline-or { grid-column: 1 / -1; text-align: center; color: rgba(148,163,184,0.8); font-size: 12px; }
+
+.actions-right { display: flex; justify-content: flex-end; }
+
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.grow { flex: 1 1 auto; }
+.spaced { justify-content: space-between; }
+
+.subpanel {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(30, 41, 59, 0.35);
+  min-width: 0;
+}
+
+.btns-mini { display: inline-flex; gap: 6px; }
+.btns-mini .panel__button { padding: 4px 8px; font-size: 12px; }
+
+/* Stable area for XTTS/Favorite selects so the segmented control doesn't jump */
+.voice-select-area {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
