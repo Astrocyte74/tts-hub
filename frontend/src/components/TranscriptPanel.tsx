@@ -713,9 +713,24 @@ export function TranscriptPanel() {
                       return (
                         <button
                           key={`ex-${i}-${t.idx}`}
-                          className="chip-button"
+                          className="chip-button chip-button--accent"
                           title={`Adjusted ${t.boundary} by ${val} ms ${dir}`}
                           type="button"
+                          onMouseEnter={() => {
+                            try {
+                              const idx = typeof t.idx === 'number' ? t.idx : -1;
+                              if (idx >= 0 && transcript?.words?.[idx]) {
+                                const w = transcript.words[idx];
+                                setSelStartIdx(idx);
+                                setSelEndIdx(idx);
+                                setRegionStart(w.start.toFixed(2));
+                                setRegionEnd(w.end.toFixed(2));
+                                setCursorIdx(idx);
+                                const el = document.querySelector(`[data-word-idx="${idx}"]`);
+                                if (el && 'scrollIntoView' in el) (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+                              }
+                            } catch {}
+                          }}
                           onClick={() => {
                             // Jump to the word by index if available
                             try {
@@ -727,6 +742,8 @@ export function TranscriptPanel() {
                                 setRegionStart(w.start.toFixed(2));
                                 setRegionEnd(w.end.toFixed(2));
                                 setCursorIdx(idx);
+                                const el = document.querySelector(`[data-word-idx="${idx}"]`);
+                                if (el && 'scrollIntoView' in el) (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
                               }
                             } catch {}
                           }}
@@ -1288,6 +1305,7 @@ export function TranscriptPanel() {
                     return (
                       <span
                         key={`w-${idx}`}
+                        data-word-idx={idx}
                         role="listitem"
                         title={`t=${w.start.toFixed(2)}–${w.end.toFixed(2)}`}
                         className="chip"
