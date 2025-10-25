@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { mediaAlignFull, mediaAlignRegion, mediaApply, mediaEstimateUrl, mediaGetStats, mediaReplacePreview, mediaTranscribeFromUrl, mediaTranscribeUpload, resolveAudioUrl } from '../api/client';
 import type { MediaTranscriptResult } from '../types';
+import './TranscriptPanel.css';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 
 export function TranscriptPanel() {
   // no collapsible state (full-page)
@@ -15,6 +17,11 @@ export function TranscriptPanel() {
   const [regionStart, setRegionStart] = useState<string>('');
   const [regionEnd, setRegionEnd] = useState<string>('');
   const [regionMargin, setRegionMargin] = useState<string>('0.75');
+  const [fadeMs, setFadeMs] = useState<string>('30');
+  const [trimDb, setTrimDb] = useState<string>('40');
+  const [trimPreMs, setTrimPreMs] = useState<string>('8');
+  const [trimPostMs, setTrimPostMs] = useState<string>('8');
+  const [duckDbVal, setDuckDbVal] = useLocalStorage<string>('kokoro:mediaDuckDb', '');
   const [replaceText, setReplaceText] = useState<string>('');
   const [replacePreviewUrl, setReplacePreviewUrl] = useState<string | null>(null);
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
@@ -377,26 +384,34 @@ export function TranscriptPanel() {
               </button>
               {!jobId ? <p className="panel__hint panel__hint--muted">Transcribe first to create a job.</p> : null}
               <div className="panel__meta" style={{ marginLeft: 12 }}>or refine a region:</div>
-              <label className="field field--sm" aria-label="Region start">
-                <span className="field__label">Start (s)</span>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="panel__button" type="button" onClick={() => setRegionStart((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
-                  <input type="number" step="0.01" value={regionStart} onChange={(e) => setRegionStart(e.target.value)} style={{ flex: 1 }} />
-                  <button className="panel__button" type="button" onClick={() => setRegionStart((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
+              <div className="subpanel" style={{ width: '100%' }}>
+                <div className="row spaced">
+                  <strong className="panel__meta">Selection</strong>
+                  <span className="inline-hint">Use chips or nudgers to adjust.</span>
                 </div>
-              </label>
-              <label className="field field--sm" aria-label="Region end">
-                <span className="field__label">End (s)</span>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
-                  <input type="number" step="0.01" value={regionEnd} onChange={(e) => setRegionEnd(e.target.value)} style={{ flex: 1 }} />
-                  <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
+                <div className="row">
+                  <label className="field field--sm" aria-label="Region start">
+                    <span className="field__label">Start (s)</span>
+                    <div className="row" style={{ gap: 6 }}>
+                      <button className="panel__button" type="button" onClick={() => setRegionStart((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
+                      <input type="number" step="0.01" value={regionStart} onChange={(e) => setRegionStart(e.target.value)} className="grow" />
+                      <button className="panel__button" type="button" onClick={() => setRegionStart((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
+                    </div>
+                  </label>
+                  <label className="field field--sm" aria-label="Region end">
+                    <span className="field__label">End (s)</span>
+                    <div className="row" style={{ gap: 6 }}>
+                      <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => (Math.max(0, (Number(v) || 0) - 0.05)).toFixed(2))}>−0.05</button>
+                      <input type="number" step="0.01" value={regionEnd} onChange={(e) => setRegionEnd(e.target.value)} className="grow" />
+                      <button className="panel__button" type="button" onClick={() => setRegionEnd((v) => ((Number(v) || 0) + 0.05).toFixed(2))}>+0.05</button>
+                    </div>
+                  </label>
+                  <label className="field field--sm" aria-label="Margin">
+                    <span className="field__label">Margin (s)</span>
+                    <input type="number" step="0.01" value={regionMargin} onChange={(e) => setRegionMargin(e.target.value)} />
+                  </label>
                 </div>
-              </label>
-              <label className="field field--sm" aria-label="Margin">
-                <span className="field__label">Margin (s)</span>
-                <input type="number" step="0.01" value={regionMargin} onChange={(e) => setRegionMargin(e.target.value)} />
-              </label>
+              </div>
               <button
                 className="panel__button"
                 type="button"
@@ -480,7 +495,7 @@ export function TranscriptPanel() {
               <div className="panel__actions panel__actions--wrap" style={{ gap: 8, marginTop: 6 }}>
                 <label className="field field--sm" aria-label="Fade ms">
                   <span className="field__label">Fade (ms)</span>
-                  <input type="number" step="1" defaultValue={30} onChange={(e) => {/* handled on submit via passing fadeMs */}} />
+                  <input type="number" step="1" value={fadeMs} onChange={(e) => setFadeMs(e.target.value)} />
                 </label>
                 <label className="field field--sm" aria-label="Margin s">
                   <span className="field__label">Margin (s)</span>
@@ -488,19 +503,26 @@ export function TranscriptPanel() {
                 </label>
                 <label className="field field--md" aria-label="Duck dB">
                   <span className="field__label">Duck original (dB)</span>
-                  <input id="duck-db" type="number" step="1" placeholder="e.g. -18" />
+                  <div className="row">
+                    <input id="duck-db" type="number" step="1" placeholder="e.g. -18" value={duckDbVal} onChange={(e) => setDuckDbVal(e.target.value)} className="grow" />
+                    <div className="btns-mini" role="group" aria-label="Duck presets">
+                      <button className="panel__button" type="button" onClick={() => setDuckDbVal('')}>None</button>
+                      <button className="panel__button" type="button" onClick={() => setDuckDbVal('-12')}>−12</button>
+                      <button className="panel__button" type="button" onClick={() => setDuckDbVal('-18')}>−18</button>
+                    </div>
+                  </div>
                 </label>
                 <label className="field field--sm" aria-label="Trim dB">
                   <span className="field__label">Trim dB</span>
-                  <input id="trim-db" type="number" step="1" defaultValue={40} />
+                  <input id="trim-db" type="number" step="1" value={trimDb} onChange={(e) => setTrimDb(e.target.value)} />
                 </label>
                 <label className="field field--sm" aria-label="Pre-pad ms">
                   <span className="field__label">Pre-pad (ms)</span>
-                  <input id="trim-pre" type="number" step="1" defaultValue={8} />
+                  <input id="trim-pre" type="number" step="1" value={trimPreMs} onChange={(e) => setTrimPreMs(e.target.value)} />
                 </label>
                 <label className="field field--sm" aria-label="Post-pad ms">
                   <span className="field__label">Post-pad (ms)</span>
-                  <input id="trim-post" type="number" step="1" defaultValue={8} />
+                  <input id="trim-post" type="number" step="1" value={trimPostMs} onChange={(e) => setTrimPostMs(e.target.value)} />
                 </label>
               </div>
             </details>
@@ -522,12 +544,21 @@ export function TranscriptPanel() {
                   setError(null);
                   setReplacePreviewUrl(null);
                   const chosen = voiceMode === 'xtts' ? (voiceId || undefined) : voiceMode === 'favorite' ? (favVoiceId || undefined) : undefined;
-                  const trimDb = Number((document.getElementById('trim-db') as HTMLInputElement)?.value || '40');
-                  const trimPre = Number((document.getElementById('trim-pre') as HTMLInputElement)?.value || '8');
-                  const trimPost = Number((document.getElementById('trim-post') as HTMLInputElement)?.value || '8');
-                  const duckValRaw = (document.getElementById('duck-db') as HTMLInputElement)?.value ?? '';
-                  const duckDb = duckValRaw.trim() !== '' ? Number(duckValRaw) : undefined;
-                  const res = await mediaReplacePreview({ jobId, start: s, end: e, text: replaceText, marginMs: Number(regionMargin) * 1000, fadeMs: Number((document.querySelector('input[aria-label="Fade ms"]') as HTMLInputElement)?.value || '30'), duckDb, trimTopDb: trimDb, trimPrepadMs: trimPre, trimPostpadMs: trimPost, trimEnable: true, voice: chosen });
+                  const duckDb = duckDbVal.trim() !== '' ? Number(duckDbVal) : undefined;
+                  const res = await mediaReplacePreview({
+                    jobId,
+                    start: s,
+                    end: e,
+                    text: replaceText,
+                    marginMs: Number(regionMargin) * 1000,
+                    fadeMs: Number(fadeMs || '30'),
+                    duckDb,
+                    trimTopDb: Number(trimDb || '40'),
+                    trimPrepadMs: Number(trimPreMs || '8'),
+                    trimPostpadMs: Number(trimPostMs || '8'),
+                    trimEnable: true,
+                    voice: chosen,
+                  });
                   setReplacePreviewUrl(res.preview_url ? resolveAudioUrl(res.preview_url) : null);
                   const se = res.stats?.synth_elapsed;
                   if (typeof se === 'number') {
