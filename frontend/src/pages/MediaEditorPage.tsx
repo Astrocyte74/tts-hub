@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { TranscriptPanel } from '../components/TranscriptPanel';
+// New editor layout (scaffolded)
+import { MediaEditorLayout } from '../media/MediaEditorLayout';
 import { ResultsDrawer } from '../components/ResultsDrawer';
 import { useSessionStorage } from '../hooks/useSessionStorage';
 import type { SynthesisResult } from '../types';
@@ -42,7 +43,7 @@ export function MediaEditorPage() {
           <button className="panel__button" type="button" onClick={() => { try { window.location.hash = ''; } catch {} }}>Back to Playground</button>
         </div>
       </header>
-      <TranscriptPanel />
+      <MediaEditorLayout />
       <ResultsDrawer
         open={drawerOpen}
         onToggle={() => setDrawerOpen((v) => !v)}
