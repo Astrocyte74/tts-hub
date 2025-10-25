@@ -1168,6 +1168,7 @@ export function TranscriptPanel() {
                         setRegionEnd(e.toFixed(2));
                       }}
                       diffMarkers={lastBoundaryChanges}
+                      showLegend
                       height={80}
                     />
                   </>

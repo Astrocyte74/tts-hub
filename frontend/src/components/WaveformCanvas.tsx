@@ -21,6 +21,8 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
   const [width, setWidth] = useState<number>(600);
   const dpr = Math.max(1, Math.min(2, (window.devicePixelRatio || 1)));
   const [hover, setHover] = useState<{ x: number; t: number; idx: number } | null>(null);
+  const [zoom, setZoom] = useState<number>(1); // 1 = fit all
+  const [viewStart, setViewStart] = useState<number>(0); // seconds
 
   // Resize observer to keep canvas crisp
   useEffect(() => {
@@ -35,12 +37,26 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
     return () => ro.disconnect();
   }, []);
 
+  const viewDuration = useMemo(() => {
+    if (!duration || zoom <= 0) return duration || 0;
+    return Math.max(0.01, duration / zoom);
+  }, [duration, zoom]);
+
+  const clampViewStart = (start: number) => {
+    if (!duration) return 0;
+    const maxStart = Math.max(0, duration - viewDuration);
+    return Math.max(0, Math.min(maxStart, start));
+  };
+
+  useEffect(() => { setViewStart((s) => clampViewStart(s)); }, [viewDuration]);
+
   const timeToX = useMemo(() => (
     (t: number) => {
       if (!duration) return 0;
-      return Math.max(0, Math.min(width, (t / duration) * width));
+      const rel = (t - viewStart) / viewDuration;
+      return Math.max(0, Math.min(width, rel * width));
     }
-  ), [duration, width]);
+  ), [duration, width, viewStart, viewDuration]);
 
   // Draw
   useEffect(() => {
@@ -70,14 +86,18 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
       ctx.fillRect(x0, 0, Math.max(1, x1 - x0), h);
     }
 
-    // Envelope
-    if (peaks && peaks.length) {
-      const n = peaks.length;
+    // Envelope — render only the visible subset
+    if (peaks && peaks.length && duration) {
       ctx.fillStyle = 'rgba(59,130,246,0.8)';
       const center = Math.floor(h / 2);
-      for (let i = 0; i < n; i += 1) {
+      const n = peaks.length;
+      const startIdx = Math.max(0, Math.floor(((viewStart) / duration) * (n - 1)));
+      const endIdx = Math.min(n - 1, Math.ceil(((viewStart + viewDuration) / duration) * (n - 1)));
+      const span = Math.max(1, endIdx - startIdx);
+      for (let i = startIdx; i <= endIdx; i += 1) {
         const v = peaks[i];
-        const x = Math.floor((i / (n - 1)) * w);
+        const rel = (i - startIdx) / span;
+        const x = Math.floor(rel * w);
         const y = Math.floor(v * (h / 2 - 2));
         ctx.fillRect(x, center - y, 1, y * 2);
       }
@@ -87,6 +107,8 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
     if (words && words.length && duration) {
       ctx.fillStyle = 'rgba(226,232,240,0.55)';
       for (const wd of words) {
+        // only draw when inside view
+        if (wd.end < viewStart || wd.start > (viewStart + viewDuration)) continue;
         const xs = Math.floor(timeToX(wd.start) * dpr);
         const xe = Math.floor(timeToX(wd.end) * dpr);
         ctx.fillRect(xs, 0, 1, h);
@@ -101,6 +123,7 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
       ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
       for (const mk of diffMarkers) {
         const tNow = mk.next;
+        if (tNow < viewStart || tNow > (viewStart + viewDuration)) continue;
         const xNow = Math.floor(timeToX(tNow) * dpr);
         const dx = (mk.next - mk.prev) / duration * (width * dpr);
         // clamp visual length in px (accounting for sign)
@@ -135,7 +158,7 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
     if (!containerRef.current || !duration) return 0;
     const rect = containerRef.current.getBoundingClientRect();
     const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    return pct * duration;
+    return viewStart + pct * viewDuration;
   }
 
   function snapToWords(t: number, bound: 'start' | 'end'): number {
@@ -174,12 +197,33 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
         const e2 = snapToWords(b, 'end');
         onChangeSelection && onChangeSelection(s, e2);
       }}
+      onWheel={(e) => {
+        if (!duration) return;
+        e.preventDefault();
+        const rect = containerRef.current!.getBoundingClientRect();
+        const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+        const anchorT = viewStart + (x / rect.width) * viewDuration;
+        if (e.ctrlKey || e.metaKey) {
+          // Zoom towards anchor
+          const factor = Math.exp(-e.deltaY * 0.0015);
+          const nextZoom = Math.max(1, Math.min(100, zoom * factor));
+          const nextViewDur = Math.max(0.01, duration / nextZoom);
+          let nextStart = anchorT - (x / rect.width) * nextViewDur;
+          nextStart = clampViewStart(nextStart);
+          setZoom(nextZoom);
+          setViewStart(nextStart);
+        } else {
+          // Pan
+          const panSec = (e.deltaY / 240) * viewDuration; // mouse delta scaling
+          setViewStart((s) => clampViewStart(s + panSec));
+        }
+      }}
       onPointerMove={(e) => {
         if (!containerRef.current || !duration) return;
         // Hover preview (nearest word + time)
         const rect = containerRef.current.getBoundingClientRect();
         const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-        const t = Math.max(0, Math.min(duration, (x / rect.width) * duration));
+        const t = Math.max(viewStart, Math.min(viewStart + viewDuration, viewStart + (x / rect.width) * viewDuration));
         // find nearest word by interval distance
         let idx = -1; let best = Infinity;
         if (words && words.length) {
@@ -195,6 +239,12 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
       title={duration ? `${duration.toFixed(2)}s` : undefined}
     >
       <canvas ref={canvasRef} />
+      {/* Zoom controls */}
+      <div className="waveform__controls" aria-label="Waveform zoom controls">
+        <button type="button" className="wf-btn" onClick={() => { setZoom((z) => Math.max(1, z / 1.5)); }}>−</button>
+        <button type="button" className="wf-btn" onClick={() => { setZoom(1); setViewStart(0); }}>Fit</button>
+        <button type="button" className="wf-btn" onClick={() => { setZoom((z) => Math.min(100, z * 1.5)); }}>+</button>
+      </div>
       {/* Hover tooltip */}
       {hover && hover.idx >= 0 && words && words[hover.idx] ? (() => {
         const w = words[hover.idx]!;

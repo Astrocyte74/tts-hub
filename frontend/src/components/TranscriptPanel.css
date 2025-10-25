@@ -175,6 +175,28 @@
 .wl--whisk { background: rgba(237,137,54,0.9); }
 .wl--play { background: #22d3ee; }
 
+.waveform__controls {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  display: inline-flex;
+  gap: 6px;
+  background: rgba(2,6,23,0.45);
+  border: 1px solid rgba(148,163,184,0.28);
+  border-radius: 999px;
+  padding: 2px 4px;
+}
+.wf-btn {
+  color: #e2e8f0;
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid rgba(148,163,184,0.28);
+  border-radius: 999px;
+}
+.wf-btn:hover { background: rgba(59,130,246,0.25); }
+
 .media-info-mini {
   display: flex;
   align-items: center;
