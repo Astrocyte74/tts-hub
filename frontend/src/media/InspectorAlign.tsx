@@ -10,7 +10,7 @@ interface Props {
 
 export function InspectorAlign({ busy, whisperxEnabled, selection, marginSec, onMarginChange, onAlignFull, onAlignRegion }: Props) {
   return (
-    <div className="panel media-card">
+    <div className="panel media-card media-card--dense">
       <div className="panel__heading"><h3 className="panel__title">Alignment</h3></div>
       {!whisperxEnabled ? (
         <p className="panel__hint panel__hint--muted" title="Enable WhisperX on the server to get word-level timings and alignment.">WhisperX is disabled. Enable with WHISPERX_ENABLE=1.</p>

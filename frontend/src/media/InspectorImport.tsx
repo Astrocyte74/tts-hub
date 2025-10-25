@@ -13,7 +13,7 @@ export function InspectorImport({ busy, status, error, onTranscribeUrl, onTransc
   const [url, setUrl] = useState('');
 
   return (
-    <div className="panel media-card">
+    <div className="panel media-card media-card--dense">
       <div className="panel__heading"><h3 className="panel__title">Import Media</h3></div>
       <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
         <div role="group" aria-label="Source" className="panel__actions" style={{ gap: 8 }}>

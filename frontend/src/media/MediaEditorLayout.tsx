@@ -43,6 +43,8 @@ export function MediaEditorLayout() {
   const [voiceOptions, setVoiceOptions] = useState<{ id: string; label: string }[]>([]);
   const [favoriteOptions, setFavoriteOptions] = useState<{ id: string; label: string; voiceId: string }[]>([]);
   const [progressTimer, setProgressTimer] = useState<number | null>(null);
+  const [previewFn, setPreviewFn] = useState<null | (() => void)>(null);
+  const transcriptContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Persisted preferences
   const [prefVoiceMode, setPrefVoiceMode] = useLocalStorage<'borrow' | 'xtts' | 'favorite'>('kokoro:media:voiceMode', 'borrow');
@@ -316,10 +318,11 @@ export function MediaEditorLayout() {
         audioUrl={state.audioUrl}
         selection={state.selection}
         onSetSelection={(start, end) => dispatch({ type: 'SET_SELECTION', start, end })}
+        onRegisterPreview={(fn) => setPreviewFn(() => fn)}
       />
 
       {/* Main grid: Inspector + Work surface */}
-      <div className="media-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 380px) 1fr', gap: 16, alignItems: 'start' }}>
+      <div className="media-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 320px) 1fr', gap: 16, alignItems: 'start' }}>
         <div>
           {state.step === 'import' ? (
             <InspectorImport busy={state.busy} status={state.status} error={state.error} onTranscribeUrl={doTranscribeUrl} onTranscribeFile={doTranscribeFile} />
@@ -355,7 +358,7 @@ export function MediaEditorLayout() {
               <SelectionBar
                 transcript={state.transcript}
                 selection={state.selection}
-                onPreview={() => {/* selection preview handled in TransportBar via Space */}}
+                onPreview={() => { previewFn && previewFn(); }}
                 onClear={() => dispatch({ type: 'SET_SELECTION', start: null, end: null })}
                 onReplace={(text) => {
                   dispatch({ type: 'SET_REPLACE_TEXT', replaceText: text });
@@ -366,7 +369,8 @@ export function MediaEditorLayout() {
                 transcript={state.transcript}
                 selection={state.selection}
                 onSelectRange={(start, end) => dispatch({ type: 'SET_SELECTION', start: isNaN(start) ? null : start, end: isNaN(end) ? null : end })}
-                onPreview={() => {/* hook for quick preview later */}}
+                onPreview={() => { previewFn && previewFn(); }}
+                setOuterRef={(el) => { transcriptContainerRef.current = el; }}
               />
             </>
           ) : (

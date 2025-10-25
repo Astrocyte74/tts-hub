@@ -4,9 +4,10 @@ interface TransportBarProps {
   audioUrl: string | null;
   selection: { start: number | null; end: number | null };
   onSetSelection: (start: number | null, end: number | null) => void;
+  onRegisterPreview?: (fn: () => void) => void;
 }
 
-export function TransportBar({ audioUrl, selection, onSetSelection }: TransportBarProps) {
+export function TransportBar({ audioUrl, selection, onSetSelection, onRegisterPreview }: TransportBarProps) {
   if (!audioUrl) {
     return null;
   }
@@ -61,6 +62,14 @@ export function TransportBar({ audioUrl, selection, onSetSelection }: TransportB
     audio.addEventListener('timeupdate', onTime);
     void audio.play().catch(() => audio.removeEventListener('timeupdate', onTime));
   }
+
+  // Expose preview function to parent so other components (e.g., transcript) can trigger playback
+  useEffect(() => {
+    if (onRegisterPreview) {
+      onRegisterPreview(() => playSelectionOnce());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioRef.current, selection.start, selection.end, duration]);
 
   // Global keyboard shortcuts: Space = preview selection; Esc = clear; Alt/Shift + Arrows = nudge edges
   useEffect(() => {
