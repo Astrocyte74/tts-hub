@@ -68,6 +68,39 @@
   min-width: 0; /* allow grid child to shrink and wrap content */
 }
 
+/* Step 1 info card */
+.media-info-card {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(30, 41, 59, 0.35);
+}
+.media-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.media-info__thumb {
+  width: 120px;
+  height: 68px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(148,163,184,0.25);
+}
+.media-info__icon {
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(148,163,184,0.12);
+}
+.media-info__meta { display: flex; flex-direction: column; gap: 2px; }
+.media-info__title { margin: 0; font-weight: 600; color: #f8fafc; }
+.media-info__line { margin: 0; color: rgba(226,232,240,0.8); font-size: 13px; }
+.media-info__hint { margin: 0; color: rgba(148,163,184,0.9); font-size: 12px; }
+
 /* Sticky player + transport under the page header */
 .media-editor__player {
   position: sticky;

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { mediaAlignFull, mediaAlignRegion, mediaApply, mediaEstimateUrl, mediaGetStats, mediaReplacePreview, mediaTranscribeFromUrl, mediaTranscribeUpload, resolveAudioUrl } from '../api/client';
+import { mediaAlignFull, mediaAlignRegion, mediaApply, mediaEstimateUrl, mediaGetStats, mediaProbeUpload, mediaReplacePreview, mediaTranscribeFromUrl, mediaTranscribeUpload, resolveAudioUrl } from '../api/client';
 import { IconWave } from '../icons';
-import type { MediaTranscriptResult } from '../types';
+import type { MediaTranscriptResult, MediaEstimateInfo, MediaProbeInfo } from '../types';
 import './TranscriptPanel.css';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
@@ -24,6 +24,8 @@ export function TranscriptPanel() {
   const [trimPostMs, setTrimPostMs] = useState<string>('8');
   const [duckDbVal, setDuckDbVal] = useLocalStorage<string>('kokoro:mediaDuckDb', '');
   const [ingestMode, setIngestMode] = useLocalStorage<'url' | 'file'>('kokoro:mediaIngestMode', 'url');
+  const [ytInfo, setYtInfo] = useState<MediaEstimateInfo | null>(null);
+  const [probeInfo, setProbeInfo] = useState<MediaProbeInfo | null>(null);
   const [replaceText, setReplaceText] = useState<string>('');
   const [replacePreviewUrl, setReplacePreviewUrl] = useState<string | null>(null);
   const [replaceDiffUrl, setReplaceDiffUrl] = useState<string | null>(null);
@@ -255,6 +257,41 @@ export function TranscriptPanel() {
     void refreshStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-analyze YouTube URL (debounced) for Step 1
+  useEffect(() => {
+    if (ingestMode !== 'url') return;
+    const s = url.trim();
+    if (!s) { setYtInfo(null); return; }
+    const looksYoutube = /youtu(\.be|be\.com)/i.test(s);
+    if (!looksYoutube) { setYtInfo(null); return; }
+    const t = window.setTimeout(async () => {
+      try {
+        const info = await mediaEstimateUrl(s);
+        setYtInfo(info);
+      } catch (err) {
+        // keep silent; show nothing
+        setYtInfo(null);
+      }
+    }, 450);
+    return () => window.clearTimeout(t);
+  }, [ingestMode, url]);
+
+  // Auto-probe selected file for Step 1
+  useEffect(() => {
+    if (ingestMode !== 'file') return;
+    if (!file) { setProbeInfo(null); return; }
+    let aborted = false;
+    (async () => {
+      try {
+        const info = await mediaProbeUpload(file);
+        if (!aborted) setProbeInfo(info);
+      } catch {
+        if (!aborted) setProbeInfo(null);
+      }
+    })();
+    return () => { aborted = true; };
+  }, [ingestMode, file]);
 
   async function handleTranscribe(kind: 'url' | 'file') {
     try {
@@ -671,6 +708,42 @@ export function TranscriptPanel() {
           )}
         </div>
         <div className="media-editor__right">
+          {/* Step 1 info card when no audio yet */}
+          {!audioUrl ? (
+            <div className="media-info-card">
+              {ingestMode === 'url' && ytInfo ? (
+                <div className="media-info">
+                  {ytInfo.thumbnail_url ? (
+                    <img src={ytInfo.thumbnail_url} alt="Video thumbnail" className="media-info__thumb" />
+                  ) : null}
+                  <div className="media-info__meta">
+                    <p className="media-info__title">{ytInfo.title || 'YouTube video'}</p>
+                    <p className="media-info__line">{ytInfo.uploader || 'Unknown uploader'}</p>
+                    <p className="media-info__line">Duration: {ytInfo.duration ? `${ytInfo.duration.toFixed(1)}s` : '—'} {ytInfo.cached ? '· cached' : ''}</p>
+                    {avgRtf.transcribe > 0 && ytInfo.duration ? (
+                      <p className="media-info__hint">Est. transcribe time: {(ytInfo.duration / avgRtf.transcribe).toFixed(0)}s</p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+              {ingestMode === 'file' && probeInfo ? (
+                <div className="media-info">
+                  <div className="media-info__icon" aria-hidden>🎞️</div>
+                  <div className="media-info__meta">
+                    <p className="media-info__title">Local file</p>
+                    <p className="media-info__line">Format: {probeInfo.format} · Size: {(probeInfo.size_bytes / (1024*1024)).toFixed(1)} MB</p>
+                    <p className="media-info__line">Duration: {probeInfo.duration.toFixed(1)}s {probeInfo.has_video ? '· video' : ''}</p>
+                    {probeInfo.audio ? (
+                      <p className="media-info__line">Audio: {probeInfo.audio.codec ?? '—'} · {probeInfo.audio.sample_rate ?? '—'} Hz · {probeInfo.audio.channels ?? '—'} ch</p>
+                    ) : null}
+                    {probeInfo.video ? (
+                      <p className="media-info__line">Video: {probeInfo.video.codec ?? '—'} · {probeInfo.video.width ?? '—'}×{probeInfo.video.height ?? '—'} @ {probeInfo.video.fps?.toFixed?.(2) ?? '—'} fps</p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {audioUrl ? (
             <div className="media-editor__player">
               {(() => {

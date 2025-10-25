@@ -218,6 +218,27 @@ export interface MediaApplyResponse {
   container: string;
 }
 
+// Step 1 analysis (estimate/probe)
+export interface MediaEstimateInfo {
+  duration: number;
+  cached?: boolean;
+  title?: string | null;
+  uploader?: string | null;
+  upload_date?: string | null; // YYYYMMDD
+  view_count?: number | null;
+  thumbnail_url?: string | null;
+  webpage_url?: string | null;
+}
+
+export interface MediaProbeInfo {
+  duration: number;
+  size_bytes: number;
+  format: string;
+  has_video: boolean;
+  audio?: { codec?: string | null; sample_rate?: number | null; channels?: number | null };
+  video?: { codec?: string | null; width?: number | null; height?: number | null; fps?: number | null };
+}
+
 export interface AuditionAnnouncerConfig {
   enabled: boolean;
   voice?: string | null;

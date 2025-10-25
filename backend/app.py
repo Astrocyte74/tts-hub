@@ -2814,10 +2814,19 @@ def _youtube_cache_find(vid: str) -> Optional[Path]:
 
 @api.route("/media/estimate", methods=["POST"])
 def media_estimate_endpoint():
-    """Estimate media duration for ETA.
+    """Estimate media duration and basic metadata for ETA/preview.
 
     Body: { source: 'youtube', url }
-    Returns: { duration, cached?: boolean }
+    Returns: {
+      duration: number,
+      cached?: boolean,
+      title?: string,
+      uploader?: string,
+      upload_date?: string,
+      view_count?: int,
+      thumbnail_url?: string,
+      webpage_url?: string
+    }
     """
     # Opportunistic cleanup of old media artifacts
     _maybe_cleanup_media_artifacts()
@@ -2833,7 +2842,8 @@ def media_estimate_endpoint():
     if vid:
         cached = _youtube_cache_find(vid)
         if cached and cached.exists():
-            return jsonify({ 'duration': _ffprobe_duration_seconds(cached), 'cached': True })
+            out = { 'duration': _ffprobe_duration_seconds(cached), 'cached': True }
+            return jsonify(out)
     # Fallback: yt-dlp JSON
     if not _have_tool('yt-dlp'):
         raise PlaygroundError("yt-dlp is required to estimate duration.", status=503)
@@ -2842,11 +2852,112 @@ def media_estimate_endpoint():
         data = json.loads(proc.stdout.splitlines()[0]) if proc.stdout else {}
         dur = float(data.get('duration') or 0)
         if dur <= 0:
-            # fallback to ffprobe if webpage_url_basename exists in cache path
             raise ValueError('No duration from yt-dlp')
-        return jsonify({ 'duration': dur, 'cached': False })
+        result = {
+            'duration': dur,
+            'cached': False,
+            'title': data.get('title') or None,
+            'uploader': data.get('uploader') or data.get('channel') or None,
+            'upload_date': data.get('upload_date') or None,
+            'view_count': data.get('view_count') or None,
+            'thumbnail_url': data.get('thumbnail') or None,
+            'webpage_url': data.get('webpage_url') or url,
+        }
+        return jsonify(result)
     except Exception as exc:
         raise PlaygroundError(f"Could not estimate duration: {exc}", status=500)
+
+
+def _ffprobe_json(path: Path) -> Dict[str, Any]:
+    if not _have_tool('ffprobe'):
+        raise PlaygroundError("ffprobe is required to analyze files.", status=503)
+    try:
+        proc = subprocess.run(
+            ['ffprobe', '-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', str(path)],
+            capture_output=True, text=True, check=True
+        )
+        return json.loads(proc.stdout or '{}')
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"ffprobe failed: {exc}", status=500)
+
+
+@api.route('/media/probe', methods=['POST'])
+def media_probe_endpoint():
+    """Inspect an uploaded media file without starting a job.
+
+    Accepts: multipart/form-data with field 'file'
+    Returns: {
+      duration: number,
+      size_bytes: int,
+      format: string,
+      has_video: bool,
+      audio?: { codec?: str, sample_rate?: int, channels?: int },
+      video?: { codec?: str, width?: int, height?: int, fps?: float }
+    }
+    """
+    up = request.files.get('file')
+    if not up or not up.filename:
+        raise PlaygroundError("No file uploaded.", status=400)
+    suffix = Path(up.filename).suffix or '.dat'
+    tmp_dir = OUTPUT_DIR / 'media_probe'
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    tmp_path = tmp_dir / f"probe-{uuid.uuid4().hex}{suffix}"
+    up.save(str(tmp_path))
+    try:
+        info = _ffprobe_json(tmp_path)
+        fmt = (info.get('format') or {})
+        size_bytes = int(float(fmt.get('size') or 0))
+        duration = float(fmt.get('duration') or 0.0)
+        streams = info.get('streams') or []
+        audio: Dict[str, Any] = {}
+        video: Dict[str, Any] = {}
+        has_video = False
+        for s in streams:
+            if s.get('codec_type') == 'audio' and not audio:
+                sr = s.get('sample_rate')
+                try:
+                    sr_i = int(sr) if isinstance(sr, str) else int(sr or 0)
+                except Exception:
+                    sr_i = None
+                audio = {
+                    'codec': s.get('codec_name') or None,
+                    'sample_rate': sr_i,
+                    'channels': s.get('channels') or None,
+                }
+            elif s.get('codec_type') == 'video' and not video:
+                has_video = True
+                fps = None
+                try:
+                    r = s.get('r_frame_rate') or s.get('avg_frame_rate')
+                    if isinstance(r, str) and '/' in r:
+                        num, den = r.split('/')
+                        num_f = float(num)
+                        den_f = float(den) if float(den) != 0 else 1.0
+                        fps = num_f / den_f
+                except Exception:
+                    fps = None
+                video = {
+                    'codec': s.get('codec_name') or None,
+                    'width': s.get('width') or None,
+                    'height': s.get('height') or None,
+                    'fps': fps,
+                }
+        result = {
+            'duration': duration,
+            'size_bytes': size_bytes,
+            'format': (fmt.get('format_name') or fmt.get('format_long_name') or 'unknown'),
+            'has_video': has_video,
+        }
+        if audio:
+            result['audio'] = audio
+        if video:
+            result['video'] = video
+        return jsonify(result)
+    finally:
+        try:
+            tmp_path.unlink(missing_ok=True)  # type: ignore[arg-type]
+        except Exception:
+            pass
 
 
 @api.route("/media/replace_preview", methods=["POST"])
