@@ -91,23 +91,35 @@ log() {
   printf '[Kokoro SPA] %s\n' "$*"
 }
 
-# Optional: copy a URL to clipboard on start (macOS pbcopy; Linux wl-copy/xclip/xsel)
-COPY_URL_ON_START="${COPY_URL_ON_START:-1}"
-COPY_URL="${COPY_URL:-https://www.youtube.com/watch?v=U8F7UNK9jco}"
+# Optional: copy a test media URL to clipboard on start (dev only)
+# - Configure via COPY_URL (e.g., a YouTube link safe from 429s). Leave empty to skip.
+# - Enable/disable via COPY_URL_ON_START. Defaults: dev=on, prod=off.
+COPY_URL_ON_START="${COPY_URL_ON_START:-}"
+COPY_URL="${COPY_URL:-}"
+
+# Decide default based on mode when not explicitly set
+if [[ -z "$COPY_URL_ON_START" ]]; then
+  case "$(printf '%s' "$MODE" | tr '[:upper:]' '[:lower:]')" in
+    dev) COPY_URL_ON_START=1 ;;
+    *)   COPY_URL_ON_START=0 ;;
+  esac
+fi
+
 _copy_url_flag=$(printf '%s' "$COPY_URL_ON_START" | tr '[:upper:]' '[:lower:]')
-if [[ "$_copy_url_flag" =~ ^(1|true|yes|on)$ && -n "$COPY_URL" ]]; then
+_mode_lc=$(printf '%s' "$MODE" | tr '[:upper:]' '[:lower:]')
+if [[ "$_mode_lc" == "dev" && "$_copy_url_flag" =~ ^(1|true|yes|on)$ && -n "$COPY_URL" ]]; then
   if command -v pbcopy >/dev/null 2>&1; then
     printf "%s" "$COPY_URL" | pbcopy
-    log "Copied URL to clipboard"
+    log "Copied test URL to clipboard"
   elif command -v wl-copy >/dev/null 2>&1; then
     printf "%s" "$COPY_URL" | wl-copy
-    log "Copied URL to clipboard (wl-copy)"
+    log "Copied test URL to clipboard (wl-copy)"
   elif command -v xclip >/dev/null 2>&1; then
     printf "%s" "$COPY_URL" | xclip -selection clipboard
-    log "Copied URL to clipboard (xclip)"
+    log "Copied test URL to clipboard (xclip)"
   elif command -v xsel >/dev/null 2>&1; then
     printf "%s" "$COPY_URL" | xsel --clipboard --input
-    log "Copied URL to clipboard (xsel)"
+    log "Copied test URL to clipboard (xsel)"
   else
     log "Clipboard tool not found (pbcopy/wl-copy/xclip/xsel). Skipping copy."
   fi
