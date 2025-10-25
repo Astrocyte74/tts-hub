@@ -1169,6 +1169,7 @@ export function TranscriptPanel() {
                       }}
                       diffMarkers={lastBoundaryChanges}
                       showLegend
+                      defaultZoom={3}
                       height={80}
                     />
                   </>

@@ -12,17 +12,19 @@ interface Props {
   height?: number;
   diffMarkers?: { idx: number; boundary: 'start'|'end'; prev: number; next: number; deltaMs: number }[];
   showLegend?: boolean;
+  defaultZoom?: number;
 }
 
-export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChangeSelection, height = 80, diffMarkers = [], showLegend = true }: Props) {
+export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChangeSelection, height = 80, diffMarkers = [], showLegend = true, defaultZoom = 1 }: Props) {
   const { peaks, duration } = useWaveformData(audioUrl, 1024);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState<number>(600);
   const dpr = Math.max(1, Math.min(2, (window.devicePixelRatio || 1)));
   const [hover, setHover] = useState<{ x: number; t: number; idx: number } | null>(null);
-  const [zoom, setZoom] = useState<number>(1); // 1 = fit all
+  const [zoom, setZoom] = useState<number>(Math.max(1, defaultZoom || 1)); // 1 = fit all
   const [viewStart, setViewStart] = useState<number>(0); // seconds
+  const [isHot, setIsHot] = useState<boolean>(false); // keyboard scope when hovered
 
   // Resize observer to keep canvas crisp
   useEffect(() => {
@@ -161,6 +163,41 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
     return viewStart + pct * viewDuration;
   }
 
+  // Keyboard shortcuts (when hovered): Z in, Shift+Z out, F fit, S zoom to selection
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!isHot) return;
+      const target = e.target as HTMLElement | null;
+      const tag = (target?.tagName || '').toLowerCase();
+      const isEditable = tag === 'input' || tag === 'textarea' || (target && (target as HTMLElement).isContentEditable);
+      if (isEditable) return;
+      if (e.key.toLowerCase() === 'z' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        // zoom in at center of current view or selection center
+        const anchor = selection ? (selection.start + selection.end) / 2 : (viewStart + viewDuration / 2);
+        const factor = e.shiftKey ? 1 / 1.2 : 1.2; // Shift+Z to zoom out
+        const nextZoom = Math.max(1, Math.min(100, zoom * factor));
+        const nextViewDur = Math.max(0.01, duration ? duration / nextZoom : viewDuration);
+        let nextStart = anchor - nextViewDur / 2;
+        nextStart = clampViewStart(nextStart);
+        setZoom(nextZoom);
+        setViewStart(nextStart);
+      } else if (e.key.toLowerCase() === 'f' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setZoom(1); setViewStart(0);
+      } else if (e.key.toLowerCase() === 's' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (!selection || !duration) return;
+        e.preventDefault();
+        const len = Math.max(0.01, selection.end - selection.start);
+        const nextZoom = Math.min(100, duration / len);
+        setZoom(nextZoom);
+        setViewStart(clampViewStart(selection.start - 0.05 * len));
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isHot, selection, zoom, duration, viewStart, viewDuration]);
+
   function snapToWords(t: number, bound: 'start' | 'end'): number {
     if (!words || !words.length) return t;
     let nearest = words[0]!.start;
@@ -177,6 +214,8 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
     <div
       className="waveform"
       ref={containerRef}
+      onMouseEnter={() => setIsHot(true)}
+      onMouseLeave={() => { setIsHot(false); setHover(null); }}
       onMouseDown={(e) => {
         const t = posToTime(e.clientX);
         dragRef.current = { from: t, to: t };
@@ -243,7 +282,24 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
       <div className="waveform__controls" aria-label="Waveform zoom controls">
         <button type="button" className="wf-btn" onClick={() => { setZoom((z) => Math.max(1, z / 1.5)); }}>−</button>
         <button type="button" className="wf-btn" onClick={() => { setZoom(1); setViewStart(0); }}>Fit</button>
+        <button type="button" className="wf-btn" onClick={() => { if (selection && duration) { const len = Math.max(0.01, selection.end - selection.start); const nextZoom = Math.min(100, duration / len); setZoom(nextZoom); setViewStart(clampViewStart(selection.start - 0.05 * len)); } }} disabled={!selection || !(selection.end > selection.start)}>Sel</button>
         <button type="button" className="wf-btn" onClick={() => { setZoom((z) => Math.min(100, z * 1.5)); }}>+</button>
+      </div>
+      {/* Footer: shortcuts and legend */}
+      <div className="waveform__footer">
+        <div className="waveform__shortcuts">
+          <span>Scroll to pan; Cmd/Ctrl+Scroll to zoom.</span>
+          <span>Shortcuts: Z in, Shift+Z out, F fit, S selection.</span>
+        </div>
+        {showLegend ? (
+          <div className="waveform__legend" aria-hidden>
+            <span className="wave-legend__item"><i className="wl wl--env" /> Envelope</span>
+            <span className="wave-legend__item"><i className="wl wl--tick" /> Word boundary</span>
+            <span className="wave-legend__item"><i className="wl wl--sel" /> Selection</span>
+            <span className="wave-legend__item"><i className="wl wl--whisk" /> Adjustment</span>
+            <span className="wave-legend__item"><i className="wl wl--play" /> Playhead</span>
+          </div>
+        ) : null}
       </div>
       {/* Hover tooltip */}
       {hover && hover.idx >= 0 && words && words[hover.idx] ? (() => {
