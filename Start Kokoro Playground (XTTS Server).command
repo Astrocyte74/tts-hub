@@ -661,6 +661,7 @@ cd "$FRONTEND_DIR"
 # Use PUBLIC_HOST for the API base when available (ensures remote peers can reach it)
 VITE_API_BASE_URL="http://${PUBLIC_HOST:-$BACKEND_HOST}:$BACKEND_PORT" \
 VITE_API_PREFIX="${VITE_API_PREFIX:-$BACKEND_API_PREFIX}" \
+VITE_TEST_MEDIA_URL="${VITE_TEST_MEDIA_URL:-}" \
 npm run dev -- --host "$DEV_HOST" --port "$DEV_PORT" &
 FRONTEND_PID=$!
 

@@ -8,7 +8,9 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 
 export function TranscriptPanel() {
   // no collapsible state (full-page)
-  const [url, setUrl] = useState('');
+  const testMediaUrl = (import.meta as any)?.env?.VITE_TEST_MEDIA_URL as string | undefined;
+  const isDevEnv = Boolean((import.meta as any)?.env?.DEV);
+  const [url, setUrl] = useState<string>(isDevEnv && testMediaUrl ? String(testMediaUrl) : '');
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string>('');
