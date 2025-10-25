@@ -587,7 +587,12 @@ export function TranscriptPanel() {
         <div className="media-editor__right">
           {audioUrl ? (
             <div className="media-editor__player">
-              <audio ref={audioRef} controls src={audioUrl} style={{ width: '100%' }} onPlay={handleAudioPlay} />
+              <div className="row spaced" style={{ alignItems: 'center' }}>
+                <audio ref={audioRef} controls src={audioUrl} style={{ width: '100%' }} onPlay={handleAudioPlay} />
+                <button className="panel__button" type="button" onClick={() => void previewSelectionOnce()} disabled={isPreviewingSel || !regionStart || !regionEnd}>
+                  {isPreviewingSel ? 'Playing…' : 'Play selection'}
+                </button>
+              </div>
               {/* Custom selection timeline overlay */}
               <div
                 className="media-editor__timeline"
