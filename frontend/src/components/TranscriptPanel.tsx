@@ -23,6 +23,7 @@ export function TranscriptPanel() {
   const [trimPreMs, setTrimPreMs] = useState<string>('8');
   const [trimPostMs, setTrimPostMs] = useState<string>('8');
   const [duckDbVal, setDuckDbVal] = useLocalStorage<string>('kokoro:mediaDuckDb', '');
+  const [ingestMode, setIngestMode] = useLocalStorage<'url' | 'file'>('kokoro:mediaIngestMode', 'url');
   const [replaceText, setReplaceText] = useState<string>('');
   const [replacePreviewUrl, setReplacePreviewUrl] = useState<string | null>(null);
   const [replaceStatus, setReplaceStatus] = useState<string>('');
@@ -355,18 +356,35 @@ export function TranscriptPanel() {
     <div className="panel panel--compact" style={{ marginTop: 12 }}>
       <div className="media-editor">
         <div className="media-editor__left">
+          <div className="ingest-toolbar">
+            <span className="ingest-toolbar__label">Source</span>
+            <div className="segmented segmented--sm" role="tablist" aria-label="Ingest source">
+              <label className={`segmented__option ${ingestMode === 'url' ? 'is-selected' : ''}`}>
+                <input type="radio" name="ingest" value="url" checked={ingestMode === 'url'} onChange={() => setIngestMode('url')} /> URL
+              </label>
+              <label className={`segmented__option ${ingestMode === 'file' ? 'is-selected' : ''}`}>
+                <input type="radio" name="ingest" value="file" checked={ingestMode === 'file'} onChange={() => setIngestMode('file')} /> File
+              </label>
+            </div>
+          </div>
           <div className="form-grid">
-            <label className="field" style={{ minWidth: 280 }}>
-              <span className="field__label">YouTube URL</span>
-              <input type="url" placeholder="https://www.youtube.com/watch?v=..." value={url} onChange={(e) => setUrl(e.target.value)} />
-            </label>
-            <button className="panel__button action" type="button" disabled={busy} onClick={() => handleTranscribe('url')}>Transcribe URL</button>
-            <div className="inline-or">or</div>
-            <label className="field">
-              <span className="field__label">Upload file</span>
-              <input ref={fileInputRef} type="file" accept="audio/*,video/*,.mp4,.mkv,.mov,.mp3,.wav,.flac,.ogg" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-            </label>
-            <button className="panel__button action" type="button" disabled={busy} onClick={() => handleTranscribe('file')}>Transcribe File</button>
+            {ingestMode === 'url' ? (
+              <>
+                <label className="field" style={{ minWidth: 280 }}>
+                  <span className="field__label">YouTube URL</span>
+                  <input type="url" placeholder="https://www.youtube.com/watch?v=..." value={url} onChange={(e) => setUrl(e.target.value)} />
+                </label>
+                <button className="panel__button action" type="button" disabled={busy || !url.trim()} onClick={() => handleTranscribe('url')}>Transcribe</button>
+              </>
+            ) : (
+              <>
+                <label className="field">
+                  <span className="field__label">Upload file</span>
+                  <input ref={fileInputRef} type="file" accept="audio/*,video/*,.mp4,.mkv,.mov,.mp3,.wav,.flac,.ogg" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                </label>
+                <button className="panel__button action" type="button" disabled={busy || !file} onClick={() => handleTranscribe('file')}>Transcribe</button>
+              </>
+            )}
           </div>
           {error ? <p className="panel__hint panel__hint--warning">{error}</p> : null}
           {status ? (
@@ -381,8 +399,8 @@ export function TranscriptPanel() {
           ) : null}
           {whisperxEnabled ? (
             <div className="panel__actions panel__actions--wrap" style={{ gap: 8 }}>
-              <button className="panel__button" type="button" disabled={busy || !jobId} onClick={handleAlignFull}>
-                {busy ? 'Aligning…' : 'Refine timings (WhisperX)'}
+              <button className="panel__button" type="button" disabled={busy || !jobId} onClick={handleAlignFull} title="Align transcript to audio for precise word timings using WhisperX">
+                {busy ? 'Aligning…' : 'Refine word timings (WhisperX)'}
               </button>
               {!jobId ? <p className="panel__hint panel__hint--muted">Transcribe first to create a job.</p> : null}
               <div className="panel__meta" style={{ marginLeft: 12 }}>or refine a region:</div>

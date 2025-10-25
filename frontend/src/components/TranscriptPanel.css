@@ -98,6 +98,17 @@
   color: #e2e8f0;
 }
 
+/* Smaller variant for toolbars */
+.segmented--sm .segmented__option { padding: 4px 10px; font-size: 13px; }
+
+.ingest-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ingest-toolbar__label { color: rgba(148,163,184,0.85); font-size: 13px; }
+
 /* Compact field width helpers */
 .field--sm { width: 160px; }
 .field--md { width: 200px; }
