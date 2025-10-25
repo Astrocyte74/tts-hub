@@ -1139,8 +1139,8 @@ export function TranscriptPanel() {
           {transcript && (currentStep === '2' || currentStep === '3') ? (
             <div className="media-editor__words">
               <p className="panel__meta">Language: {transcript.language || 'unknown'} · Duration: {transcript.duration?.toFixed?.(1) ?? transcript.duration}s</p>
-              <details open={Boolean(viewPanelOpen)} onToggle={(e) => setViewPanelOpen((e.currentTarget as HTMLDetailsElement).open)}>
-                <summary className="panel__meta" style={{ cursor: 'pointer' }}>View & Find — {viewMode === 'words' ? 'Words' : 'Sentences'}</summary>
+              <details className="viewfind" open={Boolean(viewPanelOpen)} onToggle={(e) => setViewPanelOpen((e.currentTarget as HTMLDetailsElement).open)}>
+                <summary className="viewfind__summary" style={{ cursor: 'pointer' }}>View & Find — {viewMode === 'words' ? 'Words' : 'Sentences'}</summary>
                 <div className="row" style={{ alignItems: 'flex-end', gap: 8, marginTop: 6 }}>
                   <div className="segmented segmented--sm" role="radiogroup" aria-label="View">
                     <label className={`segmented__option ${viewMode === 'sentences' ? 'is-selected' : ''}`}>
@@ -1182,16 +1182,17 @@ export function TranscriptPanel() {
                   </button>
                 </div>
               </details>
-              <div className="panel__actions" style={{ gap: 8 }}>
-                <span className="panel__meta">Selection: {regionStart || '…'}s → {regionEnd || '…'}s {selectionValid ? `(${(Number(regionEnd) - Number(regionStart)).toFixed(2)}s)` : ''}</span>
-                <button className="panel__button" type="button" onClick={() => { clearSelection(); }}>
-                  Clear
-                </button>
-                <button className="panel__button" type="button" disabled={!audioUrl || isPreviewingSel || !selectionValid} onClick={() => void previewSelectionOnce()}>
-                  {isPreviewingSel ? 'Playing…' : 'Preview selection'}
-                </button>
-                {whisperxEnabled ? (
-                  <button className="panel__button panel__button--ghost" type="button" disabled={busy || !jobId || !selectionValid} onClick={async () => {
+              <div className="selection-toolbar">
+                <div className="selection-toolbar__meta panel__meta">Selection: {regionStart || '…'}s → {regionEnd || '…'}s {selectionValid ? `(${(Number(regionEnd) - Number(regionStart)).toFixed(2)}s)` : ''}</div>
+                <div className="selection-toolbar__actions">
+                  <button className="panel__button panel__button--sm" type="button" onClick={() => { clearSelection(); }}>
+                    Clear
+                  </button>
+                  <button className="panel__button panel__button--sm" type="button" disabled={!audioUrl || isPreviewingSel || !selectionValid} onClick={() => void previewSelectionOnce()}>
+                    {isPreviewingSel ? 'Playing…' : 'Preview selection'}
+                  </button>
+                  {whisperxEnabled ? (
+                  <button className="panel__button panel__button--sm panel__button--ghost" type="button" disabled={busy || !jobId || !selectionValid} onClick={async () => {
                     if (!jobId) { setError('Transcribe first'); return; }
                     const s = Number(regionStart), e = Number(regionEnd), m = Number(regionMargin || '0.75');
                     if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Enter start/end seconds (end > start)'); return; }
@@ -1228,6 +1229,7 @@ export function TranscriptPanel() {
                     {busy ? 'Aligning…' : 'Refine region'}
                   </button>
                 ) : null}
+                </div>
               </div>
 
               {viewMode === 'sentences' && transcript.segments?.length ? (
