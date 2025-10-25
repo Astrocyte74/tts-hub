@@ -2842,7 +2842,23 @@ def media_estimate_endpoint():
     if vid:
         cached = _youtube_cache_find(vid)
         if cached and cached.exists():
-            out = { 'duration': _ffprobe_duration_seconds(cached), 'cached': True }
+            out: Dict[str, Any] = { 'duration': _ffprobe_duration_seconds(cached), 'cached': True }
+            # Try to enrich with yt-dlp metadata even when cached (best effort)
+            if _have_tool('yt-dlp'):
+                try:
+                    proc = subprocess.run(['yt-dlp','-j', url], capture_output=True, text=True, check=True)
+                    data = json.loads(proc.stdout.splitlines()[0]) if proc.stdout else {}
+                    out.update({
+                        'title': data.get('title') or None,
+                        'uploader': data.get('uploader') or data.get('channel') or None,
+                        'upload_date': data.get('upload_date') or None,
+                        'view_count': data.get('view_count') or None,
+                        'thumbnail_url': data.get('thumbnail') or None,
+                        'webpage_url': data.get('webpage_url') or url,
+                    })
+                except Exception:
+                    # ignore metadata fetch errors; return minimal cached info
+                    pass
             return jsonify(out)
     # Fallback: yt-dlp JSON
     if not _have_tool('yt-dlp'):
