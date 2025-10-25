@@ -1126,9 +1126,11 @@ def build_xtts_voice_payload() -> Dict[str, Any]:
     message = None
     if not voices:
         message = 'Place reference clips in XTTS/tts-service/voices/ and reload.'
+    # Reflect engine availability based on server or local CLI presence, regardless of whether voices exist
+    available = bool(XTTS_SERVER_URL) or (XTTS_PYTHON.exists() and XTTS_SERVICE_DIR.exists())
     return {
         'engine': 'xtts',
-        'available': bool(mapping) and XTTS_PYTHON.exists() and XTTS_SERVICE_DIR.exists(),
+        'available': available,
         'voices': voices,
         'accentGroups': groups,
         'groups': groups,
