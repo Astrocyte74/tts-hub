@@ -376,6 +376,9 @@ export function TranscriptPanel() {
   const [alignDiff, setAlignDiff] = useState<{ compared?: number; changed?: number; mean_abs_ms?: number; median_abs_ms?: number; p95_abs_ms?: number; max_abs_ms?: number; top?: { idx?: number; text?: string; boundary?: string; delta_ms?: number; direction?: string }[] } | null>(null);
   const [alignScope, setAlignScope] = useState<'full' | 'region' | null>(null);
   const [alignWindow, setAlignWindow] = useState<{ start: number; end: number } | null>(null);
+  const prevWordsRef = useRef<{ start: number; end: number; text?: string }[] | null>(null);
+  const [lastBoundaryChanges, setLastBoundaryChanges] = useState<{ idx: number; boundary: 'start'|'end'; prev: number; next: number; deltaMs: number }[]>([]);
+  const [lastBoundaryMap, setLastBoundaryMap] = useState<Record<number, { startPrev?: number; startNew?: number; endPrev?: number; endNew?: number }>>({});
 
   const describeAlignment = (diff: typeof alignDiff | null, scope: 'full' | 'region' | null, win: { start: number; end: number } | null) => {
     if (!diff || !diff.compared) return '';
@@ -398,6 +401,8 @@ export function TranscriptPanel() {
       setBusy(true);
       setStatus('Aligning full transcript with WhisperX…');
       setError(null);
+      // capture previous words for diff
+      prevWordsRef.current = transcript?.words ? transcript.words.map(w => ({ start: w.start, end: w.end, text: w.text })) : null;
       // ETA progress: estimate using avgRtf.full and transcript duration
       if (transcript?.duration && avgRtf.full > 0) {
         const total = transcript.duration / avgRtf.full;
@@ -430,6 +435,35 @@ export function TranscriptPanel() {
           });
           setAlignScope('full');
           setAlignWindow(null);
+          // compute whiskers map
+          if (prevWordsRef.current && Array.isArray(res.transcript?.words)) {
+            const prev = prevWordsRef.current;
+            const next = res.transcript.words as any[];
+            const n = Math.min(prev.length, next.length);
+            const changes: { idx: number; boundary: 'start'|'end'; prev: number; next: number; deltaMs: number }[] = [];
+            const m: Record<number, { startPrev?: number; startNew?: number; endPrev?: number; endNew?: number }> = {};
+            for (let i = 0; i < n; i += 1) {
+              const p = prev[i]; const q = next[i];
+              if (!p || !q) continue;
+              if (Math.abs((q.start ?? 0) - (p.start ?? 0)) > 1e-3) {
+                const deltaMs = ((q.start ?? 0) - (p.start ?? 0)) * 1000;
+                changes.push({ idx: i, boundary: 'start', prev: p.start ?? 0, next: q.start ?? 0, deltaMs });
+                m[i] = m[i] || {};
+                m[i].startPrev = p.start ?? 0; m[i].startNew = q.start ?? 0;
+              }
+              if (Math.abs((q.end ?? 0) - (p.end ?? 0)) > 1e-3) {
+                const deltaMs = ((q.end ?? 0) - (p.end ?? 0)) * 1000;
+                changes.push({ idx: i, boundary: 'end', prev: p.end ?? 0, next: q.end ?? 0, deltaMs });
+                m[i] = m[i] || {};
+                m[i].endPrev = p.end ?? 0; m[i].endNew = q.end ?? 0;
+              }
+            }
+            setLastBoundaryChanges(changes);
+            setLastBoundaryMap(m);
+          } else {
+            setLastBoundaryChanges([]);
+            setLastBoundaryMap({});
+          }
         }
       } catch {}
     } catch (err) {
@@ -590,7 +624,9 @@ export function TranscriptPanel() {
                     if (!jobId) { setError('Transcribe first'); return; }
                     const s = Number(regionStart), e = Number(regionEnd), m = Number(regionMargin || '0.75');
                     if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) { setError('Select a valid region first'); return; }
-                    try {
+                  try {
+                      // capture previous words for diff
+                      prevWordsRef.current = transcript?.words ? transcript.words.map(w => ({ start: w.start, end: w.end, text: w.text })) : null;
                       setBusy(true);
                       setStatus(`Aligning region ${s.toFixed(2)}–${e.toFixed(2)}s with WhisperX…`);
                       setError(null);
@@ -624,6 +660,33 @@ export function TranscriptPanel() {
                           });
                           setAlignScope('region');
                           setAlignWindow({ start: s, end: e });
+                          // compute whiskers for region
+                          if (prevWordsRef.current && Array.isArray(res.transcript?.words)) {
+                            const prev = prevWordsRef.current;
+                            const next = res.transcript.words as any[];
+                            const n = Math.min(prev.length, next.length);
+                            const changes: { idx: number; boundary: 'start'|'end'; prev: number; next: number; deltaMs: number }[] = [];
+                            const m: Record<number, { startPrev?: number; startNew?: number; endPrev?: number; endNew?: number }> = {};
+                            for (let i = 0; i < n; i += 1) {
+                              const p = prev[i]; const q = next[i];
+                              if (!p || !q) continue;
+                              if (Math.abs((q.start ?? 0) - (p.start ?? 0)) > 1e-3) {
+                                const deltaMs = ((q.start ?? 0) - (p.start ?? 0)) * 1000;
+                                changes.push({ idx: i, boundary: 'start', prev: p.start ?? 0, next: q.start ?? 0, deltaMs });
+                                m[i] = m[i] || {}; m[i].startPrev = p.start ?? 0; m[i].startNew = q.start ?? 0;
+                              }
+                              if (Math.abs((q.end ?? 0) - (p.end ?? 0)) > 1e-3) {
+                                const deltaMs = ((q.end ?? 0) - (p.end ?? 0)) * 1000;
+                                changes.push({ idx: i, boundary: 'end', prev: p.end ?? 0, next: q.end ?? 0, deltaMs });
+                                m[i] = m[i] || {}; m[i].endPrev = p.end ?? 0; m[i].endNew = q.end ?? 0;
+                              }
+                            }
+                            setLastBoundaryChanges(changes);
+                            setLastBoundaryMap(m);
+                          } else {
+                            setLastBoundaryChanges([]);
+                            setLastBoundaryMap({});
+                          }
                         }
                       } catch {}
                     } catch (err) {
@@ -722,11 +785,22 @@ export function TranscriptPanel() {
                       const dir = (t.delta_ms || 0) >= 0 ? 'later' : 'earlier';
                       const arrow = (t.delta_ms || 0) >= 0 ? '→' : '←';
                       const label = `${t.text ?? ''} ${val} ms ${dir} ${arrow}`;
+                      let titleTxt = `Adjusted ${t.boundary} by ${val} ms ${dir}`;
+                      try {
+                        const idx = typeof t.idx === 'number' ? t.idx : -1;
+                        const m = lastBoundaryMap[idx];
+                        const b = String(t.boundary) === 'start' ? 'start' : 'end';
+                        const p = b === 'start' ? m?.startPrev : m?.endPrev;
+                        const n = b === 'start' ? m?.startNew : m?.endNew;
+                        if (typeof p === 'number' && typeof n === 'number') {
+                          titleTxt = `${b} ${p.toFixed(2)}s → ${n.toFixed(2)}s (${val} ms ${dir})`;
+                        }
+                      } catch {}
                       return (
                         <button
                           key={`ex-${i}-${t.idx}`}
                           className="chip-button chip-button--accent"
-                          title={`Adjusted ${t.boundary} by ${val} ms ${dir}`}
+                          title={titleTxt}
                           type="button"
                           onMouseEnter={() => {
                             try {
@@ -874,12 +948,37 @@ export function TranscriptPanel() {
                     // Optional: auto-refine selection before preview
                     if (autoRefineOnPreview && whisperxEnabled) {
                       try {
+                        prevWordsRef.current = transcript?.words ? transcript.words.map(w => ({ start: w.start, end: w.end, text: w.text })) : null;
                         const m = Number(regionMargin || '0.75');
                         const resAlign = await mediaAlignRegion(jobId, s, e, Number.isFinite(m) ? m : undefined);
                         setTranscript(resAlign.transcript);
                         setAlignScope('region');
                         setAlignWindow({ start: s, end: e });
                         setLastRefinedSec(Math.max(0, e - s));
+                        // compute whiskers for auto-refine
+                        if (prevWordsRef.current && Array.isArray(resAlign.transcript?.words)) {
+                          const prev = prevWordsRef.current;
+                          const next = resAlign.transcript.words as any[];
+                          const n2 = Math.min(prev.length, next.length);
+                          const changes2: { idx: number; boundary: 'start'|'end'; prev: number; next: number; deltaMs: number }[] = [];
+                          const m2: Record<number, { startPrev?: number; startNew?: number; endPrev?: number; endNew?: number }> = {};
+                          for (let i = 0; i < n2; i += 1) {
+                            const p = prev[i]; const q = next[i];
+                            if (!p || !q) continue;
+                            if (Math.abs((q.start ?? 0) - (p.start ?? 0)) > 1e-3) {
+                              const dms = ((q.start ?? 0) - (p.start ?? 0)) * 1000;
+                              changes2.push({ idx: i, boundary: 'start', prev: p.start ?? 0, next: q.start ?? 0, deltaMs: dms });
+                              m2[i] = m2[i] || {}; m2[i].startPrev = p.start ?? 0; m2[i].startNew = q.start ?? 0;
+                            }
+                            if (Math.abs((q.end ?? 0) - (p.end ?? 0)) > 1e-3) {
+                              const dms = ((q.end ?? 0) - (p.end ?? 0)) * 1000;
+                              changes2.push({ idx: i, boundary: 'end', prev: p.end ?? 0, next: q.end ?? 0, deltaMs: dms });
+                              m2[i] = m2[i] || {}; m2[i].endPrev = p.end ?? 0; m2[i].endNew = q.end ?? 0;
+                            }
+                          }
+                          setLastBoundaryChanges(changes2);
+                          setLastBoundaryMap(m2);
+                        }
                       } catch {
                         // ignore auto-refine failure
                       }
@@ -1068,6 +1167,7 @@ export function TranscriptPanel() {
                         setRegionStart(s.toFixed(2));
                         setRegionEnd(e.toFixed(2));
                       }}
+                      diffMarkers={lastBoundaryChanges}
                       height={80}
                     />
                   </>

@@ -10,9 +10,10 @@ interface Props {
   selection: { start: number; end: number } | null;
   onChangeSelection?: (start: number, end: number) => void;
   height?: number;
+  diffMarkers?: { idx: number; boundary: 'start'|'end'; prev: number; next: number; deltaMs: number }[];
 }
 
-export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChangeSelection, height = 80 }: Props) {
+export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChangeSelection, height = 80, diffMarkers = [] }: Props) {
   const { peaks, duration } = useWaveformData(audioUrl, 1024);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -91,6 +92,32 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
       }
     }
 
+    // Whiskers for boundary adjustments (last alignment)
+    if (diffMarkers && diffMarkers.length && duration) {
+      ctx.strokeStyle = 'rgba(234,179,8,0.9)'; // amber
+      ctx.fillStyle = 'rgba(234,179,8,0.9)';
+      ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
+      for (const mk of diffMarkers) {
+        const tNow = mk.next;
+        const xNow = Math.floor(timeToX(tNow) * dpr);
+        const dx = (mk.next - mk.prev) / duration * (width * dpr);
+        // clamp visual length in px (accounting for sign)
+        const maxLen = 8 * dpr;
+        const minLen = 2 * dpr;
+        let dxPx = dx;
+        const sign = dxPx >= 0 ? 1 : -1;
+        dxPx = Math.min(maxLen, Math.max(-maxLen, dxPx));
+        if (Math.abs(dxPx) < minLen) dxPx = sign * minLen; // ensure visible
+        const yMid = Math.floor(h * 0.2); // draw near the top
+        ctx.beginPath();
+        ctx.moveTo(xNow, yMid - 3);
+        ctx.lineTo(xNow - dxPx, yMid - 3);
+        ctx.stroke();
+        // end cap
+        ctx.fillRect(Math.floor(xNow - dxPx - (1 * dpr)), yMid - 5, Math.max(2, Math.floor(2 * dpr)), Math.max(4, Math.floor(4 * dpr)));
+      }
+    }
+
     // Playhead
     if (duration && Number.isFinite(currentTime)) {
       const x = Math.floor(timeToX(currentTime) * dpr);
@@ -151,4 +178,3 @@ export function WaveformCanvas({ audioUrl, words, currentTime, selection, onChan
     </div>
   );
 }
-
