@@ -1,8 +1,10 @@
 .media-editor {
   display: grid;
-  grid-template-columns: minmax(340px, 420px) 1fr;
-  gap: 16px;
+  grid-template-columns: minmax(360px, 460px) 1fr;
+  gap: 20px;
   align-items: start;
+  width: 100%;
+  min-width: 0;
 }
 
 @media (max-width: 1080px) {
@@ -15,6 +17,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 
 .media-editor__right {
@@ -22,6 +25,7 @@
   flex-direction: column;
   gap: 8px;
   min-height: 420px;
+  min-width: 0; /* allow grid child to shrink and wrap content */
 }
 
 /* Sticky player + transport under the page header */
@@ -35,6 +39,7 @@
   border-radius: 12px;
   padding: 10px 12px;
 }
+.media-editor__player audio { display: block; width: 100%; min-width: 0; }
 
 .media-editor__timeline {
   position: relative;
@@ -52,8 +57,10 @@
   padding: 8px 0;
   user-select: none;
   max-height: 62vh;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   border-radius: 12px;
+  min-width: 0; /* prevent overflow in grid/flex parents */
 }
 
 /* Slightly softer chip defaults within the media editor context */
@@ -61,6 +68,8 @@
   background: rgba(148, 163, 184, 0.12);
   border: 1px solid rgba(148, 163, 184, 0.22);
 }
+/* Ensure very long tokens don't force horizontal overflow */
+.media-editor__words .chip { overflow-wrap: anywhere; word-break: break-word; }
 
 /* Segmented control for radio-like options */
 .segmented {
@@ -110,6 +119,7 @@
   border-radius: 12px;
   padding: 10px;
   background: rgba(30, 41, 59, 0.35);
+  min-width: 0;
 }
 
 .btns-mini { display: inline-flex; gap: 6px; }
