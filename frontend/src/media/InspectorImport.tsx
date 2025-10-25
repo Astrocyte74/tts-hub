@@ -24,11 +24,22 @@ export function InspectorImport({ busy, status, error, onTranscribeUrl, onTransc
           <>
             <label className="field" style={{ minWidth: 260 }}>
               <span className="field__label">YouTube URL</span>
-              <input type="url" placeholder="https://…" value={url} onChange={(e) => setUrl(e.target.value)} />
+              <input
+                type="url"
+                placeholder="https://…"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && url.trim()) {
+                    onTranscribeUrl(url.trim());
+                  }
+                }}
+              />
             </label>
             <button className="panel__button panel__button--primary" type="button" disabled={busy || !url.trim()} onClick={() => onTranscribeUrl(url.trim())}>
               {busy ? 'Working…' : 'Transcribe'}
             </button>
+            <p className="panel__hint panel__hint--muted">Press Enter to transcribe.</p>
           </>
         ) : (
           <>

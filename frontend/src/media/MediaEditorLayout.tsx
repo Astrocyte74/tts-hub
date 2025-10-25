@@ -6,6 +6,7 @@ import { InspectorImport } from './InspectorImport';
 import { InspectorAlign } from './InspectorAlign';
 import { InspectorReplace } from './InspectorReplace';
 import { InspectorApply } from './InspectorApply';
+import { SelectionBar } from './SelectionBar';
 import { useSessionStorage } from '../hooks/useSessionStorage';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import type { SynthesisResult } from '../types';
@@ -350,12 +351,24 @@ export function MediaEditorLayout() {
         </div>
         <div>
           {state.transcript ? (
-            <TranscriptView
-              transcript={state.transcript}
-              selection={state.selection}
-              onSelectRange={(start, end) => dispatch({ type: 'SET_SELECTION', start: isNaN(start) ? null : start, end: isNaN(end) ? null : end })}
-              onPreview={() => {/* hook for quick preview later */}}
-            />
+            <>
+              <SelectionBar
+                transcript={state.transcript}
+                selection={state.selection}
+                onPreview={() => {/* selection preview handled in TransportBar via Space */}}
+                onClear={() => dispatch({ type: 'SET_SELECTION', start: null, end: null })}
+                onReplace={(text) => {
+                  dispatch({ type: 'SET_REPLACE_TEXT', replaceText: text });
+                  dispatch({ type: 'SET_STEP', step: 'replace' });
+                }}
+              />
+              <TranscriptView
+                transcript={state.transcript}
+                selection={state.selection}
+                onSelectRange={(start, end) => dispatch({ type: 'SET_SELECTION', start: isNaN(start) ? null : start, end: isNaN(end) ? null : end })}
+                onPreview={() => {/* hook for quick preview later */}}
+              />
+            </>
           ) : (
             <div className="media-empty">
               <p className="panel__meta">Paste a URL or upload a file to see the transcript here.</p>

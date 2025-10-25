@@ -1063,6 +1063,9 @@ textarea:focus-visible {
 .job-pill__bar i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg,#60a5fa,#22d3ee); display: block; }
 
 .media-card { padding: 16px; gap: 12px; }
+.selection-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border: 1px solid rgba(148,163,184,.35); border-radius: 10px; background: rgba(15,23,42,.55); }
+.selection-bar__meta { font-size: 12px; color: rgba(203,213,225,.95); }
+.selection-bar__actions { display: inline-flex; gap: 8px; }
 
 .media-transport { display: grid; grid-template-columns: 1fr; gap: 6px; }
 .media-transport__audio { width: 100%; }

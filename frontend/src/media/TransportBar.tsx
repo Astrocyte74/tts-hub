@@ -7,6 +7,9 @@ interface TransportBarProps {
 }
 
 export function TransportBar({ audioUrl, selection, onSetSelection }: TransportBarProps) {
+  if (!audioUrl) {
+    return null;
+  }
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [duration, setDuration] = useState(0);
   const [time, setTime] = useState(0);
