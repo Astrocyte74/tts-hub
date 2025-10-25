@@ -101,7 +101,16 @@ export function ResultsDrawer({
                     <div className="queue-row__title">{q.label}</div>
                     <div className="queue-row__meta">{q.engine}</div>
                     <div className="queue-row__progress">
-                      <div className="progress"><span style={{ width: `${Math.min(100, Math.max(0, q.progress ?? 0))}%` }} /></div>
+                      <div
+                        className="progress"
+                        role="progressbar"
+                        aria-label="Queue progress"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={Math.min(100, Math.max(0, q.progress ?? 0))}
+                      >
+                        <span style={{ width: `${Math.min(100, Math.max(0, q.progress ?? 0))}%` }} />
+                      </div>
                     </div>
                     <div className="queue-row__actions">
                       {onCancelQueue && q.status === 'rendering' ? (
