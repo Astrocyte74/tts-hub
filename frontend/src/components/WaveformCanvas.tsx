@@ -22,6 +22,7 @@ interface Props {
 export interface WaveformHandle {
   fit(): void;
   zoomToSelection(start: number, end: number): void;
+  showBlocksControls(): void;
 }
 
 export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function WaveformCanvas(
@@ -83,6 +84,9 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
       const nextZoom = Math.min(100, duration / len);
       setZoom(nextZoom);
       setViewStart(clampViewStart(start - 0.05 * len));
+    },
+    showBlocksControls() {
+      setShowBlocks(true);
     },
   }), [duration, clampViewStart]);
 

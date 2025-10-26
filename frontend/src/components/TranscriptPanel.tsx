@@ -886,6 +886,20 @@ export function TranscriptPanel() {
                   <input type="radio" name="selunit" value="block" checked={selectUnit === 'block'} onChange={() => setSelectUnit('block')} /> Blocks
                 </label>
               </div>
+              {selectUnit === 'block' ? (
+                <span className="panel__hint panel__hint--muted" style={{ marginLeft: 8 }}>
+                  Block gap: {wfBlockGap.toFixed(2)}s
+                  <button
+                    type="button"
+                    className="panel__button panel__button--sm"
+                    style={{ marginLeft: 6 }}
+                    title="Adjust block gap in waveform controls"
+                    onClick={() => { try { waveRef.current?.showBlocksControls(); } catch {} }}
+                  >
+                    Adjust
+                  </button>
+                </span>
+              ) : null}
               <button className="panel__button" type="button" disabled={!canStep2} onClick={() => setCurrentStep('3')}>Next: Replace</button>
             </div>
           </div>
@@ -1392,6 +1406,26 @@ export function TranscriptPanel() {
               <div className="selection-toolbar">
                 <div className="selection-toolbar__meta panel__meta">Selection: {regionStart || '…'}s → {regionEnd || '…'}s {selectionValid ? `(${(Number(regionEnd) - Number(regionStart)).toFixed(2)}s)` : ''}</div>
                 <div className="selection-toolbar__actions">
+                  {(selectUnit === 'block' && !selectionValid && transcript?.words?.length) ? (
+                    <button
+                      className="panel__button panel__button--sm"
+                      type="button"
+                      onClick={() => {
+                        const idx = Math.max(0, Math.min((selEndIdx ?? selStartIdx ?? cursorIdx ?? 0), (transcript?.words?.length || 1) - 1));
+                        const b = wordBlocks.blocks[wordBlocks.blockIndex[idx]];
+                        if (b && transcript?.words) {
+                          const ws2 = transcript.words[b.startIdx]; const we2 = transcript.words[b.endIdx];
+                          setSelStartIdx(b.startIdx);
+                          setSelEndIdx(b.endIdx);
+                          setRegionStart(ws2.start.toFixed(2));
+                          setRegionEnd(we2.end.toFixed(2));
+                          try { waveRef.current?.zoomToSelection(ws2.start, we2.end); } catch {}
+                        }
+                      }}
+                    >
+                      Select nearest block
+                    </button>
+                  ) : null}
                   <button className="panel__button panel__button--sm" type="button" onClick={() => { clearSelection(); }}>
                     Clear
                   </button>
