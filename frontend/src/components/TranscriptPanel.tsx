@@ -51,6 +51,7 @@ export function TranscriptPanel() {
   const [loopPreview, setLoopPreview] = useLocalStorage<boolean>('kokoro:mediaLoopPreview', false);
   const [autoRefineOnPreview, setAutoRefineOnPreview] = useLocalStorage<boolean>('kokoro:mediaAutoRefine', true);
   const [lastRefinedSec, setLastRefinedSec] = useState<number | null>(null);
+  const [hoveredWordIdx, setHoveredWordIdx] = useState<number | null>(null);
 
   async function ensureVoices() {
     if (voiceList.length) return;
@@ -1220,6 +1221,7 @@ export function TranscriptPanel() {
                       currentTime={audioTime}
                       selection={(Number(regionEnd) > Number(regionStart)) ? { start: Number(regionStart), end: Number(regionEnd) } : null}
                       persistKey={jobId || undefined}
+                      onHoverWordIndex={(idx) => setHoveredWordIdx(idx)}
                       onChangeSelection={(s, e) => {
                         // Snap to nearest word indices and mirror selection in chips
                         const ws = transcript?.words || [];
@@ -1551,7 +1553,7 @@ export function TranscriptPanel() {
                     data-word-idx={idx}
                     role="listitem"
                     title={`t=${w.start.toFixed(2)}–${w.end.toFixed(2)}`}
-                    className={`chip ${selectUnit === 'block' ? ((wordBlocks.blockIndex[idx] % 2 === 0) ? 'chip--blockA' : 'chip--blockB') : ''}`}
+                    className={`chip ${selectUnit === 'block' ? ((wordBlocks.blockIndex[idx] % 2 === 0) ? 'chip--blockA' : 'chip--blockB') : ''} ${hoveredWordIdx === idx ? 'chip--hover' : ''}`}
                     onMouseDown={(e) => {
                       e.preventDefault();
                       if (selectUnit === 'block') {

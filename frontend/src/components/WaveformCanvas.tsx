@@ -11,6 +11,7 @@ interface Props {
   currentTime: number;
   selection: { start: number; end: number } | null;
   onChangeSelection?: (start: number, end: number) => void;
+  onHoverWordIndex?: (idx: number | null) => void;
   height?: number;
   diffMarkers?: { idx: number; boundary: 'start'|'end'; prev: number; next: number; deltaMs: number }[];
   showLegend?: boolean;
@@ -26,7 +27,7 @@ export interface WaveformHandle {
 }
 
 export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function WaveformCanvas(
-  { audioUrl, words, currentTime, selection, onChangeSelection, height = 80, diffMarkers = [], showLegend = true, defaultZoom = 1, replaceWords = null, persistKey }: Props,
+  { audioUrl, words, currentTime, selection, onChangeSelection, onHoverWordIndex, height = 80, diffMarkers = [], showLegend = true, defaultZoom = 1, replaceWords = null, persistKey }: Props,
   ref
 ) {
   const { peaks, duration } = useWaveformData(audioUrl, 1024);
@@ -506,7 +507,10 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
     if (!(target instanceof Element) || !containerRef.current) return false;
     const controls = containerRef.current.querySelector('.waveform__controls');
     const footer = containerRef.current.querySelector('.waveform__footer');
-    return Boolean((controls && controls.contains(target)) || (footer && footer.contains(target)));
+    const minimap = containerRef.current.querySelector('.waveform__minimap');
+    return Boolean(
+      (controls && controls.contains(target)) || (footer && footer.contains(target)) || (minimap && minimap.contains(target))
+    );
   }
 
   return (
@@ -574,15 +578,16 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
           }
         }
         setHover({ x, t, idx });
+        if (onHoverWordIndex) onHoverWordIndex(idx >= 0 ? idx : null);
       }}
-      onPointerLeave={() => setHover(null)}
+      onPointerLeave={() => { setHover(null); if (onHoverWordIndex) onHoverWordIndex(null); }}
       title={duration ? `${duration.toFixed(2)}s` : undefined}
     >
       <canvas ref={canvasRef} />
       {/* Zoom controls */}
       <div className="waveform__controls" aria-label="Waveform zoom controls">
-        <button type="button" className="wf-btn" onClick={() => { setZoom((z) => Math.max(1, z / 1.5)); }}>−</button>
-        <button type="button" className="wf-btn" onClick={() => { setZoom(1); setViewStart(0); }}>Fit</button>
+        <button type="button" className="wf-btn" onClick={() => { setZoomAnchored(zoom / 1.5); }}>−</button>
+        <button type="button" className="wf-btn" onClick={() => { setZoomAnchored(1, undefined, true); }}>Fit</button>
         <button type="button" className="wf-btn" title="Click to cycle zoom presets" onClick={() => {
           const presets = [1, 2, 4, 8, 12, 16, 24];
           const cur = zoom;
@@ -591,8 +596,15 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
           const next = presets[(idx + 1) % presets.length];
           setZoomAnchored(next);
         }}>{`${Math.round(zoom)}×`}</button>
-        <button type="button" className="wf-btn" onClick={() => { if (selection && duration) { const len = Math.max(0.01, selection.end - selection.start); const nextZoom = Math.min(100, duration / len); setZoom(nextZoom); setViewStart(clampViewStart(selection.start - 0.05 * len)); } }} disabled={!selection || !(selection.end > selection.start)}>Sel</button>
-        <button type="button" className="wf-btn" onClick={() => { setZoom((z) => Math.min(100, z * 1.5)); }}>+</button>
+        <button type="button" className="wf-btn" onClick={() => {
+          if (selection && duration) {
+            const len = Math.max(0.01, selection.end - selection.start);
+            const padded = Math.min(duration, len * 1.2);
+            const nextZoom = Math.max(1, Math.min(100, duration / padded));
+            setZoomAnchored(nextZoom, (selection.start + selection.end)/2, true);
+          }
+        }} disabled={!selection || !(selection.end > selection.start)}>Sel</button>
+        <button type="button" className="wf-btn" onClick={() => { setZoomAnchored(zoom * 1.5); }}>+</button>
       </div>
       {/* Footer: shortcuts and legend */}
       <div className="waveform__footer">
@@ -604,6 +616,20 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
         <div className="wf-seg" role="group" aria-label="Quick zoom">
           <span className="panel__hint panel__hint--muted" style={{ marginRight: 4 }}>Zoom</span>
           <button type="button" className="wf-btn" onClick={() => { setZoomAnchored(1); }}>Fit</button>
+          <button
+            type="button"
+            className="wf-btn"
+            disabled={!selection}
+            title="Zoom to selected region"
+            onClick={() => {
+              if (!selection || !duration) return;
+              const len = Math.max(0.01, selection.end - selection.start);
+              const nextZoom = Math.min(100, duration / len);
+              setZoomAnchored(nextZoom, (selection.start + selection.end)/2, true);
+            }}
+          >
+            Sel
+          </button>
           <button type="button" className={`wf-btn ${Math.abs(zoom - 1) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(1)}>1×</button>
           <button type="button" className={`wf-btn ${Math.abs(zoom - 2) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(2)}>2×</button>
           <button type="button" className={`wf-btn ${Math.abs(zoom - 4) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(4)}>4×</button>
@@ -705,10 +731,10 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
       </div>
       {/* Minimap overview (panning) */}
       <div className="waveform__minimap"
-        onMouseDown={(e) => { if (!duration) return; setViewStart(miniPosToStart(e.clientX)); miniDrag.current = true; }}
-        onMouseMove={(e) => { if (!duration || !miniDrag.current) return; setViewStart(miniPosToStart(e.clientX)); }}
-        onMouseUp={() => { miniDrag.current = false; }}
-        onMouseLeave={() => { miniDrag.current = false; }}
+        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); if (!duration) return; setViewStart(miniPosToStart(e.clientX)); miniDrag.current = true; }}
+        onMouseMove={(e) => { e.preventDefault(); e.stopPropagation(); if (!duration || !miniDrag.current) return; setViewStart(miniPosToStart(e.clientX)); }}
+        onMouseUp={(e) => { e.preventDefault(); e.stopPropagation(); miniDrag.current = false; }}
+        onMouseLeave={(e) => { e.preventDefault(); e.stopPropagation(); miniDrag.current = false; }}
         aria-label="Audio overview"
       >
         <canvas ref={miniRef} />

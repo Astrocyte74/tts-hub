@@ -259,6 +259,7 @@
 /* Subtle alternating shades to visualize speech blocks when block mode is active */
 .media-editor__words .chip--blockA { background-color: rgba(59,130,246,0.10) !important; }
 .media-editor__words .chip--blockB { background-color: rgba(99,102,241,0.10) !important; }
+.media-editor__words .chip--hover { outline: 2px solid rgba(234,179,8,0.85); }
 
 /* View & Find collapsed panel */
 .viewfind { margin-top: 8px; }
