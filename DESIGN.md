@@ -8,6 +8,7 @@ What’s included
 - Voice Browser 2.0: hover micro‑preview, favorites with a pinned row, facet chips (Language/Gender/Style) with counts.
 - Script Authoring: SSML helper chips (Pause, Emphasis, Pitch, Rate), word/char/duration counters, basic SSML validation.
 - Results: Waveform player + new mini waveform with loop/trim and “Export selection” (WAV).
+- Media Editor: Transcript panel with a functional waveform canvas (minimap, zoom presets, styles/overlays, hover tooltips, selection sync, save‑as‑default view).
 - Accessibility: ARIA roles for lists, buttons, and controls; consistent focus outlines.
 
 Usage

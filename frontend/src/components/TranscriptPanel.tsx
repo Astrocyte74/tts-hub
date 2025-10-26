@@ -53,6 +53,7 @@ export function TranscriptPanel() {
   const [lastRefinedSec, setLastRefinedSec] = useState<number | null>(null);
   const [hoveredWordIdx, setHoveredWordIdx] = useState<number | null>(null);
   const hoverScrollTimer = useRef<number | null>(null);
+  const centerSelTimer = useRef<number | null>(null);
 
   useEffect(() => {
     if (hoveredWordIdx === null) return; // nothing to do
@@ -71,6 +72,16 @@ export function TranscriptPanel() {
       }, 60);
     } catch {}
   }, [hoveredWordIdx]);
+
+  // Auto-center waveform/minimap to selection when selection changes (debounced)
+  useEffect(() => {
+    if (!(Number(regionEnd) > Number(regionStart))) return;
+    if (centerSelTimer.current) window.clearTimeout(centerSelTimer.current);
+    centerSelTimer.current = window.setTimeout(() => {
+      try { waveRef.current?.centerOnRange(Number(regionStart), Number(regionEnd)); } catch {}
+    }, 120);
+    return () => { if (centerSelTimer.current) window.clearTimeout(centerSelTimer.current); };
+  }, [regionStart, regionEnd]);
 
   async function ensureVoices() {
     if (voiceList.length) return;

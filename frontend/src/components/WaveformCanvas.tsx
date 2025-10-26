@@ -24,6 +24,7 @@ export interface WaveformHandle {
   fit(): void;
   zoomToSelection(start: number, end: number): void;
   showBlocksControls(): void;
+  centerOnRange(start: number, end: number): void;
 }
 
 export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function WaveformCanvas(
@@ -66,6 +67,7 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
   const [showDelta, setShowDelta] = useSessionStorage<boolean>(`${prefix}:delta`, Boolean(getDefault('delta', true)));
   const [blockGap, setBlockGap] = useSessionStorage<number>(`${prefix}:blockGap`, Number(getDefault('blockGap', 0.25))); // seconds gap to split blocks
   const [deltaThresh, setDeltaThresh] = useSessionStorage<number>(`${prefix}:deltaThresh`, Number(getDefault('deltaThresh', 0.08)));
+  const [autoFitSel, setAutoFitSel] = useSessionStorage<boolean>(`${prefix}:autofit`, Boolean(getDefault('autofit', false)));
 
   // Resize observer to keep canvas crisp
   useEffect(() => {
@@ -107,7 +109,21 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
     showBlocksControls() {
       setShowBlocks(true);
     },
+    centerOnRange(start: number, end: number) {
+      if (!duration) return;
+      const c = (start + end) / 2;
+      setZoomAnchored(zoom, c, true);
+    },
   }), [duration, clampViewStart]);
+
+  // Optional: auto-fit the view to the current selection when it changes
+  useEffect(() => {
+    if (!autoFitSel) return;
+    if (!selection || !(selection.end > selection.start)) return;
+    // Use a small padding so selection isn't edge-to-edge
+    zoomToRange(selection.start, selection.end, 0.25, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFitSel, selection?.start, selection?.end, duration]);
 
   const zoomAnimRef = useRef<number | null>(null);
 
@@ -138,7 +154,7 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
     zoomAnimRef.current = requestAnimationFrame(animate);
   }
 
-  function zoomToRange(start: number, end: number, padFactor = 0.2, animated = true) {
+  function zoomToRange(start: number, end: number, padFactor = 0.25, animated = true) {
     if (!duration) return;
     const len = Math.max(0.01, end - start);
     const pad = len * padFactor;
@@ -625,11 +641,11 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
         <button type="button" className="wf-btn" onClick={() => { setZoomAnchored(zoom * 1.5); }}>+</button>
       </div>
       {/* Footer: shortcuts and legend */}
-      <div className="waveform__footer">
-        <div className="waveform__shortcuts">
-          <span>Scroll to pan; Cmd/Ctrl+Scroll to zoom.</span>
-          <span>Shortcuts: Z in, Shift+Z out, F fit, S selection.</span>
-        </div>
+        <div className="waveform__footer">
+          <div className="waveform__shortcuts">
+            <span>Scroll to pan; Cmd/Ctrl+Scroll to zoom.</span>
+            <span>Shortcuts: Z in, Shift+Z out, F fit, S selection.</span>
+          </div>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div className="wf-seg" role="group" aria-label="Quick zoom">
           <span className="panel__hint panel__hint--muted" style={{ marginRight: 4 }}>Zoom</span>
@@ -653,21 +669,32 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
           <button type="button" className={`wf-btn ${Math.abs(zoom - 4) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(4)}>4×</button>
           <button type="button" className={`wf-btn ${Math.abs(zoom - 8) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(8)}>8×</button>
           <button type="button" className={`wf-btn ${Math.abs(zoom - 12) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(12)}>12×</button>
+          <button
+            type="button"
+            className={`wf-btn ${autoFitSel ? 'is-active' : ''}`}
+            aria-pressed={autoFitSel}
+            title="Automatically fit view to selection when it changes"
+            onClick={() => setAutoFitSel(v => !v)}
+          >
+            Auto‑fit
+          </button>
         </div>
+          <span className="panel__hint panel__hint--muted">Style</span>
           <div className="wf-seg" role="radiogroup" aria-label="Waveform style">
             <button type="button" className={`wf-btn ${styleMode === 'bars' ? 'is-active' : ''}`} onClick={() => setStyleMode('bars')} title="Bars">Bars</button>
             <button type="button" className={`wf-btn ${styleMode === 'line' ? 'is-active' : ''}`} onClick={() => setStyleMode('line')} title="Line">Line</button>
             <button type="button" className={`wf-btn ${styleMode === 'filled' ? 'is-active' : ''}`} onClick={() => setStyleMode('filled')} title="Filled">Filled</button>
           </div>
+          <span className="panel__hint panel__hint--muted">Overlays</span>
           <div className="wf-seg" role="group" aria-label="Overlays">
             <button type="button" className={`wf-btn ${showTicks ? 'is-active' : ''}`} onClick={() => setShowTicks(v => !v)} title="Word boundary ticks">Ticks</button>
-            <button type="button" className={`wf-btn ${showWhiskers ? 'is-active' : ''}`} onClick={() => setShowWhiskers(v => !v)} title="Alignment adjustments">Adj</button>
+            <button type="button" className={`wf-btn ${showWhiskers ? 'is-active' : ''}`} onClick={() => setShowWhiskers(v => !v)} title="WhisperX boundary adjustments (orange markers)">Adj</button>
             <button type="button" className={`wf-btn ${showBlocks ? 'is-active' : ''}`} onClick={() => setShowBlocks(v => !v)} title="Speech blocks">Blocks</button>
             <button type="button" className={`wf-btn ${showRepl ? 'is-active' : ''}`} onClick={() => setShowRepl(v => !v)} title="Replacement overlay">Repl</button>
           </div>
-          <div className={`wf-seg ${showDelta ? '' : 'wf-seg--disabled'}`} role="group" aria-label="Delta">
-            <button type="button" className={`wf-btn ${showDelta ? 'is-active' : ''}`} onClick={() => setShowDelta(v => !v)} title="Show Δ between replacement and original boundaries">Δ</button>
-            <span className="panel__hint panel__hint--muted" style={{ marginLeft: 4 }}>thr</span>
+          <div className={`wf-seg ${showDelta ? '' : 'wf-seg--disabled'}`} role="group" aria-label="Delta whiskers and threshold">
+            <button type="button" className={`wf-btn ${showDelta ? 'is-active' : ''}`} onClick={() => setShowDelta(v => !v)} title="Δ whiskers: replacement vs original boundary differences">Δ</button>
+            <span className="panel__hint panel__hint--muted" style={{ marginLeft: 4 }}>Δ thr</span>
             <button type="button" className={`wf-btn ${Math.abs(deltaThresh - 0.05) < 1e-6 ? 'is-active' : ''}`} onClick={() => setDeltaThresh(0.05)}>50ms</button>
             <button type="button" className={`wf-btn ${Math.abs(deltaThresh - 0.08) < 1e-6 ? 'is-active' : ''}`} onClick={() => setDeltaThresh(0.08)}>80ms</button>
             <button type="button" className={`wf-btn ${Math.abs(deltaThresh - 0.12) < 1e-6 ? 'is-active' : ''}`} onClick={() => setDeltaThresh(0.12)}>120ms</button>
@@ -683,7 +710,7 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
               <span className="wave-legend__item"><i className="wl wl--env" /> Envelope</span>
               <span className="wave-legend__item"><i className="wl wl--tick" /> Word boundary</span>
               <span className="wave-legend__item"><i className="wl wl--sel" /> Selection</span>
-              <span className="wave-legend__item"><i className="wl wl--whisk" /> Adjustment</span>
+              <span className="wave-legend__item" title="WhisperX boundary adjustments (last align)"><i className="wl wl--whisk" /> WhisperX adj</span>
               <span className="wave-legend__item"><i className="wl wl--play" /> Playhead</span>
             </div>
           ) : null}
@@ -704,6 +731,7 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
                 window.localStorage.setItem(`${dPrefix}:delta`, String(showDelta));
                 window.localStorage.setItem(`${dPrefix}:blockGap`, String(blockGap));
                 window.localStorage.setItem(`${dPrefix}:deltaThresh`, String(deltaThresh));
+                window.localStorage.setItem(`${dPrefix}:autofit`, String(autoFitSel));
               } catch {}
             }}
           >
@@ -724,9 +752,11 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
                 const dd = Boolean(getDefault('delta', showDelta));
                 const dbg = Number(getDefault('blockGap', blockGap));
                 const dth = Number(getDefault('deltaThresh', deltaThresh));
+                const daf = Boolean(getDefault('autofit', autoFitSel));
                 setStyleMode(ds);
                 setShowTicks(dticks); setShowWhiskers(dwh); setShowBlocks(dbl); setShowRepl(drp); setShowDelta(dd);
                 setBlockGap(dbg); setDeltaThresh(dth);
+                setAutoFitSel(daf);
                 setZoomAnchored(dz);
               } catch {}
             }}
@@ -739,7 +769,7 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
             title="Reset to factory defaults for this job"
             onClick={() => {
               setStyleMode('filled'); setShowTicks(false); setShowWhiskers(true); setShowBlocks(true); setShowRepl(true); setShowDelta(true);
-              setBlockGap(0.25); setDeltaThresh(0.08);
+              setBlockGap(0.25); setDeltaThresh(0.08); setAutoFitSel(false);
               setZoomAnchored(defaultZoom || 1, undefined, true);
             }}
           >

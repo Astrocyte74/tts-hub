@@ -1,6 +1,6 @@
 # Kokoro Playground SPA
 
-Modern single-page frontend for the Kokoro text-to-speech playground, built with React, TypeScript, and Vite. The SPA talks to the Flask API, providing tooling for browsing voices, editing scripts, triggering synthesis or multi-voice auditions, and auditioning generated clips with rich waveforms.
+Modern single-page frontend for the Kokoro text-to-speech playground, built with React, TypeScript, and Vite. The SPA talks to the Flask API, providing tooling for browsing voices, editing scripts, triggering synthesis or multi-voice auditions, and auditioning generated clips with rich waveforms. It also includes a Media Editor (beta) for transcript‑driven replacement with XTTS and a functional waveform canvas.
 
 ## Features
 
@@ -9,6 +9,7 @@ Modern single-page frontend for the Kokoro text-to-speech playground, built with
 - Shared synthesis settings (language, speed, silence trimming) with localStorage persistence.
 - Announcer controls for auditions (voice, template, gap) plus stitched multi-voice clips via `/api/audition`.
 - Inline waveform playback powered by WaveSurfer.js, with quick download/remove actions.
+- Media Editor with waveform canvas (minimap, zoom presets, styles/overlays, hover tooltips, selection sync, and defaults persistence).
 - API base configurable via environment variables so the UI can target any running backend.
 
 ## Getting Started
@@ -32,6 +33,7 @@ By default Vite serves the SPA on `http://127.0.0.1:5175`. The app expects the F
 | `VITE_API_PREFIX` | Path segment prepended before endpoint names. Defaults to `api` to match the Flask blueprint. |
 | `VITE_HOST` | Hostname Vite should bind to (defaults to `127.0.0.1`). |
 | `VITE_PORT` | Port for the dev server (defaults to `5175`). |
+| `VITE_TEST_MEDIA_URL` | Dev‑only convenience: prefill the Media Editor URL input (e.g., a YouTube link safe from 429s). |
 
 Both values are optional. When omitted the SPA calls relative paths such as `/voices` and relies on Vite proxying during development.
 
