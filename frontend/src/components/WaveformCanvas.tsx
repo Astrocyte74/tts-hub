@@ -138,6 +138,34 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
     zoomAnimRef.current = requestAnimationFrame(animate);
   }
 
+  function zoomToRange(start: number, end: number, padFactor = 0.2, animated = true) {
+    if (!duration) return;
+    const len = Math.max(0.01, end - start);
+    const pad = len * padFactor;
+    let s = Math.max(0, start - pad);
+    let e = Math.min(duration, end + pad);
+    if (e - s < len) e = Math.min(duration, s + len);
+    const viewDur = Math.max(0.01, e - s);
+    const nz = Math.max(1, Math.min(100, duration / viewDur));
+    if (!animated) {
+      setZoom(nz);
+      setViewStart(clampViewStart(s));
+    } else {
+      // animate towards desired
+      const targetStart = clampViewStart(s);
+      const startZoom = zoom; const startStart = viewStart;
+      const steps = 6; let i = 0;
+      if (zoomAnimRef.current) cancelAnimationFrame(zoomAnimRef.current);
+      const animate = () => {
+        i += 1; const t = Math.min(1, i / steps); const ease = 1 - Math.pow(1 - t, 3);
+        setZoom(startZoom + (nz - startZoom) * ease);
+        setViewStart(startStart + (targetStart - startStart) * ease);
+        if (t < 1) zoomAnimRef.current = requestAnimationFrame(animate);
+      };
+      zoomAnimRef.current = requestAnimationFrame(animate);
+    }
+  }
+
   const timeToX = useMemo(() => (
     (t: number) => {
       if (!duration) return 0;
@@ -470,14 +498,11 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
         setViewStart(nextStart);
       } else if (e.key.toLowerCase() === 'f' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
-        setZoom(1); setViewStart(0);
+        setZoomAnchored(1, undefined, true);
       } else if (e.key.toLowerCase() === 's' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         if (!selection || !duration) return;
         e.preventDefault();
-        const len = Math.max(0.01, selection.end - selection.start);
-        const nextZoom = Math.min(100, duration / len);
-        setZoom(nextZoom);
-        setViewStart(clampViewStart(selection.start - 0.05 * len));
+        zoomToRange(selection.start, selection.end, 0.2, true);
       } else if (e.key.toLowerCase() === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         const presets = [1, 2, 4, 8, 12, 16, 24];
@@ -596,14 +621,7 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
           const next = presets[(idx + 1) % presets.length];
           setZoomAnchored(next);
         }}>{`${Math.round(zoom)}×`}</button>
-        <button type="button" className="wf-btn" onClick={() => {
-          if (selection && duration) {
-            const len = Math.max(0.01, selection.end - selection.start);
-            const padded = Math.min(duration, len * 1.2);
-            const nextZoom = Math.max(1, Math.min(100, duration / padded));
-            setZoomAnchored(nextZoom, (selection.start + selection.end)/2, true);
-          }
-        }} disabled={!selection || !(selection.end > selection.start)}>Sel</button>
+        <button type="button" className="wf-btn" onClick={() => { if (selection) zoomToRange(selection.start, selection.end, 0.2, true); }} disabled={!selection || !(selection.end > selection.start)}>Sel</button>
         <button type="button" className="wf-btn" onClick={() => { setZoomAnchored(zoom * 1.5); }}>+</button>
       </div>
       {/* Footer: shortcuts and legend */}

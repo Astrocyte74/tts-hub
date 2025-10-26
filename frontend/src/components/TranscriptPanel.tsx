@@ -52,6 +52,25 @@ export function TranscriptPanel() {
   const [autoRefineOnPreview, setAutoRefineOnPreview] = useLocalStorage<boolean>('kokoro:mediaAutoRefine', true);
   const [lastRefinedSec, setLastRefinedSec] = useState<number | null>(null);
   const [hoveredWordIdx, setHoveredWordIdx] = useState<number | null>(null);
+  const hoverScrollTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (hoveredWordIdx === null) return; // nothing to do
+    const container = document.querySelector('.media-editor__words') as HTMLElement | null;
+    const chip = document.querySelector(`[data-word-idx="${hoveredWordIdx}"]`) as HTMLElement | null;
+    if (!container || !chip) return;
+    try {
+      const cRect = container.getBoundingClientRect();
+      const r = chip.getBoundingClientRect();
+      const margin = 32;
+      const outOfView = r.top < cRect.top + margin || r.bottom > cRect.bottom - margin;
+      if (!outOfView) return;
+      if (hoverScrollTimer.current) window.clearTimeout(hoverScrollTimer.current);
+      hoverScrollTimer.current = window.setTimeout(() => {
+        try { chip.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' }); } catch {}
+      }, 60);
+    } catch {}
+  }, [hoveredWordIdx]);
 
   async function ensureVoices() {
     if (voiceList.length) return;
