@@ -108,14 +108,33 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
     },
   }), [duration, clampViewStart]);
 
-  function setZoomAnchored(newZoom: number, anchorT?: number) {
+  const zoomAnimRef = useRef<number | null>(null);
+
+  function setZoomAnchored(newZoom: number, anchorT?: number, animated = true) {
     if (!duration) return;
     const nz = Math.max(1, Math.min(100, newZoom));
     const vd = Math.max(0.01, duration / nz);
     const anchor = typeof anchorT === 'number' ? anchorT : (selection ? (selection.start + selection.end) / 2 : (viewStart + viewDuration / 2));
-    let ns = clampViewStart(anchor - vd / 2);
-    setZoom(nz);
-    setViewStart(ns);
+    const ns = clampViewStart(anchor - vd / 2);
+    if (!animated) {
+      setZoom(nz);
+      setViewStart(ns);
+      return;
+    }
+    // Simple smooth animation over ~120ms
+    const startZoom = zoom;
+    const startStart = viewStart;
+    const steps = 6; let i = 0;
+    if (zoomAnimRef.current) cancelAnimationFrame(zoomAnimRef.current);
+    const animate = () => {
+      i += 1;
+      const t = Math.min(1, i / steps);
+      const ease = 1 - Math.pow(1 - t, 3);
+      setZoom(startZoom + (nz - startZoom) * ease);
+      setViewStart(startStart + (ns - startStart) * ease);
+      if (t < 1) zoomAnimRef.current = requestAnimationFrame(animate);
+    };
+    zoomAnimRef.current = requestAnimationFrame(animate);
   }
 
   const timeToX = useMemo(() => (
@@ -457,6 +476,13 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
         const nextZoom = Math.min(100, duration / len);
         setZoom(nextZoom);
         setViewStart(clampViewStart(selection.start - 0.05 * len));
+      } else if (e.key.toLowerCase() === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        const presets = [1, 2, 4, 8, 12, 16, 24];
+        let idx = presets.findIndex(p => Math.abs(p - zoom) < 0.5);
+        if (idx < 0) idx = 0;
+        const next = presets[(idx + (e.shiftKey ? presets.length - 1 : 1)) % presets.length];
+        setZoomAnchored(next, undefined, true);
       }
     }
     window.addEventListener('keydown', onKey);
@@ -574,15 +600,15 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
           <span>Shortcuts: Z in, Shift+Z out, F fit, S selection.</span>
         </div>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div className="wf-seg" role="group" aria-label="Quick zoom">
-            <span className="panel__hint panel__hint--muted" style={{ marginRight: 4 }}>Zoom</span>
-            <button type="button" className="wf-btn" onClick={() => { setZoomAnchored(1); }}>Fit</button>
-            <button type="button" className={`wf-btn ${Math.abs(zoom - 1) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(1)}>1×</button>
-            <button type="button" className={`wf-btn ${Math.abs(zoom - 2) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(2)}>2×</button>
-            <button type="button" className={`wf-btn ${Math.abs(zoom - 4) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(4)}>4×</button>
-            <button type="button" className={`wf-btn ${Math.abs(zoom - 8) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(8)}>8×</button>
-            <button type="button" className={`wf-btn ${Math.abs(zoom - 12) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(12)}>12×</button>
-          </div>
+        <div className="wf-seg" role="group" aria-label="Quick zoom">
+          <span className="panel__hint panel__hint--muted" style={{ marginRight: 4 }}>Zoom</span>
+          <button type="button" className="wf-btn" onClick={() => { setZoomAnchored(1); }}>Fit</button>
+          <button type="button" className={`wf-btn ${Math.abs(zoom - 1) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(1)}>1×</button>
+          <button type="button" className={`wf-btn ${Math.abs(zoom - 2) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(2)}>2×</button>
+          <button type="button" className={`wf-btn ${Math.abs(zoom - 4) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(4)}>4×</button>
+          <button type="button" className={`wf-btn ${Math.abs(zoom - 8) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(8)}>8×</button>
+          <button type="button" className={`wf-btn ${Math.abs(zoom - 12) < 0.5 ? 'is-active' : ''}`} onClick={() => setZoomAnchored(12)}>12×</button>
+        </div>
           <div className="wf-seg" role="radiogroup" aria-label="Waveform style">
             <button type="button" className={`wf-btn ${styleMode === 'bars' ? 'is-active' : ''}`} onClick={() => setStyleMode('bars')} title="Bars">Bars</button>
             <button type="button" className={`wf-btn ${styleMode === 'line' ? 'is-active' : ''}`} onClick={() => setStyleMode('line')} title="Line">Line</button>
@@ -643,6 +669,42 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
             }}
           >
             Save as default view
+          </button>
+          <button
+            type="button"
+            className="wf-btn"
+            title="Apply saved default view to this job"
+            onClick={() => {
+              try {
+                const dz = Number(getDefault('zoom', zoom));
+                const ds = (getDefault('style', styleMode) as any);
+                const dticks = Boolean(getDefault('ticks', showTicks));
+                const dwh = Boolean(getDefault('whisk', showWhiskers));
+                const dbl = Boolean(getDefault('blocks', showBlocks));
+                const drp = Boolean(getDefault('repl', showRepl));
+                const dd = Boolean(getDefault('delta', showDelta));
+                const dbg = Number(getDefault('blockGap', blockGap));
+                const dth = Number(getDefault('deltaThresh', deltaThresh));
+                setStyleMode(ds);
+                setShowTicks(dticks); setShowWhiskers(dwh); setShowBlocks(dbl); setShowRepl(drp); setShowDelta(dd);
+                setBlockGap(dbg); setDeltaThresh(dth);
+                setZoomAnchored(dz);
+              } catch {}
+            }}
+          >
+            Apply default
+          </button>
+          <button
+            type="button"
+            className="wf-btn"
+            title="Reset to factory defaults for this job"
+            onClick={() => {
+              setStyleMode('filled'); setShowTicks(false); setShowWhiskers(true); setShowBlocks(true); setShowRepl(true); setShowDelta(true);
+              setBlockGap(0.25); setDeltaThresh(0.08);
+              setZoomAnchored(defaultZoom || 1, undefined, true);
+            }}
+          >
+            Reset factory
           </button>
         </div>
       </div>
