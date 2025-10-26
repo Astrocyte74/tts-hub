@@ -5,6 +5,7 @@ import type { MediaTranscriptResult, MediaEstimateInfo, MediaProbeInfo } from '.
 import './TranscriptPanel.css';
 import { WaveformCanvas, type WaveformHandle } from './WaveformCanvas';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useSessionStorage } from '../hooks/useSessionStorage';
 
 export function TranscriptPanel() {
   // no collapsible state (full-page)
@@ -37,6 +38,8 @@ export function TranscriptPanel() {
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
   const [playbackTrack, setPlaybackTrack] = useState<'original' | 'diff' | 'preview'>('original');
   const [viewMode, setViewMode] = useState<'sentences' | 'words'>('words');
+  const [selectUnit, setSelectUnit] = useLocalStorage<'word' | 'block'>('kokoro:mediaSelectUnit', 'word');
+  const [wfBlockGap, setWfBlockGap] = useSessionStorage<number>('kokoro:wf:blockGap', 0.25);
   const [currentStep, setCurrentStep] = useLocalStorage<'1' | '2' | '3'>('kokoro:mediaStep', '1');
   const [voiceMode, setVoiceMode] = useState<'borrow' | 'xtts' | 'favorite'>('borrow');
   const [voiceList, setVoiceList] = useState<{ id: string; label: string }[]>([]);
@@ -110,6 +113,29 @@ export function TranscriptPanel() {
   const [findStartFrom, setFindStartFrom] = useState<number>(0);
   const [viewPanelOpen, setViewPanelOpen] = useLocalStorage<boolean>('kokoro:mediaViewPanel', false);
   const waveRef = useRef<WaveformHandle | null>(null);
+
+  // Group words into speech blocks based on the waveform block gap (defaults to 0.25s)
+  const wordBlocks = useMemo(() => {
+    const words = transcript?.words || [];
+    if (!words.length) return { blocks: [] as { startIdx: number; endIdx: number }[], blockIndex: [] as number[] };
+    const gap = Number(wfBlockGap) > 0 ? Number(wfBlockGap) : 0.25;
+    const out: { startIdx: number; endIdx: number }[] = [];
+    const idxMap: number[] = new Array(words.length).fill(0);
+    let sIdx = 0; let eIdx = 0; let blockNo = 0;
+    for (let i = 1; i < words.length; i += 1) {
+      const prev = words[i-1]!; const cur = words[i]!;
+      const gapSec = Math.max(0, Number(cur.start||0) - Number(prev.end||0));
+      if (gapSec > gap) {
+        // close previous block
+        eIdx = i-1; out.push({ startIdx: sIdx, endIdx: eIdx });
+        for (let j = sIdx; j <= eIdx; j += 1) idxMap[j] = blockNo;
+        blockNo += 1; sIdx = i;
+      }
+    }
+    eIdx = words.length-1; out.push({ startIdx: sIdx, endIdx: eIdx });
+    for (let j = sIdx; j <= eIdx; j += 1) idxMap[j] = blockNo;
+    return { blocks: out, blockIndex: idxMap };
+  }, [transcript?.words, wfBlockGap]);
 
   function clearSelection() {
     setSelStartIdx(null);
@@ -850,10 +876,18 @@ export function TranscriptPanel() {
                 ) : null}
               </div>
             ) : null}
-            <div className="panel__actions" style={{ justifyContent: 'space-between' }}>
+            <div className="panel__actions" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
               <button className="panel__button" type="button" onClick={() => setCurrentStep('1')}>Back</button>
+              <div className="segmented segmented--sm" role="radiogroup" aria-label="Selection unit">
+                <label className={`segmented__option ${selectUnit === 'word' ? 'is-selected' : ''}`}>
+                  <input type="radio" name="selunit" value="word" checked={selectUnit === 'word'} onChange={() => setSelectUnit('word')} /> Words
+                </label>
+                <label className={`segmented__option ${selectUnit === 'block' ? 'is-selected' : ''}`}>
+                  <input type="radio" name="selunit" value="block" checked={selectUnit === 'block'} onChange={() => setSelectUnit('block')} /> Blocks
+                </label>
+              </div>
               <button className="panel__button" type="button" disabled={!canStep2} onClick={() => setCurrentStep('3')}>Next: Replace</button>
-          </div>
+            </div>
           </div>
           ) : null}
           {/* Replace preview (XTTS) */}
@@ -1478,35 +1512,60 @@ export function TranscriptPanel() {
                     const baseBgAlpha = 0.12 + (conf !== null ? (1 - conf) * 0.15 : 0.15);
                     const baseBorderAlpha = 0.22 + (conf !== null ? (1 - conf) * 0.1 : 0.1);
                     return (
-                      <span
-                        key={`w-${idx}`}
-                        data-word-idx={idx}
-                        role="listitem"
-                        title={`t=${w.start.toFixed(2)}–${w.end.toFixed(2)}`}
-                        className="chip"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          if (e.shiftKey && selStartIdx !== null) {
-                            // Extend selection to this word
-                            setSelEndIdx(idx);
-                            updateRegionFromIdxRange(selStartIdx, idx);
-                          } else {
-                            setIsSelecting(true);
-                            setSelStartIdx(idx);
-                            setSelEndIdx(idx);
-                            setRegionStart(w.start.toFixed(2));
-                            setRegionEnd(w.end.toFixed(2));
-                          }
-                        }}
-                        onDoubleClick={(e) => {
-                          e.preventDefault();
-                          setSelStartIdx(idx);
-                          setSelEndIdx(idx);
-                          setRegionStart(w.start.toFixed(2));
-                          setRegionEnd(w.end.toFixed(2));
+                  <span
+                    key={`w-${idx}`}
+                    data-word-idx={idx}
+                    role="listitem"
+                    title={`t=${w.start.toFixed(2)}–${w.end.toFixed(2)}`}
+                    className={`chip ${selectUnit === 'block' ? ((wordBlocks.blockIndex[idx] % 2 === 0) ? 'chip--blockA' : 'chip--blockB') : ''}`}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      if (selectUnit === 'block') {
+                        const b = wordBlocks.blocks[wordBlocks.blockIndex[idx]];
+                        if (b) {
+                          setIsSelecting(false);
+                          setSelStartIdx(b.startIdx);
+                          setSelEndIdx(b.endIdx);
+                          const ws2 = transcript!.words[b.startIdx]; const we2 = transcript!.words[b.endIdx];
+                          setRegionStart(ws2.start.toFixed(2));
+                          setRegionEnd(we2.end.toFixed(2));
+                          return;
+                        }
+                      }
+                      if (e.shiftKey && selStartIdx !== null) {
+                        // Extend selection to this word
+                        setSelEndIdx(idx);
+                        updateRegionFromIdxRange(selStartIdx, idx);
+                      } else {
+                        setIsSelecting(true);
+                        setSelStartIdx(idx);
+                        setSelEndIdx(idx);
+                        setRegionStart(w.start.toFixed(2));
+                        setRegionEnd(w.end.toFixed(2));
+                      }
+                    }}
+                    onDoubleClick={(e) => {
+                      e.preventDefault();
+                      if (selectUnit === 'block') {
+                        const b = wordBlocks.blocks[wordBlocks.blockIndex[idx]];
+                        if (b) {
+                          const ws2 = transcript!.words[b.startIdx]; const we2 = transcript!.words[b.endIdx];
+                          setSelStartIdx(b.startIdx);
+                          setSelEndIdx(b.endIdx);
+                          setRegionStart(ws2.start.toFixed(2));
+                          setRegionEnd(we2.end.toFixed(2));
                           void previewSelectionOnce();
-                          try { waveRef.current?.zoomToSelection(w.start, w.end); } catch {}
-                        }}
+                          try { waveRef.current?.zoomToSelection(ws2.start, we2.end); } catch {}
+                          return;
+                        }
+                      }
+                      setSelStartIdx(idx);
+                      setSelEndIdx(idx);
+                      setRegionStart(w.start.toFixed(2));
+                      setRegionEnd(w.end.toFixed(2));
+                      void previewSelectionOnce();
+                      try { waveRef.current?.zoomToSelection(w.start, w.end); } catch {}
+                    }}
                         onMouseEnter={() => {
                           if (isSelecting) {
                             setSelEndIdx(idx);
@@ -1521,7 +1580,7 @@ export function TranscriptPanel() {
                           borderRadius: 8,
                           cursor: 'pointer',
                         }}
-                      >
+                  >
                         {w.text}
                       </span>
                     );
