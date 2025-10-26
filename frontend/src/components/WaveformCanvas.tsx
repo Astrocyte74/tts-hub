@@ -393,10 +393,11 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
   useEffect(() => {
     const cv = miniRef.current;
     if (!cv) return;
-    const mh = Math.floor(16 * dpr);
+    const miniHeightPx = 24;
+    const mh = Math.floor(miniHeightPx * dpr);
     const mw = Math.floor(width * dpr);
     if (cv.width !== mw || cv.height !== mh) {
-      cv.width = mw; cv.height = mh; cv.style.width = `${width}px`; cv.style.height = `16px`;
+      cv.width = mw; cv.height = mh; cv.style.width = `${width}px`; cv.style.height = `${miniHeightPx}px`;
     }
     const ctx = cv.getContext('2d');
     if (!ctx) return;
@@ -620,25 +621,19 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
             <button type="button" className={`wf-btn ${showBlocks ? 'is-active' : ''}`} onClick={() => setShowBlocks(v => !v)} title="Speech blocks">Blocks</button>
             <button type="button" className={`wf-btn ${showRepl ? 'is-active' : ''}`} onClick={() => setShowRepl(v => !v)} title="Replacement overlay">Repl</button>
           </div>
-          <div className="wf-seg" role="group" aria-label="Delta">
+          <div className={`wf-seg ${showDelta ? '' : 'wf-seg--disabled'}`} role="group" aria-label="Delta">
             <button type="button" className={`wf-btn ${showDelta ? 'is-active' : ''}`} onClick={() => setShowDelta(v => !v)} title="Show Δ between replacement and original boundaries">Δ</button>
-            {showDelta ? (
-              <>
-                <span className="panel__hint panel__hint--muted" style={{ marginLeft: 4 }}>thr</span>
-                <button type="button" className={`wf-btn ${Math.abs(deltaThresh - 0.05) < 1e-6 ? 'is-active' : ''}`} onClick={() => setDeltaThresh(0.05)}>50ms</button>
-                <button type="button" className={`wf-btn ${Math.abs(deltaThresh - 0.08) < 1e-6 ? 'is-active' : ''}`} onClick={() => setDeltaThresh(0.08)}>80ms</button>
-                <button type="button" className={`wf-btn ${Math.abs(deltaThresh - 0.12) < 1e-6 ? 'is-active' : ''}`} onClick={() => setDeltaThresh(0.12)}>120ms</button>
-              </>
-            ) : null}
+            <span className="panel__hint panel__hint--muted" style={{ marginLeft: 4 }}>thr</span>
+            <button type="button" className={`wf-btn ${Math.abs(deltaThresh - 0.05) < 1e-6 ? 'is-active' : ''}`} onClick={() => setDeltaThresh(0.05)}>50ms</button>
+            <button type="button" className={`wf-btn ${Math.abs(deltaThresh - 0.08) < 1e-6 ? 'is-active' : ''}`} onClick={() => setDeltaThresh(0.08)}>80ms</button>
+            <button type="button" className={`wf-btn ${Math.abs(deltaThresh - 0.12) < 1e-6 ? 'is-active' : ''}`} onClick={() => setDeltaThresh(0.12)}>120ms</button>
           </div>
-          {showBlocks ? (
-            <div className="wf-seg" role="radiogroup" aria-label="Speech block gap">
-              <span className="panel__hint panel__hint--muted" style={{ marginRight: 4 }}>Gap</span>
-              <button type="button" className={`wf-btn ${Math.abs(blockGap - 0.15) < 1e-6 ? 'is-active' : ''}`} onClick={() => setBlockGap(0.15)} title="0.15s">0.15s</button>
-              <button type="button" className={`wf-btn ${Math.abs(blockGap - 0.25) < 1e-6 ? 'is-active' : ''}`} onClick={() => setBlockGap(0.25)} title="0.25s">0.25s</button>
-              <button type="button" className={`wf-btn ${Math.abs(blockGap - 0.5) < 1e-6 ? 'is-active' : ''}`} onClick={() => setBlockGap(0.5)} title="0.5s">0.5s</button>
-            </div>
-          ) : null}
+          <div className={`wf-seg ${showBlocks ? '' : 'wf-seg--disabled'}`} role="radiogroup" aria-label="Speech block gap">
+            <span className="panel__hint panel__hint--muted" style={{ marginRight: 4 }}>Gap</span>
+            <button type="button" className={`wf-btn ${Math.abs(blockGap - 0.15) < 1e-6 ? 'is-active' : ''}`} onClick={() => setBlockGap(0.15)} title="0.15s">0.15s</button>
+            <button type="button" className={`wf-btn ${Math.abs(blockGap - 0.25) < 1e-6 ? 'is-active' : ''}`} onClick={() => setBlockGap(0.25)} title="0.25s">0.25s</button>
+            <button type="button" className={`wf-btn ${Math.abs(blockGap - 0.5) < 1e-6 ? 'is-active' : ''}`} onClick={() => setBlockGap(0.5)} title="0.5s">0.5s</button>
+          </div>
           {showLegend ? (
             <div className="waveform__legend" aria-hidden>
               <span className="wave-legend__item"><i className="wl wl--env" /> Envelope</span>
