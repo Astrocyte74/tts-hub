@@ -37,16 +37,34 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
   const dpr = Math.max(1, Math.min(2, (window.devicePixelRatio || 1)));
   const [hover, setHover] = useState<{ x: number; t: number; idx: number } | null>(null);
   const prefix = `kokoro:wf:${persistKey || 'global'}`;
-  const [zoom, setZoom] = useSessionStorage<number>(`${prefix}:zoom`, Math.max(1, defaultZoom || 1)); // 1 = fit all
+  const dPrefix = 'kokoro:wf:default';
+  const getDefault = <T,>(key: string, fallback: T): T => {
+    try {
+      const raw = window.localStorage.getItem(`${dPrefix}:${key}`);
+      if (!raw) return fallback;
+      if (typeof fallback === 'number') {
+        const n = Number(raw);
+        return (Number.isFinite(n) ? (n as unknown as T) : fallback);
+      }
+      if (typeof fallback === 'boolean') {
+        const lc = raw.toLowerCase();
+        const b = lc === '1' || lc === 'true' || lc === 'yes' || lc === 'on';
+        return (b as unknown as T);
+      }
+      return (raw as unknown as T);
+    } catch { return fallback; }
+  };
+  const [zoom, setZoom] = useSessionStorage<number>(`${prefix}:zoom`, Math.max(1, Number(getDefault('zoom', defaultZoom || 1)))); // 1 = fit all
   const [viewStart, setViewStart] = useSessionStorage<number>(`${prefix}:start`, 0); // seconds
   const [isHot, setIsHot] = useState<boolean>(false); // keyboard scope when hovered
-  const [styleMode, setStyleMode] = useSessionStorage<'bars' | 'line' | 'filled'>(`${prefix}:style`, 'filled');
-  const [showTicks, setShowTicks] = useSessionStorage<boolean>(`${prefix}:ticks`, false);
-  const [showWhiskers, setShowWhiskers] = useSessionStorage<boolean>(`${prefix}:whisk`, true);
-  const [showBlocks, setShowBlocks] = useSessionStorage<boolean>(`${prefix}:blocks`, false);
-  const [showRepl, setShowRepl] = useSessionStorage<boolean>(`${prefix}:repl`, true);
-  const [showDelta, setShowDelta] = useSessionStorage<boolean>(`${prefix}:delta`, true);
-  const [blockGap, setBlockGap] = useSessionStorage<number>(`${prefix}:blockGap`, 0.25); // seconds gap to split blocks
+  const [styleMode, setStyleMode] = useSessionStorage<'bars' | 'line' | 'filled'>(`${prefix}:style`, getDefault('style', 'filled') as any);
+  const [showTicks, setShowTicks] = useSessionStorage<boolean>(`${prefix}:ticks`, Boolean(getDefault('ticks', false)));
+  const [showWhiskers, setShowWhiskers] = useSessionStorage<boolean>(`${prefix}:whisk`, Boolean(getDefault('whisk', true)));
+  const [showBlocks, setShowBlocks] = useSessionStorage<boolean>(`${prefix}:blocks`, Boolean(getDefault('blocks', true)));
+  const [showRepl, setShowRepl] = useSessionStorage<boolean>(`${prefix}:repl`, Boolean(getDefault('repl', true)));
+  const [showDelta, setShowDelta] = useSessionStorage<boolean>(`${prefix}:delta`, Boolean(getDefault('delta', true)));
+  const [blockGap, setBlockGap] = useSessionStorage<number>(`${prefix}:blockGap`, Number(getDefault('blockGap', 0.25))); // seconds gap to split blocks
+  const [deltaThresh, setDeltaThresh] = useSessionStorage<number>(`${prefix}:deltaThresh`, Number(getDefault('deltaThresh', 0.08)));
 
   // Resize observer to keep canvas crisp
   useEffect(() => {
@@ -312,7 +330,7 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
         ctx.stroke();
         ctx.fillRect(Math.floor(xNow + sign * dxPx - 1*dpr), y-2, 2, 4);
       };
-      const thresh = 0.08; // seconds
+      const thresh = Number(deltaThresh) || 0.08; // seconds
       for (const rw of replaceWords) {
         if (rw.start >= viewStart && rw.start <= viewStart + viewDuration) {
           const { delta } = findNearest(rw.start);
@@ -578,6 +596,14 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
           </div>
           <div className="wf-seg" role="group" aria-label="Delta">
             <button type="button" className={`wf-btn ${showDelta ? 'is-active' : ''}`} onClick={() => setShowDelta(v => !v)} title="Show Δ between replacement and original boundaries">Δ</button>
+            {showDelta ? (
+              <>
+                <span className="panel__hint panel__hint--muted" style={{ marginLeft: 4 }}>thr</span>
+                <button type="button" className={`wf-btn ${Math.abs(deltaThresh - 0.05) < 1e-6 ? 'is-active' : ''}`} onClick={() => setDeltaThresh(0.05)}>50ms</button>
+                <button type="button" className={`wf-btn ${Math.abs(deltaThresh - 0.08) < 1e-6 ? 'is-active' : ''}`} onClick={() => setDeltaThresh(0.08)}>80ms</button>
+                <button type="button" className={`wf-btn ${Math.abs(deltaThresh - 0.12) < 1e-6 ? 'is-active' : ''}`} onClick={() => setDeltaThresh(0.12)}>120ms</button>
+              </>
+            ) : null}
           </div>
           {showBlocks ? (
             <div className="wf-seg" role="radiogroup" aria-label="Speech block gap">
@@ -596,6 +622,28 @@ export const WaveformCanvas = forwardRef<WaveformHandle, Props>(function Wavefor
               <span className="wave-legend__item"><i className="wl wl--play" /> Playhead</span>
             </div>
           ) : null}
+        </div>
+        <div className="wf-seg" role="group" aria-label="Save default view">
+          <button
+            type="button"
+            className="wf-btn"
+            title="Save current view (zoom/style/overlays) as default for new jobs"
+            onClick={() => {
+              try {
+                window.localStorage.setItem(`${dPrefix}:zoom`, String(zoom));
+                window.localStorage.setItem(`${dPrefix}:style`, String(styleMode));
+                window.localStorage.setItem(`${dPrefix}:ticks`, String(showTicks));
+                window.localStorage.setItem(`${dPrefix}:whisk`, String(showWhiskers));
+                window.localStorage.setItem(`${dPrefix}:blocks`, String(showBlocks));
+                window.localStorage.setItem(`${dPrefix}:repl`, String(showRepl));
+                window.localStorage.setItem(`${dPrefix}:delta`, String(showDelta));
+                window.localStorage.setItem(`${dPrefix}:blockGap`, String(blockGap));
+                window.localStorage.setItem(`${dPrefix}:deltaThresh`, String(deltaThresh));
+              } catch {}
+            }}
+          >
+            Save as default view
+          </button>
         </div>
       </div>
       {/* Minimap overview (panning) */}

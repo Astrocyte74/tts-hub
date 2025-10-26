@@ -1242,7 +1242,7 @@ export function TranscriptPanel() {
                       replaceWords={replaceWords}
                       showLegend
                       defaultZoom={12}
-                      height={80}
+                      height={120}
                     />
                   </>
                 );
