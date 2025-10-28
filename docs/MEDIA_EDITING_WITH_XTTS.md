@@ -51,8 +51,21 @@ UI (new “Transcript” panel)
 - Elements:
   - File/URL input with progress feedback (reuses queue panel visuals).
   - Transcript viewer with word‑level spans; drag to select phrase; inline “Replace…” action.
-  - Replace dialog: input new text; toggle “Borrow voice from selection” or choose Favorite/Custom voice.
-  - Buttons: Preview replacement, Apply to video, Export audio only.
+- Replace dialog: input new text; toggle “Borrow voice from selection” or choose Favorite/Custom voice.
+- Buttons: Preview replacement, Apply to video, Export audio only.
+
+Waveform (v2)
+- Minimap overview for panning; click/drag to move the viewport. Does not affect selection.
+- Zoom controls with presets (1×/2×/4×/8×/12×), Fit, Sel (fits selection with padding), and optional Auto‑fit on selection change.
+- Styles: Bars, Line, Filled (default). Uses a client‑side envelope decoded via WebAudio with crisp device‑pixel‑ratio rendering.
+- Overlays:
+  - Blocks: shaded speech blocks derived from gaps (configurable 0.15/0.25/0.5s).
+  - Ticks: word boundary ticks.
+  - Adj: WhisperX boundary adjustments since the last align (orange markers/whiskers).
+  - Δ: replacement vs original boundary differences (whiskers), with a threshold control (50/80/120 ms).
+- Shortcuts: Scroll to pan; Cmd/Ctrl+Scroll to zoom. Keys: Z (in), Shift+Z (out), F (fit), S (fit selection), C (cycle presets).
+- Hover: shows nearest word and time; outlines the corresponding transcript chip and autoscrolls it into view when needed.
+- Defaults: Blocks ON, Filled style, 12× zoom, legend shown. “Save as default view” persists zoom/style/overlays/gap/Δ‑thr (and Auto‑fit) to localStorage; per‑job state persists in sessionStorage.
 
 Backend helpers (phase in gradually)
 - Extract + normalise: ffmpeg helpers for audio track and segment trims.

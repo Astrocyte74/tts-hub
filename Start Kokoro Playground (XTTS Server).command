@@ -91,6 +91,40 @@ log() {
   printf '[Kokoro SPA] %s\n' "$*"
 }
 
+# Optional: copy a test media URL to clipboard on start (dev only)
+# - Configure via COPY_URL (e.g., a YouTube link safe from 429s). Leave empty to skip.
+# - Enable/disable via COPY_URL_ON_START. Defaults: dev=on, prod=off.
+COPY_URL_ON_START="${COPY_URL_ON_START:-}"
+COPY_URL="${COPY_URL:-}"
+
+# Decide default based on mode when not explicitly set
+if [[ -z "$COPY_URL_ON_START" ]]; then
+  case "$(printf '%s' "$MODE" | tr '[:upper:]' '[:lower:]')" in
+    dev) COPY_URL_ON_START=1 ;;
+    *)   COPY_URL_ON_START=0 ;;
+  esac
+fi
+
+_copy_url_flag=$(printf '%s' "$COPY_URL_ON_START" | tr '[:upper:]' '[:lower:]')
+_mode_lc=$(printf '%s' "$MODE" | tr '[:upper:]' '[:lower:]')
+if [[ "$_mode_lc" == "dev" && "$_copy_url_flag" =~ ^(1|true|yes|on)$ && -n "$COPY_URL" ]]; then
+  if command -v pbcopy >/dev/null 2>&1; then
+    printf "%s" "$COPY_URL" | pbcopy
+    log "Copied test URL to clipboard"
+  elif command -v wl-copy >/dev/null 2>&1; then
+    printf "%s" "$COPY_URL" | wl-copy
+    log "Copied test URL to clipboard (wl-copy)"
+  elif command -v xclip >/dev/null 2>&1; then
+    printf "%s" "$COPY_URL" | xclip -selection clipboard
+    log "Copied test URL to clipboard (xclip)"
+  elif command -v xsel >/dev/null 2>&1; then
+    printf "%s" "$COPY_URL" | xsel --clipboard --input
+    log "Copied test URL to clipboard (xsel)"
+  else
+    log "Clipboard tool not found (pbcopy/wl-copy/xclip/xsel). Skipping copy."
+  fi
+fi
+
 yesno_default_no() {
   local prompt="$1"; local ans
   read -r -p "$prompt [y/N] " ans || ans=""
@@ -623,17 +657,108 @@ fi
 
 log "Starting Vite dev server on $DEV_URL"
 
+# Decide the SPA's API base host robustly. Prefer PUBLIC_HOST, but fall back when unreachable.
+api_reachable() {
+  local host="$1"; local port="$2"; local prefix="$3"
+  if command -v curl >/dev/null 2>&1; then
+    curl -sS --max-time 1 "http://$host:$port/${prefix}/meta" >/dev/null 2>&1 && return 0
+  fi
+  return 1
+}
+
+wait_for_backend() {
+  # wait_for_backend host port prefix seconds
+  local host="$1"; local port="$2"; local prefix="$3"; local seconds="${4:-5}"
+  local i=0
+  while [[ $i -lt $((seconds*5)) ]]; do
+    if api_reachable "$host" "$port" "$prefix"; then
+      return 0
+    fi
+    sleep 0.2
+    i=$((i+1))
+  done
+  return 1
+}
+
+# Initial candidate for SPA base host
+SPA_API_HOST_CANDIDATE="${PUBLIC_HOST:-$BACKEND_HOST}"
+
+# Avoid 0.0.0.0 as a client base (not reachable from browsers)
+if [[ "$SPA_API_HOST_CANDIDATE" == "0.0.0.0" ]]; then
+  SPA_API_HOST_CANDIDATE="${LAN_IP:-127.0.0.1}"
+fi
+
+# If candidate is not reachable from this host and we're reusing an existing
+# localhost-only backend (SKIP_BACKEND=1), fall back to 127.0.0.1 so the local
+# developer experience works. Remote peers won't be able to hit 127.0.0.1 — we
+# log a clear hint in that case.
+SPA_API_HOST="$SPA_API_HOST_CANDIDATE"
+if ! api_reachable "$SPA_API_HOST_CANDIDATE" "$BACKEND_PORT" "$BACKEND_API_PREFIX"; then
+  # If we're reusing a possibly localhost-only backend and TAKE_OVER=1, automatically
+  # take over the port and start a fresh backend bound to the configured BACKEND_HOST.
+  if [[ "${SKIP_BACKEND_FLAG:-0}" != "0" ]] && [[ "${TAKE_OVER_FLAG:-0}" =~ ^(1|true|yes|on)$ ]]; then
+    existing_backend_pids=$(lsof -ti TCP:$BACKEND_PORT 2>/dev/null || true)
+    if [[ -n "$existing_backend_pids" ]]; then
+      log "AUTO TAKE_OVER: restarting backend (killing $existing_backend_pids) to match advertised API host."
+      echo "$existing_backend_pids" | xargs kill 2>/dev/null || true
+      sleep 1
+    fi
+    # Bind logic was already decided earlier (may be 0.0.0.0 under WG_MODE=auto)
+    log "AUTO TAKE_OVER: starting Flask backend on http://$BACKEND_HOST:$BACKEND_PORT"
+    BACKEND_HOST="$BACKEND_HOST" BACKEND_PORT="$BACKEND_PORT" "$VENV_PY" "$BACKEND_DIR/app.py" &
+    BACKEND_PID=$!
+    BACKEND_MODE="started"
+    SKIP_BACKEND_FLAG=0
+
+    # Prefer PUBLIC_HOST if provided/non-empty and not 0.0.0.0; else use 127.0.0.1
+    if [[ -n "$PUBLIC_HOST" && "$PUBLIC_HOST" != "0.0.0.0" ]]; then
+      if wait_for_backend "$PUBLIC_HOST" "$BACKEND_PORT" "$BACKEND_API_PREFIX" 8; then
+        SPA_API_HOST="$PUBLIC_HOST"
+      elif wait_for_backend "127.0.0.1" "$BACKEND_PORT" "$BACKEND_API_PREFIX" 8; then
+        SPA_API_HOST="127.0.0.1"
+      fi
+    else
+      if wait_for_backend "127.0.0.1" "$BACKEND_PORT" "$BACKEND_API_PREFIX" 8; then
+        SPA_API_HOST="127.0.0.1"
+      fi
+    fi
+  fi
+  # If still unreachable and we can reach localhost, fallback for SPA
+  if ! api_reachable "$SPA_API_HOST_CANDIDATE" "$BACKEND_PORT" "$BACKEND_API_PREFIX"; then
+    if api_reachable "127.0.0.1" "$BACKEND_PORT" "$BACKEND_API_PREFIX"; then
+      SPA_API_HOST="127.0.0.1"
+      log "API base host '$SPA_API_HOST_CANDIDATE' not reachable; falling back to http://127.0.0.1:$BACKEND_PORT for the SPA."
+      log "Tip: Set TAKE_OVER=1 to restart the backend bound to all interfaces, or set PUBLIC_HOST explicitly."
+    else
+      # Keep the candidate, but warn — requests may fail if the backend truly isn't reachable.
+      log "Warning: API base host '$SPA_API_HOST_CANDIDATE' not reachable during launch probe. SPA will still use it; ensure your backend is listening there."
+    fi
+  fi
+fi
+
+# If we resolved a host, give the backend a brief moment to be ready
+if ! wait_for_backend "$SPA_API_HOST" "$BACKEND_PORT" "$BACKEND_API_PREFIX" 5; then
+  log "Warning: Backend at http://$SPA_API_HOST:$BACKEND_PORT/$BACKEND_API_PREFIX did not respond to /meta within the wait window."
+fi
+
 cd "$FRONTEND_DIR"
-# Use PUBLIC_HOST for the API base when available (ensures remote peers can reach it)
-VITE_API_BASE_URL="http://${PUBLIC_HOST:-$BACKEND_HOST}:$BACKEND_PORT" \
+# Use the resolved SPA_API_HOST for the API base
+VITE_API_BASE_URL="http://$SPA_API_HOST:$BACKEND_PORT" \
 VITE_API_PREFIX="${VITE_API_PREFIX:-$BACKEND_API_PREFIX}" \
+VITE_TEST_MEDIA_URL="${VITE_TEST_MEDIA_URL:-}" \
 npm run dev -- --host "$DEV_HOST" --port "$DEV_PORT" &
 FRONTEND_PID=$!
 
-# Open a more useful URL for peers when PUBLIC_HOST is known
+# Open a more useful URL for peers when PUBLIC_HOST is known.
+# If the SPA is targeting 127.0.0.1 for the API, prefer opening the local UI URL
+# to avoid confusion when clicking a WG/LAN link that pairs with a localhost API.
 OPEN_DEV_HOST="${PUBLIC_HOST:-$DEV_HOST}"
+if [[ "$SPA_API_HOST" == "127.0.0.1" ]]; then
+  OPEN_DEV_HOST="127.0.0.1"
+fi
 log "URLs → UI:  http://127.0.0.1:$DEV_PORT  ${LAN_IP:+http://$LAN_IP:$DEV_PORT }${PUBLIC_HOST:+http://$OPEN_DEV_HOST:$DEV_PORT (WG) }"
 log "API: http://127.0.0.1:$BACKEND_PORT/$BACKEND_API_PREFIX  ${LAN_IP:+http://$LAN_IP:$BACKEND_PORT/$BACKEND_API_PREFIX }${PUBLIC_HOST:+http://$PUBLIC_HOST:$BACKEND_PORT/$BACKEND_API_PREFIX }"
+log "SPA API base: http://$SPA_API_HOST:$BACKEND_PORT/$BACKEND_API_PREFIX"
 if [[ -n "$PUBLIC_HOST" ]]; then
   log "Tip: From Docker on a peer — docker run --rm --network host -e TTSHUB_API_BASE=http://$PUBLIC_HOST:$BACKEND_PORT/$BACKEND_API_PREFIX curlimages/curl:8.10.1 curl -sS \"\$TTSHUB_API_BASE/meta\""
 fi

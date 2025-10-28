@@ -1,14 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { mediaAlignFull, mediaAlignRegion, mediaApply, mediaEstimateUrl, mediaGetStats, mediaProbeUpload, mediaReplacePreview, mediaTranscribeFromUrl, mediaTranscribeUpload, resolveAudioUrl } from '../api/client';
 import { IconWave } from '../icons';
 import type { MediaTranscriptResult, MediaEstimateInfo, MediaProbeInfo } from '../types';
 import './TranscriptPanel.css';
-import { WaveformCanvas } from './WaveformCanvas';
+import { WaveformCanvas, type WaveformHandle } from './WaveformCanvas';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useSessionStorage } from '../hooks/useSessionStorage';
 
 export function TranscriptPanel() {
   // no collapsible state (full-page)
-  const [url, setUrl] = useState('');
+  const testMediaUrl = (import.meta as any)?.env?.VITE_TEST_MEDIA_URL as string | undefined;
+  const isDevEnv = Boolean((import.meta as any)?.env?.DEV);
+  const [url, setUrl] = useState<string>(isDevEnv && testMediaUrl ? String(testMediaUrl) : '');
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string>('');
@@ -30,10 +33,13 @@ export function TranscriptPanel() {
   const [replaceText, setReplaceText] = useState<string>('');
   const [replacePreviewUrl, setReplacePreviewUrl] = useState<string | null>(null);
   const [replaceDiffUrl, setReplaceDiffUrl] = useState<string | null>(null);
+  const [replaceWords, setReplaceWords] = useState<{ text: string; start: number; end: number }[] | null>(null);
   const [replaceStatus, setReplaceStatus] = useState<string>('');
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
   const [playbackTrack, setPlaybackTrack] = useState<'original' | 'diff' | 'preview'>('original');
   const [viewMode, setViewMode] = useState<'sentences' | 'words'>('words');
+  const [selectUnit, setSelectUnit] = useLocalStorage<'word' | 'block'>('kokoro:mediaSelectUnit', 'word');
+  const [wfBlockGap, setWfBlockGap] = useSessionStorage<number>('kokoro:wf:blockGap', 0.25);
   const [currentStep, setCurrentStep] = useLocalStorage<'1' | '2' | '3'>('kokoro:mediaStep', '1');
   const [voiceMode, setVoiceMode] = useState<'borrow' | 'xtts' | 'favorite'>('borrow');
   const [voiceList, setVoiceList] = useState<{ id: string; label: string }[]>([]);
@@ -45,6 +51,37 @@ export function TranscriptPanel() {
   const [loopPreview, setLoopPreview] = useLocalStorage<boolean>('kokoro:mediaLoopPreview', false);
   const [autoRefineOnPreview, setAutoRefineOnPreview] = useLocalStorage<boolean>('kokoro:mediaAutoRefine', true);
   const [lastRefinedSec, setLastRefinedSec] = useState<number | null>(null);
+  const [hoveredWordIdx, setHoveredWordIdx] = useState<number | null>(null);
+  const hoverScrollTimer = useRef<number | null>(null);
+  const centerSelTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (hoveredWordIdx === null) return; // nothing to do
+    const container = document.querySelector('.media-editor__words') as HTMLElement | null;
+    const chip = document.querySelector(`[data-word-idx="${hoveredWordIdx}"]`) as HTMLElement | null;
+    if (!container || !chip) return;
+    try {
+      const cRect = container.getBoundingClientRect();
+      const r = chip.getBoundingClientRect();
+      const margin = 32;
+      const outOfView = r.top < cRect.top + margin || r.bottom > cRect.bottom - margin;
+      if (!outOfView) return;
+      if (hoverScrollTimer.current) window.clearTimeout(hoverScrollTimer.current);
+      hoverScrollTimer.current = window.setTimeout(() => {
+        try { chip.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' }); } catch {}
+      }, 60);
+    } catch {}
+  }, [hoveredWordIdx]);
+
+  // Auto-center waveform/minimap to selection when selection changes (debounced)
+  useEffect(() => {
+    if (!(Number(regionEnd) > Number(regionStart))) return;
+    if (centerSelTimer.current) window.clearTimeout(centerSelTimer.current);
+    centerSelTimer.current = window.setTimeout(() => {
+      try { waveRef.current?.centerOnRange(Number(regionStart), Number(regionEnd)); } catch {}
+    }, 120);
+    return () => { if (centerSelTimer.current) window.clearTimeout(centerSelTimer.current); };
+  }, [regionStart, regionEnd]);
 
   async function ensureVoices() {
     if (voiceList.length) return;
@@ -106,6 +143,30 @@ export function TranscriptPanel() {
   const [findQuery, setFindQuery] = useState<string>('');
   const [findStartFrom, setFindStartFrom] = useState<number>(0);
   const [viewPanelOpen, setViewPanelOpen] = useLocalStorage<boolean>('kokoro:mediaViewPanel', false);
+  const waveRef = useRef<WaveformHandle | null>(null);
+
+  // Group words into speech blocks based on the waveform block gap (defaults to 0.25s)
+  const wordBlocks = useMemo(() => {
+    const words = transcript?.words || [];
+    if (!words.length) return { blocks: [] as { startIdx: number; endIdx: number }[], blockIndex: [] as number[] };
+    const gap = Number(wfBlockGap) > 0 ? Number(wfBlockGap) : 0.25;
+    const out: { startIdx: number; endIdx: number }[] = [];
+    const idxMap: number[] = new Array(words.length).fill(0);
+    let sIdx = 0; let eIdx = 0; let blockNo = 0;
+    for (let i = 1; i < words.length; i += 1) {
+      const prev = words[i-1]!; const cur = words[i]!;
+      const gapSec = Math.max(0, Number(cur.start||0) - Number(prev.end||0));
+      if (gapSec > gap) {
+        // close previous block
+        eIdx = i-1; out.push({ startIdx: sIdx, endIdx: eIdx });
+        for (let j = sIdx; j <= eIdx; j += 1) idxMap[j] = blockNo;
+        blockNo += 1; sIdx = i;
+      }
+    }
+    eIdx = words.length-1; out.push({ startIdx: sIdx, endIdx: eIdx });
+    for (let j = sIdx; j <= eIdx; j += 1) idxMap[j] = blockNo;
+    return { blocks: out, blockIndex: idxMap };
+  }, [transcript?.words, wfBlockGap]);
 
   function clearSelection() {
     setSelStartIdx(null);
@@ -846,10 +907,32 @@ export function TranscriptPanel() {
                 ) : null}
               </div>
             ) : null}
-            <div className="panel__actions" style={{ justifyContent: 'space-between' }}>
+            <div className="panel__actions" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
               <button className="panel__button" type="button" onClick={() => setCurrentStep('1')}>Back</button>
+              <div className="segmented segmented--sm" role="radiogroup" aria-label="Selection unit">
+                <label className={`segmented__option ${selectUnit === 'word' ? 'is-selected' : ''}`}>
+                  <input type="radio" name="selunit" value="word" checked={selectUnit === 'word'} onChange={() => setSelectUnit('word')} /> Words
+                </label>
+                <label className={`segmented__option ${selectUnit === 'block' ? 'is-selected' : ''}`}>
+                  <input type="radio" name="selunit" value="block" checked={selectUnit === 'block'} onChange={() => setSelectUnit('block')} /> Blocks
+                </label>
+              </div>
+              {selectUnit === 'block' ? (
+                <span className="panel__hint panel__hint--muted" style={{ marginLeft: 8 }}>
+                  Block gap: {wfBlockGap.toFixed(2)}s
+                  <button
+                    type="button"
+                    className="panel__button panel__button--sm"
+                    style={{ marginLeft: 6 }}
+                    title="Adjust block gap in waveform controls"
+                    onClick={() => { try { waveRef.current?.showBlocksControls(); } catch {} }}
+                  >
+                    Adjust
+                  </button>
+                </span>
+              ) : null}
               <button className="panel__button" type="button" disabled={!canStep2} onClick={() => setCurrentStep('3')}>Next: Replace</button>
-          </div>
+            </div>
           </div>
           ) : null}
           {/* Replace preview (XTTS) */}
@@ -999,9 +1082,11 @@ export function TranscriptPanel() {
                       trimPostpadMs: Number(trimPostMs || '8'),
                       trimEnable: true,
                       voice: chosen,
+                      alignReplace: true,
                     });
                     setReplacePreviewUrl(res.preview_url ? resolveAudioUrl(res.preview_url) : null);
                     setReplaceDiffUrl(res.diff_url ? resolveAudioUrl(res.diff_url) : null);
+                    setReplaceWords(Array.isArray((res as any).replace_words) ? ((res as any).replace_words as any[]).map((w) => ({ text: String(w.text||''), start: Number(w.start||0), end: Number(w.end||0) })) : null);
                     setPlaybackTrack('preview');
                     const se = res.stats?.synth_elapsed;
                     if (typeof se === 'number') {
@@ -1160,10 +1245,13 @@ export function TranscriptPanel() {
                       <audio ref={audioRef} controls src={playerSrc ?? undefined} style={{ width: '100%' }} onPlay={handleAudioPlay} />
                     </div>
                     <WaveformCanvas
+                      ref={waveRef}
                       audioUrl={playerSrc}
                       words={transcript?.words ?? null}
                       currentTime={audioTime}
                       selection={(Number(regionEnd) > Number(regionStart)) ? { start: Number(regionStart), end: Number(regionEnd) } : null}
+                      persistKey={jobId || undefined}
+                      onHoverWordIndex={(idx) => setHoveredWordIdx(idx)}
                       onChangeSelection={(s, e) => {
                         // Snap to nearest word indices and mirror selection in chips
                         const ws = transcript?.words || [];
@@ -1183,9 +1271,10 @@ export function TranscriptPanel() {
                         }
                       }}
                       diffMarkers={lastBoundaryChanges}
+                      replaceWords={replaceWords}
                       showLegend
-                      defaultZoom={8}
-                      height={80}
+                      defaultZoom={12}
+                      height={120}
                     />
                   </>
                 );
@@ -1349,6 +1438,26 @@ export function TranscriptPanel() {
               <div className="selection-toolbar">
                 <div className="selection-toolbar__meta panel__meta">Selection: {regionStart || '…'}s → {regionEnd || '…'}s {selectionValid ? `(${(Number(regionEnd) - Number(regionStart)).toFixed(2)}s)` : ''}</div>
                 <div className="selection-toolbar__actions">
+                  {(selectUnit === 'block' && !selectionValid && transcript?.words?.length) ? (
+                    <button
+                      className="panel__button panel__button--sm"
+                      type="button"
+                      onClick={() => {
+                        const idx = Math.max(0, Math.min((selEndIdx ?? selStartIdx ?? cursorIdx ?? 0), (transcript?.words?.length || 1) - 1));
+                        const b = wordBlocks.blocks[wordBlocks.blockIndex[idx]];
+                        if (b && transcript?.words) {
+                          const ws2 = transcript.words[b.startIdx]; const we2 = transcript.words[b.endIdx];
+                          setSelStartIdx(b.startIdx);
+                          setSelEndIdx(b.endIdx);
+                          setRegionStart(ws2.start.toFixed(2));
+                          setRegionEnd(we2.end.toFixed(2));
+                          try { waveRef.current?.zoomToSelection(ws2.start, we2.end); } catch {}
+                        }
+                      }}
+                    >
+                      Select nearest block
+                    </button>
+                  ) : null}
                   <button className="panel__button panel__button--sm" type="button" onClick={() => { clearSelection(); }}>
                     Clear
                   </button>
@@ -1469,34 +1578,60 @@ export function TranscriptPanel() {
                     const baseBgAlpha = 0.12 + (conf !== null ? (1 - conf) * 0.15 : 0.15);
                     const baseBorderAlpha = 0.22 + (conf !== null ? (1 - conf) * 0.1 : 0.1);
                     return (
-                      <span
-                        key={`w-${idx}`}
-                        data-word-idx={idx}
-                        role="listitem"
-                        title={`t=${w.start.toFixed(2)}–${w.end.toFixed(2)}`}
-                        className="chip"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          if (e.shiftKey && selStartIdx !== null) {
-                            // Extend selection to this word
-                            setSelEndIdx(idx);
-                            updateRegionFromIdxRange(selStartIdx, idx);
-                          } else {
-                            setIsSelecting(true);
-                            setSelStartIdx(idx);
-                            setSelEndIdx(idx);
-                            setRegionStart(w.start.toFixed(2));
-                            setRegionEnd(w.end.toFixed(2));
-                          }
-                        }}
-                        onDoubleClick={(e) => {
-                          e.preventDefault();
-                          setSelStartIdx(idx);
-                          setSelEndIdx(idx);
-                          setRegionStart(w.start.toFixed(2));
-                          setRegionEnd(w.end.toFixed(2));
+                  <span
+                    key={`w-${idx}`}
+                    data-word-idx={idx}
+                    role="listitem"
+                    title={`t=${w.start.toFixed(2)}–${w.end.toFixed(2)}`}
+                    className={`chip ${selectUnit === 'block' ? ((wordBlocks.blockIndex[idx] % 2 === 0) ? 'chip--blockA' : 'chip--blockB') : ''} ${hoveredWordIdx === idx ? 'chip--hover' : ''}`}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      if (selectUnit === 'block') {
+                        const b = wordBlocks.blocks[wordBlocks.blockIndex[idx]];
+                        if (b) {
+                          setIsSelecting(false);
+                          setSelStartIdx(b.startIdx);
+                          setSelEndIdx(b.endIdx);
+                          const ws2 = transcript!.words[b.startIdx]; const we2 = transcript!.words[b.endIdx];
+                          setRegionStart(ws2.start.toFixed(2));
+                          setRegionEnd(we2.end.toFixed(2));
+                          return;
+                        }
+                      }
+                      if (e.shiftKey && selStartIdx !== null) {
+                        // Extend selection to this word
+                        setSelEndIdx(idx);
+                        updateRegionFromIdxRange(selStartIdx, idx);
+                      } else {
+                        setIsSelecting(true);
+                        setSelStartIdx(idx);
+                        setSelEndIdx(idx);
+                        setRegionStart(w.start.toFixed(2));
+                        setRegionEnd(w.end.toFixed(2));
+                      }
+                    }}
+                    onDoubleClick={(e) => {
+                      e.preventDefault();
+                      if (selectUnit === 'block') {
+                        const b = wordBlocks.blocks[wordBlocks.blockIndex[idx]];
+                        if (b) {
+                          const ws2 = transcript!.words[b.startIdx]; const we2 = transcript!.words[b.endIdx];
+                          setSelStartIdx(b.startIdx);
+                          setSelEndIdx(b.endIdx);
+                          setRegionStart(ws2.start.toFixed(2));
+                          setRegionEnd(we2.end.toFixed(2));
                           void previewSelectionOnce();
-                        }}
+                          try { waveRef.current?.zoomToSelection(ws2.start, we2.end); } catch {}
+                          return;
+                        }
+                      }
+                      setSelStartIdx(idx);
+                      setSelEndIdx(idx);
+                      setRegionStart(w.start.toFixed(2));
+                      setRegionEnd(w.end.toFixed(2));
+                      void previewSelectionOnce();
+                      try { waveRef.current?.zoomToSelection(w.start, w.end); } catch {}
+                    }}
                         onMouseEnter={() => {
                           if (isSelecting) {
                             setSelEndIdx(idx);
@@ -1511,7 +1646,7 @@ export function TranscriptPanel() {
                           borderRadius: 8,
                           cursor: 'pointer',
                         }}
-                      >
+                  >
                         {w.text}
                       </span>
                     );

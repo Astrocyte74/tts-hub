@@ -3265,7 +3265,10 @@ def media_replace_preview_endpoint():
         rep = _trim_silence(rep, top_db=trim_top_db, sr=sr, prepad_ms=trim_pre_ms, postpad_ms=trim_post_ms)
     i0 = int(max(0.0, start) * sr)
     i1 = int(min(source_dur, end) * sr)
-    preview = _apply_replace_with_crossfade(src, rep, sr, i0, i1, fade_ms=fade_ms, duck_gain=duck_gain)
+    # Stretch replacement to exact target length; reuse for both preview and optional alignment overlay
+    target_len = max(i1 - i0, 1)
+    rep_stretched = rep if len(rep) == target_len else _time_stretch_to_len(rep, sr, target_len)
+    preview = _apply_replace_with_crossfade(src, rep_stretched, sr, i0, i1, fade_ms=fade_ms, duck_gain=duck_gain)
 
     # Write preview and diff
     ts = int(time.time())
@@ -3296,12 +3299,49 @@ def media_replace_preview_endpoint():
     rel_prev = (preview_path.relative_to(OUTPUT_DIR)).as_posix()
     rel_diff = (diff_path.relative_to(OUTPUT_DIR)).as_posix()
     _log(f"Replace preview: job={job_id} region=({start:.2f}-{end:.2f}) synth={elapsed_synth:.2f}s preview='{rel_prev}'")
-    return jsonify({
+    out: Dict[str, Any] = {
         'jobId': job_id,
         'preview_url': f"/audio/{rel_prev}",
         'diff_url': f"/audio/{rel_diff}",
         'stats': { 'synth_elapsed': elapsed_synth, 'fade_ms': fade_ms, 'duck_db': duck_db }
-    })
+    }
+
+    # Optional: align replacement words on the stretched segment and return absolute timings
+    try:
+        align_replace = bool(payload.get('alignReplace'))
+    except Exception:
+        align_replace = False
+    if align_replace and WHISPERX_ENABLE and _have_whisperx:
+        try:
+            # Persist stretched segment to a temporary WAV for WhisperX
+            tmp_rep = job_dir / f"rep_stretched_{i0}_{i1}.wav"
+            sf.write(tmp_rep, rep_stretched.astype('float32'), sr)
+            # Build a simple segment with the replacement text spanning the clip
+            seg = { 'text': text, 'start': 0.0, 'end': float(target_len) / float(sr) }
+            align_model, metadata = _whisperx_get_align_model(language)
+            aligned = whisperx.align([seg], align_model, metadata, str(tmp_rep), device=WHISPERX_DEVICE, return_char_alignments=False)  # type: ignore[name-defined]
+            repl_words: List[Dict[str, Any]] = []
+            for sseg in aligned.get('segments', []) or []:
+                for w in sseg.get('words', []) or []:
+                    try:
+                        ws = float(w.get('start') or 0.0)
+                        we = float(w.get('end') or 0.0)
+                        txt = str(w.get('word') or w.get('text') or '').strip()
+                        repl_words.append({ 'text': txt, 'start': start + ws, 'end': start + we })
+                    except Exception:
+                        continue
+            if repl_words:
+                out['replace_words'] = repl_words
+        except Exception as exc:
+            _log(f"alignReplace failed: {exc}")
+            # non-fatal — preview still returned
+        finally:
+            try:
+                tmp_rep.unlink(missing_ok=True)  # type: ignore[arg-type]
+            except Exception:
+                pass
+
+    return jsonify(out)
 
 
 @api.route("/media/apply", methods=["POST"])

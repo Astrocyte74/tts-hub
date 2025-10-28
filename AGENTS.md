@@ -15,6 +15,8 @@ This document orients future agents working in this repo so you can ship changes
   - `src/api/client.ts` — fetch helpers (typed), URL construction.
   - `src/hooks/` — local/session storage hooks.
 - `out/` — generated audio; previews under `out/voice_previews/`.
+  - Media Editor (beta) lives under `src/pages/MediaEditorPage.tsx` and `src/components/TranscriptPanel.tsx` with `WaveformCanvas.tsx`.
+  - Dev tip: set `VITE_TEST_MEDIA_URL` in `.env` to prefill a safe YouTube URL for testing.
 
 ## Component Map (frontend)
 - `TopContextBar.tsx` — header with engine, voice summary, Results chip (includes live queue badge), Quick Generate.
