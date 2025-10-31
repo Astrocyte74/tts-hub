@@ -3735,9 +3735,13 @@ def telegram_draw_endpoint():
 
     preset = str(payload.get("preset") or "").strip().lower().replace(" ", "_")
 
-    # Optional style and negative presets
-    style_preset = str(payload.get("stylePreset") or payload.get("style") or "").strip().lower().replace(" ", "_")
-    negative_preset = str(payload.get("negativePreset") or "").strip().lower().replace(" ", "_")
+    # Optional style and negative presets (accept both camelCase and snake_case)
+    style_preset = str(
+        payload.get("stylePreset") or payload.get("style_preset") or payload.get("style") or ""
+    ).strip().lower().replace(" ", "_")
+    negative_preset = str(
+        payload.get("negativePreset") or payload.get("negative_preset") or ""
+    ).strip().lower().replace(" ", "_")
 
     # Preset map (fills defaults; caller can override in payload)
     PRESETS = {
