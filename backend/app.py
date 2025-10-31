@@ -3733,8 +3733,33 @@ def telegram_draw_endpoint():
     if not prompt:
         raise PlaygroundError("Field 'prompt' is required.", status=400)
 
-    width = _round_dim(int(payload.get("width", 512)))
-    height = _round_dim(int(payload.get("height", 512)))
+    preset = str(payload.get("preset") or "").strip().lower().replace(" ", "_")
+
+    # Preset map (fills defaults; caller can override in payload)
+    PRESETS = {
+        # FLUX.1 [schnell]
+        "flux_fast":      {"sampler": "Euler a",                 "steps": 6,  "cfg": 4.5, "w": 512, "h": 512},
+        "flux_balanced":  {"sampler": "DPM++ SDE Karras",       "steps": 14, "cfg": 5.5, "w": 640, "h": 512},
+        "flux_photoreal": {"sampler": "DPM++ 2M SDE Karras",    "steps": 18, "cfg": 5.5, "w": 768, "h": 512},
+        # General SDXL/SD1.x style presets
+        "fast":           {"sampler": "Euler a",                 "steps": 18, "cfg": 6.0, "w": 512, "h": 512},
+        "balanced":       {"sampler": "DPM++ 2M Karras",        "steps": 28, "cfg": 6.5, "w": 768, "h": 512},
+        "illustration":   {"sampler": "DPM++ 2S a Karras",      "steps": 28, "cfg": 7.5, "w": 640, "h": 640},
+        "anime":          {"sampler": "Euler a",                 "steps": 24, "cfg": 8.0, "w": 640, "h": 640},
+    }
+
+    # Dimensions: allow preset defaults, then override by payload
+    width = payload.get("width")
+    height = payload.get("height")
+    if width is None or height is None:
+        if preset in PRESETS:
+            width = width if width is not None else PRESETS[preset]["w"]
+            height = height if height is not None else PRESETS[preset]["h"]
+        else:
+            width = width if width is not None else 512
+            height = height if height is not None else 512
+    width = _round_dim(int(width))
+    height = _round_dim(int(height))
     try:
         steps = int(payload.get("steps", 20))
     except Exception:
@@ -3742,9 +3767,13 @@ def telegram_draw_endpoint():
     steps = max(1, min(steps, 50))
     seed = payload.get("seed")
     negative = payload.get("negative") or payload.get("negative_prompt") or ""
-    sampler = str(payload.get("sampler") or payload.get("sampler_name") or "Euler a")
+    # Apply preset sampler/steps/cfgScale when not explicitly provided
+    sampler = payload.get("sampler") or payload.get("sampler_name")
+    if not sampler and preset in PRESETS:
+        sampler = PRESETS[preset]["sampler"]
+    sampler = str(sampler or "Euler a")
     try:
-        cfg_scale = float(payload.get("cfgScale", payload.get("cfg_scale", 7.0)))
+        cfg_scale = float(payload.get("cfgScale", payload.get("cfg_scale", PRESETS.get(preset, {}).get("cfg", 7.0))))
     except Exception:
         cfg_scale = 7.0
     cfg_scale = max(1.0, min(cfg_scale, 20.0))
@@ -3754,12 +3783,17 @@ def telegram_draw_endpoint():
         "negative_prompt": str(negative),
         "width": width,
         "height": height,
-        "steps": steps,
+        "steps": int(payload.get("steps", PRESETS.get(preset, {}).get("steps", steps))),
         "sampler_name": sampler,
         "cfg_scale": cfg_scale,
         "batch_size": 1,
         "n_iter": 1,
     }
+    # Optional checkpoint switch
+    model = payload.get("model") or payload.get("checkpoint")
+    if model:
+        upstream["override_settings"] = {"sd_model_checkpoint": str(model)}
+        upstream["override_settings_restore_afterwards"] = True
     if seed is not None:
         try:
             upstream["seed"] = int(seed)

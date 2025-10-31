@@ -101,7 +101,23 @@ curl -sS -X POST "$TTSHUB_API_BASE/drawthings/txt2img" \
 `POST /telegram/draw` — Simplified prompt→image endpoint backed by Draw Things.
 
 Body
-- `{ prompt: string, width?: number=512, height?: number=512, steps?: number=20, seed?: number, negative?: string, sampler?: string='Euler a', cfgScale?: number=7 }`
+- `{ prompt: string, width?: number, height?: number, steps?: number, seed?: number, negative?: string, sampler?: string, cfgScale?: number, preset?: string, model?: string }`
+
+Presets (optional)
+- `preset`: one of `flux_fast`, `flux_balanced`, `flux_photoreal`, `fast`, `balanced`, `illustration`, `anime`.
+- Presets fill sensible defaults for `sampler`, `steps`, `cfgScale` and a default size when `width/height` are not provided.
+  - FLUX.1 [schnell]
+    - `flux_fast`: Euler a, steps~6, cfg~4.5, default 512×512
+    - `flux_balanced`: DPM++ SDE Karras, steps~14, cfg~5.5, default 640×512
+    - `flux_photoreal`: DPM++ 2M SDE Karras, steps~18, cfg~5.5, default 768×512
+  - General (SDXL/SD1.x)
+    - `fast`: Euler a, ~18 steps, cfg~6.0, default 512×512
+    - `balanced`: DPM++ 2M Karras, ~28 steps, cfg~6.5, default 768×512
+    - `illustration`: DPM++ 2S a Karras, ~28 steps, cfg~7.5, default 640×640
+    - `anime`: Euler a, ~24 steps, cfg~8.0, default 640×640
+
+Model (optional)
+- `model`: checkpoint name; maps to A1111 `override_settings.sd_model_checkpoint` for this call only.
 
 Notes
 - Clamps width/height to 64–1024 and rounds to a multiple of 8.
