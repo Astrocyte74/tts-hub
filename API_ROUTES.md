@@ -112,9 +112,9 @@ Presets (optional)
     - `flux_balanced`: Euler a, steps~8, cfg~5.0, default 640×512
     - `flux_photoreal`: Euler a, steps~10, cfg~5.5, default 768×512
   - HiDream / SDXL family
-    - `hidream_fast`: DPM++ SDE Karras, steps~12, cfg~5.5, default 640×512
-    - `hidream_balanced`: DPM++ 2M Karras, steps~24, cfg~6.0, default 768×512
-    - `hidream_photoreal`: DPM++ 2M SDE Karras, steps~28, cfg~5.5, default 896×640
+    - `hidream_fast`: DPM++ 2M Karras, steps~20, cfg~6.5, default 640×512
+    - `hidream_balanced`: DPM++ 2M Karras, steps~28, cfg~6.5, default 768×512
+    - `hidream_photoreal`: DPM++ 2M SDE Karras, steps~32, cfg~6.0, default 896×640
   - General (SDXL/SD1.x)
     - `fast`: Euler a, ~18 steps, cfg~6.0, default 512×512
     - `balanced`: DPM++ 2M Karras, ~28 steps, cfg~6.5, default 768×512

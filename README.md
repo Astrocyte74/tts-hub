@@ -292,17 +292,41 @@ Notes
 
 If you run Draw Things on the same Mac and enable its HTTP API (Settings → API Server → HTTP), the hub can proxy it for peers over WireGuard.
 
-- Set `DRAWTHINGS_URL` (default `http://127.0.0.1:7859`).
-- Call via the hub base (e.g., `http://<WG_IP>:7860/api/drawthings/txt2img`).
-- Endpoints: `/drawthings/models`, `/drawthings/samplers`, `/drawthings/txt2img`, `/drawthings/img2img`.
+- Set `DRAWTHINGS_URL` (recommended `http://127.0.0.1:7861`).
+- Peers call through the hub (e.g., `http://<WG_IP>:7860/api/drawthings/txt2img`), not 7861.
+- Endpoints: `/drawthings/models`, `/drawthings/samplers`, `/drawthings/options`, `/drawthings/txt2img`, `/drawthings/img2img`.
 
-Example:
+Examples
 
 ```
 export TTSHUB_API_BASE=http://<WG_IP_OF_MAC>:7860/api
-curl -sS -X POST "$TTSHUB_API_BASE/drawthings/txt2img" -H 'content-type: application/json' \
-  -d '{"prompt":"Sunlit watercolor fox","steps":20,"width":512,"height":512}' | jq '.images | length'
+
+# txt2img (minimal)
+curl -sS -X POST "$TTSHUB_API_BASE/drawthings/txt2img" \
+  -H 'content-type: application/json' \
+  -d '{"prompt":"Sunlit watercolor fox","steps":8,"sampler_name":"Euler a","width":512,"height":512,"cfg_scale":5}' \
+  | jq '.images | length'
+
+# Telegram-friendly convenience
+curl -sS -X POST "$TTSHUB_API_BASE/telegram/draw" -H 'content-type: application/json' \
+  -d '{"prompt":"Sunlit watercolor fox","preset":"flux_fast"}' | jq
 ```
+
+Presets and model detection
+- `GET /api/telegram/presets` returns image/style/negative presets with friendly labels and an `order` you can use in UIs.
+- It also includes `drawthings.activeModel|activeFamily|supportsModelSwitch` to reflect the DT HTTP API state. Many builds do not expose model switching (options POST) — when unsupported, simply use the active model and pick the matching preset family.
+
+FLUX.1 [schnell] tuned defaults
+- FLUX works best with Euler a and low steps on Draw Things. The hub presets are tuned accordingly:
+  - `flux_fast`: Euler a, ~6 steps, cfg~4.5, 512×512
+  - `flux_balanced`: Euler a, ~8 steps, cfg~5.0, 640×512
+  - `flux_photoreal`: Euler a, ~10 steps, cfg~5.5, 768×512
+
+Troubleshooting
+- 503 with `DrawThings … 422 … /sdapi/v1/txt2img`: DT rejected the payload or the checkpoint is still loading. Open DT and run one txt2img, or try the conservative Euler a @ 512×512 for 6–10 steps.
+- 503 with `… 404 … /sdapi/v1/options`: your DT build doesn’t expose the options endpoint. Programmatic model switching is unavailable; use the active checkpoint in DT.
+- From the Mac, you can sanity check DT directly:
+  - `curl -sS -i http://127.0.0.1:7861/sdapi/v1/txt2img -H 'content-type: application/json' -d '{"prompt":"test","width":512,"height":512,"steps":8,"sampler_name":"Euler a","cfg_scale":5}'`
 
 ### YouTube Cookies (yt-dlp)
 

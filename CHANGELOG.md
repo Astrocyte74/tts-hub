@@ -124,3 +124,21 @@ Behavior changes
 
 Docs
 - README and API_ROUTES updated for XTTS custom voice endpoints and Manage dialog behavior.
+## [Image proxy + presets] – 2025-10-31
+
+Highlights
+- Draw Things (Stable Diffusion) proxy
+  - New endpoints: `/api/drawthings/models`, `/samplers`, `/options`, `/txt2img`, `/img2img`
+  - Convenience: `POST /api/telegram/draw` (prompt→PNG saved under `/image/drawthings/<file>.png`)
+  - Hub fallbacks handle common DT build differences (lack of `options`, missing `override_settings` in `txt2img`) and include upstream error snippets.
+
+- Presets for Telegram
+  - `GET /api/telegram/presets` returns image/style/negative presets with friendly labels + ordering.
+  - Includes Draw Things status: `supportsModelSwitch`, `activeModel`, `activeFamily` to select the right preset family automatically.
+
+- FLUX.1 [schnell] tuning
+  - Switched to Euler a for all FLUX presets at low steps (fast=6, balanced=8, photoreal=10). Significantly better quality on Draw Things vs DPM++ at higher steps.
+
+Notes
+- Many Draw Things builds do not expose `/sdapi/v1/options`. When unavailable, the hub does not switch models programmatically; use the active checkpoint.
+- The hub includes upstream error bodies for easier diagnosis (422 during warm-up, 404 for missing endpoints).

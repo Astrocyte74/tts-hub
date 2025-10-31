@@ -3771,9 +3771,10 @@ def telegram_draw_endpoint():
         "flux_balanced":  {"sampler": "Euler a",                 "steps": 8,  "cfg": 5.0, "w": 640, "h": 512},
         "flux_photoreal": {"sampler": "Euler a",                 "steps": 10, "cfg": 5.5, "w": 768, "h": 512},
         # HiDream / SDXL family
-        "hidream_fast":      {"sampler": "DPM++ SDE Karras",    "steps": 12, "cfg": 5.5, "w": 640, "h": 512},
-        "hidream_balanced":  {"sampler": "DPM++ 2M Karras",     "steps": 24, "cfg": 6.0, "w": 768, "h": 512},
-        "hidream_photoreal": {"sampler": "DPM++ 2M SDE Karras", "steps": 28, "cfg": 5.5, "w": 896, "h": 640},
+        # HiDream / SDXL family tends to need more steps than FLUX
+        "hidream_fast":      {"sampler": "DPM++ 2M Karras",     "steps": 20, "cfg": 6.5, "w": 640, "h": 512},
+        "hidream_balanced":  {"sampler": "DPM++ 2M Karras",     "steps": 28, "cfg": 6.5, "w": 768, "h": 512},
+        "hidream_photoreal": {"sampler": "DPM++ 2M SDE Karras", "steps": 32, "cfg": 6.0, "w": 896, "h": 640},
         # General SDXL/SD1.x style presets
         "fast":           {"sampler": "Euler a",                 "steps": 18, "cfg": 6.0, "w": 512, "h": 512},
         "balanced":       {"sampler": "DPM++ 2M Karras",        "steps": 28, "cfg": 6.5, "w": 768, "h": 512},
@@ -3991,9 +3992,9 @@ def telegram_presets_endpoint():
         "flux_balanced":  {"label": "Flux · Balanced",    "family": "flux",   "sampler": "Euler a",            "steps": 8,  "cfgScale": 5.0, "defaultSize": {"width": 640, "height": 512}},
         "flux_photoreal": {"label": "Flux · Photoreal",   "family": "flux",   "sampler": "Euler a",            "steps": 10, "cfgScale": 5.5, "defaultSize": {"width": 768, "height": 512}},
         # HiDream / SDXL family
-        "hidream_fast":      {"label": "HiDream · Fast",     "family": "hidream","sampler": "DPM++ SDE Karras",    "steps": 12, "cfgScale": 5.5, "defaultSize": {"width": 640, "height": 512}},
-        "hidream_balanced":  {"label": "HiDream · Balanced", "family": "hidream","sampler": "DPM++ 2M Karras",     "steps": 24, "cfgScale": 6.0, "defaultSize": {"width": 768, "height": 512}},
-        "hidream_photoreal": {"label": "HiDream · Photoreal","family": "hidream","sampler": "DPM++ 2M SDE Karras", "steps": 28, "cfgScale": 5.5, "defaultSize": {"width": 896, "height": 640}},
+        "hidream_fast":      {"label": "HiDream · Fast",     "family": "hidream","sampler": "DPM++ 2M Karras",     "steps": 20, "cfgScale": 6.5, "defaultSize": {"width": 640, "height": 512}},
+        "hidream_balanced":  {"label": "HiDream · Balanced", "family": "hidream","sampler": "DPM++ 2M Karras",     "steps": 28, "cfgScale": 6.5, "defaultSize": {"width": 768, "height": 512}},
+        "hidream_photoreal": {"label": "HiDream · Photoreal","family": "hidream","sampler": "DPM++ 2M SDE Karras", "steps": 32, "cfgScale": 6.0, "defaultSize": {"width": 896, "height": 640}},
         # General SDXL/SD1.x
         "fast":           {"label": "General · Fast",      "family": "general","sampler": "Euler a",              "steps": 18, "cfgScale": 6.0, "defaultSize": {"width": 512, "height": 512}},
         "balanced":       {"label": "General · Balanced",  "family": "general","sampler": "DPM++ 2M Karras",     "steps": 28, "cfgScale": 6.5, "defaultSize": {"width": 768, "height": 512}},

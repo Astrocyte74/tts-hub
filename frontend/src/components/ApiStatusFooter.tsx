@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { MetaResponse } from '../types';
 
 function computeApiBase(meta: MetaResponse): string {
@@ -20,6 +20,9 @@ function hostnameOf(url: string): string | null {
 export function ApiStatusFooter({ meta }: { meta: MetaResponse | undefined }) {
   const [open, setOpen] = useState(false);
   const [cookiesOpen, setCookiesOpen] = useState(false);
+  const [dtActiveModel, setDtActiveModel] = useState<string | null | undefined>(undefined);
+  const [dtActiveFamily, setDtActiveFamily] = useState<string | null | undefined>(undefined);
+  const [dtSwitchable, setDtSwitchable] = useState<boolean | null | undefined>(undefined);
 
   const apiBase = useMemo(() => (meta ? computeApiBase(meta) : ''), [meta]);
   const port = meta?.port ?? 7860;
@@ -32,6 +35,29 @@ export function ApiStatusFooter({ meta }: { meta: MetaResponse | undefined }) {
 
   const resolvedApiHost = hostnameOf(apiBase) ?? window.location.host;
 
+  // Fetch Draw Things status from /telegram/presets (lightweight and reused by the bot)
+  useEffect(() => {
+    let aborted = false;
+    async function fetchDt() {
+      if (!apiBase) return;
+      try {
+        const res = await fetch(`${apiBase.replace(/\/$/, '')}/telegram/presets`);
+        if (!res.ok) return;
+        const data = await res.json().catch(() => null);
+        if (!data || typeof data !== 'object') return;
+        const dt = (data as any).drawthings || {};
+        if (aborted) return;
+        setDtActiveModel(dt.activeModel ?? null);
+        setDtActiveFamily(dt.activeFamily ?? null);
+        setDtSwitchable(typeof dt.supportsModelSwitch === 'boolean' ? dt.supportsModelSwitch : null);
+      } catch {
+        // ignore
+      }
+    }
+    fetchDt();
+    // Refresh when the panel opens (users often switch models in DT while the UI is open)
+  }, [apiBase, open]);
+
   return (
     <div id="api-status-footer" className="panel panel--compact" style={{ marginTop: 12 }}>
       <div className="panel__header panel__header--dense" style={{ cursor: 'pointer' }} onClick={() => setOpen((v) => !v)}>
@@ -39,7 +65,15 @@ export function ApiStatusFooter({ meta }: { meta: MetaResponse | undefined }) {
           <span style={{ display: 'inline-block', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s ease' }}>▶</span>
           API & CLI
         </h3>
-        <p className="panel__meta">Connected to {resolvedApiHost}</p>
+        <p className="panel__meta">
+          Connected to {resolvedApiHost}
+          {dtActiveModel !== undefined ? (
+            <>
+              {' · '}DT: {dtActiveModel ? dtActiveModel : 'unknown'}
+              {typeof dtSwitchable === 'boolean' ? ` (${dtSwitchable ? 'switchable' : 'fixed'})` : ''}
+            </>
+          ) : null}
+        </p>
       </div>
       {open ? (
         <div className="dialog-stack" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -72,6 +106,16 @@ curl -X POST -H "Content-Type: application/json" \\
   "${wgUrl ?? lanUrl ?? bindUrl}/synthesise"`}
             </pre>
           </div>
+          {dtActiveModel !== undefined ? (
+            <div>
+              <p className="panel__meta">Draw Things</p>
+              <ul style={{ margin: '8px 0 0 18px', lineHeight: 1.7 }}>
+                <li><code>Active model</code>: {dtActiveModel ?? 'unknown'}</li>
+                <li><code>Preset family</code>: {dtActiveFamily ?? 'unknown'}</li>
+                <li><code>Model switching</code>: {dtSwitchable === true ? 'supported' : dtSwitchable === false ? 'unsupported' : 'unknown'}</li>
+              </ul>
+            </div>
+          ) : null}
 
           {/* YouTube Cookies helper (collapsible) */}
           <div className="panel panel--compact" style={{ marginTop: 6 }}>
