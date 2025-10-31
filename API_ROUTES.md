@@ -159,8 +159,17 @@ Response
   "negativePresets": { "clean": { "label":"Clean", "tags":"..." }, ... },
   "order": { "presets": [ ...keys... ], "stylePresets": [ ... ], "negativePresets": [ ... ] },
   "defaults": { "preset": "flux_balanced" }
+  "drawthings": {
+    "supportsModelSwitch": true | false | null,
+    "activeModel": "FLUX.1 [schnell]" | null,
+    "activeFamily": "flux" | "hidream" | "general" | null
+  }
 }
 ```
+
+Notes
+- `supportsModelSwitch` is derived from the presence of the A1111 `/sdapi/v1/options` endpoint (true when 200 OK, false when 404, null when offline).
+- `activeModel` and `activeFamily` are taken from `/sdapi/v1/options` when available; otherwise null.
 
 ## POST /synthesise (alias: /synthesize)
 - Body: `{ text, voice, speed, language, trimSilence, engine? }` plus engine‑specific overrides (`style`, `speaker`, `seed`).

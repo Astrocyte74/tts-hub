@@ -3984,6 +3984,7 @@ def telegram_presets_endpoint():
 
     Shape mirrors what /telegram/draw accepts: sampler/steps/cfgScale and default sizes (w,h) per preset.
     """
+    import requests
     image_presets: Dict[str, Dict[str, Any]] = {
         # FLUX.1 [schnell]
         "flux_fast":      {"label": "Flux · Fast",        "family": "flux",   "sampler": "Euler a",              "steps": 6,  "cfgScale": 4.5, "defaultSize": {"width": 512, "height": 512}},
@@ -4014,6 +4015,37 @@ def telegram_presets_endpoint():
         "anime":        {"label": "Anime",        "tags": "lowres, blurry, bad hands, extra digits, malformed limbs, deformed, watermark, text, logo"},
         "nsfw_filter":  {"label": "NSFW Filter",  "tags": "nsfw, nudity, sexual, gore"},
     }
+    # Attempt to detect the active Draw Things checkpoint and whether model switching is supported
+    active_model: str | None = None
+    active_family: str | None = None
+    supports_model_switch: bool | None = None
+    try:
+        opt_url = f"{_drawthings_base()}/sdapi/v1/options"
+        resp = requests.get(opt_url, timeout=3)
+        if resp.status_code == 404:
+            supports_model_switch = False
+        elif resp.ok:
+            supports_model_switch = True
+            try:
+                data = resp.json()
+                active_model = (data.get("sd_model_checkpoint") or data.get("sd_model_name") or "").strip() or None
+            except Exception:
+                pass
+    except Exception:
+        # DT may be offline or not expose options; leave as None
+        pass
+
+    def _family_of(name: str) -> str:
+        n = name.lower()
+        if "flux" in n:
+            return "flux"
+        if any(k in n for k in ("hidream", "i1", "sdxl")):
+            return "hidream"
+        return "general"
+
+    if active_model:
+        active_family = _family_of(active_model)
+
     return jsonify(
         {
             "presets": image_presets,
@@ -4029,6 +4061,11 @@ def telegram_presets_endpoint():
                 "negativePresets": ["clean","portrait","product","anime","nsfw_filter"],
             },
             "defaults": {"preset": "flux_balanced"},
+            "drawthings": {
+                "supportsModelSwitch": bool(supports_model_switch) if supports_model_switch is not None else None,
+                "activeModel": active_model,
+                "activeFamily": active_family,
+            },
         }
     )
 
