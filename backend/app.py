@@ -3868,10 +3868,52 @@ def telegram_draw_endpoint():
             pass
 
     url = f"{_drawthings_base()}/sdapi/v1/txt2img"
+    def _do_generate(body: Dict[str, Any]) -> Dict[str, Any]:
+        r = requests.post(url, json=body, timeout=None)
+        r.raise_for_status()
+        return r.json()
+
     try:
-        res = requests.post(url, json=upstream, timeout=None)
-        res.raise_for_status()
-        data = res.json()
+        try:
+            data = _do_generate(upstream)
+        except requests.HTTPError as http_exc:
+            # Fallback: some Draw Things builds do not support override_settings on txt2img.
+            # If we requested a specific model, try switching it via /sdapi/v1/options and retry
+            # without override_settings.
+            if getattr(http_exc.response, "status_code", None) == 422 and (payload.get("model") or payload.get("checkpoint")):
+                desired = str(payload.get("model") or payload.get("checkpoint"))
+                # Read current checkpoint (best effort)
+                try:
+                    opt_res = requests.get(f"{_drawthings_base()}/sdapi/v1/options", timeout=10)
+                    orig = opt_res.json().get("sd_model_checkpoint") if opt_res.ok else None
+                except Exception:
+                    orig = None
+                # Switch checkpoint
+                try:
+                    requests.post(
+                        f"{_drawthings_base()}/sdapi/v1/options",
+                        json={"sd_model_checkpoint": desired},
+                        timeout=20,
+                    ).raise_for_status()
+                    # Retry generation without override_settings
+                    upstream2 = dict(upstream)
+                    upstream2.pop("override_settings", None)
+                    upstream2.pop("override_settings_restore_afterwards", None)
+                    data = _do_generate(upstream2)
+                finally:
+                    # Restore previous checkpoint if known
+                    if orig and orig != desired:
+                        try:
+                            requests.post(
+                                f"{_drawthings_base()}/sdapi/v1/options",
+                                json={"sd_model_checkpoint": orig},
+                                timeout=20,
+                            )
+                        except Exception:
+                            pass
+            else:
+                raise
+
         images = data.get("images") or []
         if not images:
             raise PlaygroundError("No image returned from Draw Things.", status=502)
