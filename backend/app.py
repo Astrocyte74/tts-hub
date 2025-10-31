@@ -3745,12 +3745,26 @@ def telegram_draw_endpoint():
         "flux_fast":      {"sampler": "Euler a",                 "steps": 6,  "cfg": 4.5, "w": 512, "h": 512},
         "flux_balanced":  {"sampler": "DPM++ SDE Karras",       "steps": 14, "cfg": 5.5, "w": 640, "h": 512},
         "flux_photoreal": {"sampler": "DPM++ 2M SDE Karras",    "steps": 18, "cfg": 5.5, "w": 768, "h": 512},
+        # HiDream / SDXL family
+        "hidream_fast":      {"sampler": "DPM++ SDE Karras",    "steps": 12, "cfg": 5.5, "w": 640, "h": 512},
+        "hidream_balanced":  {"sampler": "DPM++ 2M Karras",     "steps": 24, "cfg": 6.0, "w": 768, "h": 512},
+        "hidream_photoreal": {"sampler": "DPM++ 2M SDE Karras", "steps": 28, "cfg": 5.5, "w": 896, "h": 640},
         # General SDXL/SD1.x style presets
         "fast":           {"sampler": "Euler a",                 "steps": 18, "cfg": 6.0, "w": 512, "h": 512},
         "balanced":       {"sampler": "DPM++ 2M Karras",        "steps": 28, "cfg": 6.5, "w": 768, "h": 512},
         "illustration":   {"sampler": "DPM++ 2S a Karras",      "steps": 28, "cfg": 7.5, "w": 640, "h": 640},
         "anime":          {"sampler": "Euler a",                 "steps": 24, "cfg": 8.0, "w": 640, "h": 640},
     }
+
+    # If preset is empty/'auto'/unknown, infer from model name
+    model_name = str(payload.get("model") or payload.get("checkpoint") or "").lower()
+    if not preset or preset == "auto" or preset not in PRESETS:
+        if "flux" in model_name:
+            preset = "flux_balanced"
+        elif any(k in model_name for k in ("hidream", "i1", "sdxl")):
+            preset = "hidream_balanced"
+        else:
+            preset = "balanced"
 
     # Dimensions: allow preset defaults, then override by payload
     width = payload.get("width")

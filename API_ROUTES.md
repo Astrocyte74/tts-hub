@@ -104,17 +104,27 @@ Body
 - `{ prompt: string, width?: number, height?: number, steps?: number, seed?: number, negative?: string, sampler?: string, cfgScale?: number, preset?: string, model?: string }`
 
 Presets (optional)
-- `preset`: one of `flux_fast`, `flux_balanced`, `flux_photoreal`, `fast`, `balanced`, `illustration`, `anime`.
+- `preset`: one of `flux_fast`, `flux_balanced`, `flux_photoreal`, `hidream_fast`, `hidream_balanced`, `hidream_photoreal`, `fast`, `balanced`, `illustration`, `anime`, or `auto`.
 - Presets fill sensible defaults for `sampler`, `steps`, `cfgScale` and a default size when `width/height` are not provided.
   - FLUX.1 [schnell]
     - `flux_fast`: Euler a, steps~6, cfg~4.5, default 512×512
     - `flux_balanced`: DPM++ SDE Karras, steps~14, cfg~5.5, default 640×512
     - `flux_photoreal`: DPM++ 2M SDE Karras, steps~18, cfg~5.5, default 768×512
+  - HiDream / SDXL family
+    - `hidream_fast`: DPM++ SDE Karras, steps~12, cfg~5.5, default 640×512
+    - `hidream_balanced`: DPM++ 2M Karras, steps~24, cfg~6.0, default 768×512
+    - `hidream_photoreal`: DPM++ 2M SDE Karras, steps~28, cfg~5.5, default 896×640
   - General (SDXL/SD1.x)
     - `fast`: Euler a, ~18 steps, cfg~6.0, default 512×512
     - `balanced`: DPM++ 2M Karras, ~28 steps, cfg~6.5, default 768×512
     - `illustration`: DPM++ 2S a Karras, ~28 steps, cfg~7.5, default 640×640
     - `anime`: Euler a, ~24 steps, cfg~8.0, default 640×640
+
+`auto` behavior
+- If `preset` is missing/`auto` or not recognized, the hub infers a preset from `model`:
+  - Contains "flux" → `flux_balanced`
+  - Contains "hidream"/"i1"/"sdxl" → `hidream_balanced`
+  - Otherwise → `balanced`
 
 Model (optional)
 - `model`: checkpoint name; maps to A1111 `override_settings.sd_model_checkpoint` for this call only.
