@@ -151,11 +151,12 @@ Response
 ```
 {
   "presets": {
-    "flux_balanced": { "sampler": "DPM++ SDE Karras", "steps": 14, "cfgScale": 5.5, "defaultSize": { "width": 640, "height": 512 } },
+    "flux_balanced": { "label": "Flux · Balanced", "family": "flux", "sampler": "DPM++ SDE Karras", "steps": 14, "cfgScale": 5.5, "defaultSize": { "width": 640, "height": 512 } },
     ...
   },
-  "stylePresets": { "watercolor": "...", ... },
-  "negativePresets": { "clean": "...", ... },
+  "stylePresets": { "watercolor": { "label":"Watercolor", "tags":"..." }, ... },
+  "negativePresets": { "clean": { "label":"Clean", "tags":"..." }, ... },
+  "order": { "presets": [ ...keys... ], "stylePresets": [ ... ], "negativePresets": [ ... ] },
   "defaults": { "preset": "flux_balanced" }
 }
 ```

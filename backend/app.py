@@ -3891,35 +3891,48 @@ def telegram_presets_endpoint():
     """
     image_presets: Dict[str, Dict[str, Any]] = {
         # FLUX.1 [schnell]
-        "flux_fast":      {"sampler": "Euler a",              "steps": 6,  "cfgScale": 4.5, "defaultSize": {"width": 512, "height": 512}},
-        "flux_balanced":  {"sampler": "DPM++ SDE Karras",    "steps": 14, "cfgScale": 5.5, "defaultSize": {"width": 640, "height": 512}},
-        "flux_photoreal": {"sampler": "DPM++ 2M SDE Karras", "steps": 18, "cfgScale": 5.5, "defaultSize": {"width": 768, "height": 512}},
-        # General SDXL/SD1.x style presets
-        "fast":           {"sampler": "Euler a",              "steps": 18, "cfgScale": 6.0, "defaultSize": {"width": 512, "height": 512}},
-        "balanced":       {"sampler": "DPM++ 2M Karras",     "steps": 28, "cfgScale": 6.5, "defaultSize": {"width": 768, "height": 512}},
-        "illustration":   {"sampler": "DPM++ 2S a Karras",   "steps": 28, "cfgScale": 7.5, "defaultSize": {"width": 640, "height": 640}},
-        "anime":          {"sampler": "Euler a",              "steps": 24, "cfgScale": 8.0, "defaultSize": {"width": 640, "height": 640}},
+        "flux_fast":      {"label": "Flux · Fast",        "family": "flux",   "sampler": "Euler a",              "steps": 6,  "cfgScale": 4.5, "defaultSize": {"width": 512, "height": 512}},
+        "flux_balanced":  {"label": "Flux · Balanced",    "family": "flux",   "sampler": "DPM++ SDE Karras",    "steps": 14, "cfgScale": 5.5, "defaultSize": {"width": 640, "height": 512}},
+        "flux_photoreal": {"label": "Flux · Photoreal",   "family": "flux",   "sampler": "DPM++ 2M SDE Karras", "steps": 18, "cfgScale": 5.5, "defaultSize": {"width": 768, "height": 512}},
+        # HiDream / SDXL family
+        "hidream_fast":      {"label": "HiDream · Fast",     "family": "hidream","sampler": "DPM++ SDE Karras",    "steps": 12, "cfgScale": 5.5, "defaultSize": {"width": 640, "height": 512}},
+        "hidream_balanced":  {"label": "HiDream · Balanced", "family": "hidream","sampler": "DPM++ 2M Karras",     "steps": 24, "cfgScale": 6.0, "defaultSize": {"width": 768, "height": 512}},
+        "hidream_photoreal": {"label": "HiDream · Photoreal","family": "hidream","sampler": "DPM++ 2M SDE Karras", "steps": 28, "cfgScale": 5.5, "defaultSize": {"width": 896, "height": 640}},
+        # General SDXL/SD1.x
+        "fast":           {"label": "General · Fast",      "family": "general","sampler": "Euler a",              "steps": 18, "cfgScale": 6.0, "defaultSize": {"width": 512, "height": 512}},
+        "balanced":       {"label": "General · Balanced",  "family": "general","sampler": "DPM++ 2M Karras",     "steps": 28, "cfgScale": 6.5, "defaultSize": {"width": 768, "height": 512}},
+        "illustration":   {"label": "General · Illustration","family": "general","sampler": "DPM++ 2S a Karras",   "steps": 28, "cfgScale": 7.5, "defaultSize": {"width": 640, "height": 640}},
+        "anime":          {"label": "General · Anime",     "family": "general","sampler": "Euler a",              "steps": 24, "cfgScale": 8.0, "defaultSize": {"width": 640, "height": 640}},
     }
-    style_presets: Dict[str, str] = {
-        "watercolor": "watercolor, soft brush strokes, textured paper, gentle gradients, light bloom",
-        "photoreal": "photorealistic, natural lighting, detailed textures, shallow depth of field, 35mm",
-        "anime": "anime style, clean line art, cel shading, vibrant colors",
-        "illustration": "illustration, ink and marker, bold outlines, flat colors",
-        "cinematic": "cinematic lighting, dramatic shadows, film grain",
-        "product": "studio lighting, clean background, high key, softbox lighting, reflective surface",
+    style_presets: Dict[str, Dict[str, str]] = {
+        "watercolor": {"label": "Watercolor", "tags": "watercolor, soft brush strokes, textured paper, gentle gradients, light bloom"},
+        "photoreal":  {"label": "Photoreal",  "tags": "photorealistic, natural lighting, detailed textures, shallow depth of field, 35mm"},
+        "anime":      {"label": "Anime",      "tags": "anime style, clean line art, cel shading, vibrant colors"},
+        "illustration": {"label": "Illustration", "tags": "illustration, ink and marker, bold outlines, flat colors"},
+        "cinematic":  {"label": "Cinematic",  "tags": "cinematic lighting, dramatic shadows, film grain"},
+        "product":    {"label": "Product",    "tags": "studio lighting, clean background, high key, softbox lighting, reflective surface"},
     }
-    negative_presets: Dict[str, str] = {
-        "clean": "lowres, blurry, deformed, bad anatomy, bad hands, extra fingers, extra limbs, disfigured, watermark, text, logo, signature, worst quality, low quality, jpeg artifacts",
-        "portrait": "bad anatomy, extra limbs, extra fingers, cloned face, worst quality, low quality, lowres, blurry, watermark, text, signature, logo",
-        "product": "lowres, blurry, motion blur, watermark, text, logo, noisy background, deformed reflections, lens dirt",
-        "anime": "lowres, blurry, bad hands, extra digits, malformed limbs, deformed, watermark, text, logo",
-        "nsfw_filter": "nsfw, nudity, sexual, gore",
+    negative_presets: Dict[str, Dict[str, str]] = {
+        "clean":        {"label": "Clean",        "tags": "lowres, blurry, deformed, bad anatomy, bad hands, extra fingers, extra limbs, disfigured, watermark, text, logo, signature, worst quality, low quality, jpeg artifacts"},
+        "portrait":     {"label": "Portrait",     "tags": "bad anatomy, extra limbs, extra fingers, cloned face, worst quality, low quality, lowres, blurry, watermark, text, signature, logo"},
+        "product":      {"label": "Product",      "tags": "lowres, blurry, motion blur, watermark, text, logo, noisy background, deformed reflections, lens dirt"},
+        "anime":        {"label": "Anime",        "tags": "lowres, blurry, bad hands, extra digits, malformed limbs, deformed, watermark, text, logo"},
+        "nsfw_filter":  {"label": "NSFW Filter",  "tags": "nsfw, nudity, sexual, gore"},
     }
     return jsonify(
         {
             "presets": image_presets,
             "stylePresets": style_presets,
             "negativePresets": negative_presets,
+            "order": {
+                "presets": [
+                    "flux_fast","flux_balanced","flux_photoreal",
+                    "hidream_fast","hidream_balanced","hidream_photoreal",
+                    "fast","balanced","illustration","anime"
+                ],
+                "stylePresets": ["watercolor","photoreal","anime","illustration","cinematic","product"],
+                "negativePresets": ["clean","portrait","product","anime","nsfw_filter"],
+            },
             "defaults": {"preset": "flux_balanced"},
         }
     )
