@@ -3919,17 +3919,28 @@ def telegram_draw_endpoint():
                 upstream2.pop("override_settings_restore_afterwards", None)
                 data = _do_generate(upstream2)
         except requests.HTTPError as http_exc2:
-            # Surface upstream error body for easier diagnostics
-            body = ""
+            # One last fallback: try a conservative sampler/size combo widely supported (Euler a, 512x512, few steps)
             try:
-                body = http_exc2.response.text or ""
+                upstream3 = dict(upstream)
+                upstream3.pop("override_settings", None)
+                upstream3.pop("override_settings_restore_afterwards", None)
+                upstream3["sampler_name"] = "Euler a"
+                upstream3["steps"] = min(int(upstream3.get("steps", 12)), 12)
+                upstream3["width"] = 512
+                upstream3["height"] = 512
+                data = _do_generate(upstream3)
             except Exception:
-                pass
-            preview = body[:400].replace("\n", " ")
-            raise PlaygroundError(
-                f"DrawThings /txt2img failed ({getattr(http_exc2.response,'status_code', 'HTTP')}). {preview}",
-                status=503,
-            )
+                # Surface upstream error body for easier diagnostics
+                body = ""
+                try:
+                    body = http_exc2.response.text or ""
+                except Exception:
+                    pass
+                preview = body[:400].replace("\n", " ")
+                raise PlaygroundError(
+                    f"DrawThings /txt2img failed ({getattr(http_exc2.response,'status_code', 'HTTP')}). {preview}",
+                    status=503,
+                )
 
         images = data.get("images") or []
         if not images:
