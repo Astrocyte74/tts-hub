@@ -3647,6 +3647,11 @@ def drawthings_models_proxy():
         res = requests.get(url, timeout=10)
         res.raise_for_status()
         return jsonify(res.json())
+    except requests.HTTPError as http_exc:  # pragma: no cover
+        # Some Draw Things builds do not implement /sdapi/v1/sd-models → return empty []
+        if getattr(http_exc.response, "status_code", None) == 404:
+            return jsonify([])
+        raise PlaygroundError(f"DrawThings /sd-models failed: {http_exc}", status=503)
     except Exception as exc:  # pragma: no cover
         raise PlaygroundError(f"DrawThings /sd-models failed: {exc}", status=503)
 
@@ -3659,6 +3664,10 @@ def drawthings_samplers_proxy():
         res = requests.get(url, timeout=10)
         res.raise_for_status()
         return jsonify(res.json())
+    except requests.HTTPError as http_exc:  # pragma: no cover
+        if getattr(http_exc.response, "status_code", None) == 404:
+            return jsonify([])
+        raise PlaygroundError(f"DrawThings /samplers failed: {http_exc}", status=503)
     except Exception as exc:  # pragma: no cover
         raise PlaygroundError(f"DrawThings /samplers failed: {exc}", status=503)
 

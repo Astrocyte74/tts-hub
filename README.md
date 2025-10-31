@@ -102,6 +102,17 @@ If you use WireGuard (or similar), the launcher can auto-detect your VPN IP and 
 - Quick start: `WG_MODE=auto ./Start\ Kokoro\ Playground\ (XTTS\ Server).command`
 - Details: see `docs/WIREGUARD_MODE.md`.
 
+#### Ports & Networking
+
+- Hub (Flask API): `7860`
+  - Peers/bots should always call the hub on this port, e.g. `http://<WG_IP_OF_MAC>:7860/api/...`.
+- Dev UI (Vite): `5175`
+  - Local development only (the UI talks to the hub on 7860).
+- Draw Things (local HTTP API): `7861` (recommended)
+  - Runs only on the Mac at `127.0.0.1:7861`. The hub proxies it to peers via `/api/drawthings/*`.
+
+Tip: The launcher prints a one‑line Draw Things status: `Draw Things: online at http://127.0.0.1:7861` when reachable.
+
 ---
 
 ### Ollama Proxy (LLM over the hub)

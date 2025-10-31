@@ -2,6 +2,14 @@
 
 Base URL: `${VITE_API_BASE_URL}/${VITE_API_PREFIX}` (defaults to same‑origin + `/api`).
 
+Default hub port is `7860`. For peers over WireGuard, set:
+
+```
+export TTSHUB_API_BASE=http://<WG_IP_OF_MAC>:7860/api
+```
+
+Do not call local service ports (e.g., Draw Things on 127.0.0.1:7861) from peers. The hub proxies those via `/api/*`.
+
 ## GET /meta
 - Returns runtime metadata: `api_prefix`, `port`, `has_model`, `has_voices`, `random_categories`, `accent_groups`, `voice_count`, `frontend_bundle`, `ollama_available`, `engines[]`, `default_engine`.
 
@@ -70,6 +78,9 @@ Draw Things exposes an AUTOMATIC1111‑compatible HTTP API when enabled in the a
 - `GET /drawthings/samplers` — proxy to `/sdapi/v1/samplers`
 - `POST /drawthings/txt2img` — proxy to `/sdapi/v1/txt2img` (JSON body forwarded verbatim; response returned as-is with base64 images)
 - `POST /drawthings/img2img` — proxy to `/sdapi/v1/img2img`
+
+Notes
+- Some Draw Things builds do not implement those list endpoints; the hub will return `200 []` instead of an error.
 
 Examples
 
