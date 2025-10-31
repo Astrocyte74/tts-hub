@@ -4027,8 +4027,16 @@ def telegram_presets_endpoint():
         elif resp.ok:
             supports_model_switch = True
             try:
-                data = resp.json()
-                active_model = (data.get("sd_model_checkpoint") or data.get("sd_model_name") or "").strip() or None
+                data = resp.json() or {}
+                # Common keys
+                candidate = (data.get("sd_model_checkpoint") or data.get("sd_model_name") or "").strip()
+                if not candidate:
+                    # Heuristic: first non-empty string value whose key contains "model" (and not VAE/CLIP)
+                    for k, v in data.items():
+                        if isinstance(v, str) and v and ("model" in str(k).lower()) and all(x not in str(k).lower() for x in ("vae", "clip", "token")):
+                            candidate = v.strip()
+                            break
+                active_model = candidate or None
             except Exception:
                 pass
     except Exception:
