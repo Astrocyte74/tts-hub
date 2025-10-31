@@ -135,6 +135,21 @@ curl -sS -X POST "$TTSHUB_API_BASE/telegram/draw" \
   -d '{"prompt":"Sunlit watercolor fox","steps":20,"width":512,"height":512}' | jq
 ```
 
+`GET /telegram/presets` — List available image/style/negative presets
+
+Response
+```
+{
+  "presets": {
+    "flux_balanced": { "sampler": "DPM++ SDE Karras", "steps": 14, "cfgScale": 5.5, "defaultSize": { "width": 640, "height": 512 } },
+    ...
+  },
+  "stylePresets": { "watercolor": "...", ... },
+  "negativePresets": { "clean": "...", ... },
+  "defaults": { "preset": "flux_balanced" }
+}
+```
+
 ## POST /synthesise (alias: /synthesize)
 - Body: `{ text, voice, speed, language, trimSilence, engine? }` plus engine‑specific overrides (`style`, `speaker`, `seed`).
 - Also supports favorites: pass `favoriteId` or `favoriteSlug` (aliases: `profileId`/`profileSlug`) to resolve engine/voice/options from the Favorites store; the request body supplies the `text`.
