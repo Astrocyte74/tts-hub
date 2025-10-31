@@ -122,6 +122,8 @@ Model (optional)
 Notes
 - Clamps width/height to 64–1024 and rounds to a multiple of 8.
 - Saves the first returned image under `out/drawthings_images/` and returns a URL for easy sharing.
+- `stylePreset` (optional): one of `watercolor`, `photoreal`, `anime`, `illustration`, `cinematic`, `product`. Appends style tags to the prompt.
+- `negativePreset` (optional): one of `clean`, `portrait`, `product`, `anime`, `nsfw_filter`. Appends cleaning terms to `negative_prompt`.
 
 Response
 - `{ url: "/image/drawthings/<file>.png", filename, width, height, steps, seed?, sampler?, provider: 'drawthings' }`

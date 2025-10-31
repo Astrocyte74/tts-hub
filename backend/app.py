@@ -3735,6 +3735,10 @@ def telegram_draw_endpoint():
 
     preset = str(payload.get("preset") or "").strip().lower().replace(" ", "_")
 
+    # Optional style and negative presets
+    style_preset = str(payload.get("stylePreset") or payload.get("style") or "").strip().lower().replace(" ", "_")
+    negative_preset = str(payload.get("negativePreset") or "").strip().lower().replace(" ", "_")
+
     # Preset map (fills defaults; caller can override in payload)
     PRESETS = {
         # FLUX.1 [schnell]
@@ -3789,6 +3793,31 @@ def telegram_draw_endpoint():
         "batch_size": 1,
         "n_iter": 1,
     }
+    
+    # Style preset phrases appended to the prompt (non-destructive)
+    STYLE_PRESETS = {
+        "watercolor": "watercolor, soft brush strokes, textured paper, gentle gradients, light bloom",
+        "photoreal": "photorealistic, natural lighting, detailed textures, shallow depth of field, 35mm",
+        "anime": "anime style, clean line art, cel shading, vibrant colors",
+        "illustration": "illustration, ink and marker, bold outlines, flat colors",
+        "cinematic": "cinematic lighting, dramatic shadows, film grain",
+        "product": "studio lighting, clean background, high key, softbox lighting, reflective surface",
+    }
+    if style_preset and style_preset in STYLE_PRESETS:
+        upstream["prompt"] = f"{upstream['prompt']}, {STYLE_PRESETS[style_preset]}"
+
+    # Negative presets appended to negative_prompt (non-destructive)
+    NEGATIVE_PRESETS = {
+        "clean": "lowres, blurry, deformed, bad anatomy, bad hands, extra fingers, extra limbs, disfigured, watermark, text, logo, signature, worst quality, low quality, jpeg artifacts",
+        "portrait": "bad anatomy, extra limbs, extra fingers, cloned face, worst quality, low quality, lowres, blurry, watermark, text, signature, logo",
+        "product": "lowres, blurry, motion blur, watermark, text, logo, noisy background, deformed reflections, lens dirt",
+        "anime": "lowres, blurry, bad hands, extra digits, malformed limbs, deformed, watermark, text, logo",
+        "nsfw_filter": "nsfw, nudity, sexual, gore",
+    }
+    if negative_preset and negative_preset in NEGATIVE_PRESETS:
+        base_neg = upstream.get("negative_prompt") or ""
+        extra_neg = NEGATIVE_PRESETS[negative_preset]
+        upstream["negative_prompt"] = f"{base_neg}, {extra_neg}" if base_neg else extra_neg
     # Optional checkpoint switch
     model = payload.get("model") or payload.get("checkpoint")
     if model:
@@ -3829,6 +3858,9 @@ def telegram_draw_endpoint():
                 "seed": upstream.get("seed"),
                 "sampler": sampler,
                 "provider": "drawthings",
+                "preset": preset or None,
+                "stylePreset": style_preset or None,
+                "negativePreset": negative_preset or None,
             }
         )
     except PlaygroundError:
