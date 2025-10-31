@@ -3912,7 +3912,24 @@ def telegram_draw_endpoint():
                         except Exception:
                             pass
             else:
-                raise
+                # Also try a plain retry without overrides (uses the currently active model),
+                # in case the 422 is unrelated to override_settings support.
+                upstream2 = dict(upstream)
+                upstream2.pop("override_settings", None)
+                upstream2.pop("override_settings_restore_afterwards", None)
+                data = _do_generate(upstream2)
+        except requests.HTTPError as http_exc2:
+            # Surface upstream error body for easier diagnostics
+            body = ""
+            try:
+                body = http_exc2.response.text or ""
+            except Exception:
+                pass
+            preview = body[:400].replace("\n", " ")
+            raise PlaygroundError(
+                f"DrawThings /txt2img failed ({getattr(http_exc2.response,'status_code', 'HTTP')}). {preview}",
+                status=503,
+            )
 
         images = data.get("images") or []
         if not images:
