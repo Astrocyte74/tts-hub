@@ -3672,6 +3672,26 @@ def drawthings_samplers_proxy():
         raise PlaygroundError(f"DrawThings /samplers failed: {exc}", status=503)
 
 
+@api.route("/drawthings/options", methods=["GET"])
+def drawthings_options_proxy():
+    """Proxy to Draw Things options (A1111-compatible: /sdapi/v1/options).
+
+    Useful to read the currently selected checkpoint (sd_model_checkpoint) and other runtime options.
+    """
+    import requests
+    url = f"{_drawthings_base()}/sdapi/v1/options"
+    try:
+        res = requests.get(url, timeout=10)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except requests.HTTPError as http_exc:  # pragma: no cover
+        if getattr(http_exc.response, "status_code", None) == 404:
+            return jsonify({})
+        raise PlaygroundError(f"DrawThings /options failed: {http_exc}", status=503)
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"DrawThings /options failed: {exc}", status=503)
+
+
 @api.route("/drawthings/txt2img", methods=["POST"])
 def drawthings_txt2img_proxy():
     """Proxy to Draw Things txt2img (A1111-compatible: /sdapi/v1/txt2img).
@@ -5053,6 +5073,7 @@ _legacy_routes = [
     # Draw Things HTTP API proxies (A1111-compatible)
     ("/drawthings/models", drawthings_models_proxy, ["GET"]),
     ("/drawthings/samplers", drawthings_samplers_proxy, ["GET"]),
+    ("/drawthings/options", drawthings_options_proxy, ["GET"]),
     ("/drawthings/txt2img", drawthings_txt2img_proxy, ["POST"]),
     ("/drawthings/img2img", drawthings_img2img_proxy, ["POST"]),
     ("/random_text", random_text_endpoint, ["GET"]),
