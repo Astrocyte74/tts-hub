@@ -61,6 +61,51 @@ Base URL: `${VITE_API_BASE_URL}/${VITE_API_PREFIX}` (defaults to same‑origin +
 ## GET|POST /ollama/delete
 - Proxy to `/api/delete` to remove a model from the local store. Use `?model=name` or body `{ model: name }`.
 
+## Draw Things (Stable Diffusion) proxy
+
+Draw Things exposes an AUTOMATIC1111‑compatible HTTP API when enabled in the app. The hub can proxy it so peers over WireGuard can call Stable Diffusion through the same base.
+
+- Env: `DRAWTHINGS_URL` (default `http://127.0.0.1:7859`)
+- `GET /drawthings/models` — proxy to `/sdapi/v1/sd-models`
+- `GET /drawthings/samplers` — proxy to `/sdapi/v1/samplers`
+- `POST /drawthings/txt2img` — proxy to `/sdapi/v1/txt2img` (JSON body forwarded verbatim; response returned as-is with base64 images)
+- `POST /drawthings/img2img` — proxy to `/sdapi/v1/img2img`
+
+Examples
+
+```
+export TTSHUB_API_BASE=http://<WG_IP_OF_MAC>:7860/api
+
+# List models
+curl -sS "$TTSHUB_API_BASE/drawthings/models" | jq '.[0]'
+
+# txt2img (minimal)
+curl -sS -X POST "$TTSHUB_API_BASE/drawthings/txt2img" \
+  -H 'content-type: application/json' \
+  -d '{"prompt":"A watercolor fox in the forest","steps":20,"width":512,"height":512}' | jq '.images[0] | .[0:64]'
+```
+
+## Telegram convenience
+
+`POST /telegram/draw` — Simplified prompt→image endpoint backed by Draw Things.
+
+Body
+- `{ prompt: string, width?: number=512, height?: number=512, steps?: number=20, seed?: number, negative?: string, sampler?: string='Euler a', cfgScale?: number=7 }`
+
+Notes
+- Clamps width/height to 64–1024 and rounds to a multiple of 8.
+- Saves the first returned image under `out/drawthings_images/` and returns a URL for easy sharing.
+
+Response
+- `{ url: "/image/drawthings/<file>.png", filename, width, height, steps, seed?, sampler?, provider: 'drawthings' }`
+
+Example
+```
+curl -sS -X POST "$TTSHUB_API_BASE/telegram/draw" \
+  -H 'content-type: application/json' \
+  -d '{"prompt":"Sunlit watercolor fox","steps":20,"width":512,"height":512}' | jq
+```
+
 ## POST /synthesise (alias: /synthesize)
 - Body: `{ text, voice, speed, language, trimSilence, engine? }` plus engine‑specific overrides (`style`, `speaker`, `seed`).
 - Also supports favorites: pass `favoriteId` or `favoriteSlug` (aliases: `profileId`/`profileSlug`) to resolve engine/voice/options from the Favorites store; the request body supplies the `text`.

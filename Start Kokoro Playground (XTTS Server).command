@@ -655,6 +655,18 @@ else
   log "STT: faster-whisper enabled; WhisperX alignment DISABLED."
 fi
 
+# Optional Draw Things status (AUTOMATIC1111-compatible HTTP API)
+DT_URL="${DRAWTHINGS_URL:-}"
+if [[ -n "$DT_URL" ]]; then
+  if command -v curl >/dev/null 2>&1 && curl -sS --max-time 1 "$DT_URL/sdapi/v1/sd-models" >/dev/null 2>&1; then
+    log "Draw Things: online at $DT_URL"
+  else
+    log "Draw Things: offline or unreachable at ${DT_URL}. Tip: set IP 127.0.0.1 and a free port (e.g., 7861) in Draw Things."
+  fi
+else
+  log "Draw Things: not configured (set DRAWTHINGS_URL=http://127.0.0.1:7861)"
+fi
+
 log "Starting Vite dev server on $DEV_URL"
 
 # Decide the SPA's API base host robustly. Prefer PUBLIC_HOST, but fall back when unreachable.

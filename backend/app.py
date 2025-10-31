@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
+import base64
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 import random
@@ -38,6 +39,8 @@ OUTPUT_DIR = Path(os.environ.get("KOKORO_OUT", APP_ROOT / "out")).resolve()
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 PREVIEW_DIR = OUTPUT_DIR / "voice_previews"
 PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+DRAWTHINGS_IMAGE_DIR = OUTPUT_DIR / "drawthings_images"
+DRAWTHINGS_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 FRONTEND_DIST = Path(os.environ.get("FRONTEND_DIST", APP_ROOT / "frontend" / "dist")).resolve()
 
@@ -3547,6 +3550,17 @@ def _ollama_base() -> str:
     return os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 
 
+# Draw Things (Stable Diffusion) HTTP API proxy helpers
+def _drawthings_base() -> str:
+    """Return Draw Things HTTP API base.
+
+    Draw Things exposes an AUTOMATIC1111-compatible HTTP API when enabled in the app.
+    By default we assume it's listening on localhost:7859.
+    Set DRAWTHINGS_URL to override, e.g. http://127.0.0.1:7859 or https://<host>:7859
+    """
+    return os.environ.get("DRAWTHINGS_URL", "http://127.0.0.1:7859").rstrip("/")
+
+
 @api.route("/ollama/tags", methods=["GET"])
 def ollama_tags_proxy():
     import requests
@@ -3620,6 +3634,164 @@ def ollama_chat_proxy():
         return jsonify(res.json())
     except Exception as exc:  # pragma: no cover
         raise PlaygroundError(f"Ollama /chat failed: {exc}", status=503)
+
+
+# -------------------- Draw Things (Stable Diffusion) HTTP API proxies --------------------
+
+@api.route("/drawthings/models", methods=["GET"])
+def drawthings_models_proxy():
+    """Proxy to Draw Things list of models (A1111-compatible: /sdapi/v1/sd-models)."""
+    import requests
+    url = f"{_drawthings_base()}/sdapi/v1/sd-models"
+    try:
+        res = requests.get(url, timeout=10)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"DrawThings /sd-models failed: {exc}", status=503)
+
+
+@api.route("/drawthings/samplers", methods=["GET"])
+def drawthings_samplers_proxy():
+    import requests
+    url = f"{_drawthings_base()}/sdapi/v1/samplers"
+    try:
+        res = requests.get(url, timeout=10)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"DrawThings /samplers failed: {exc}", status=503)
+
+
+@api.route("/drawthings/txt2img", methods=["POST"])
+def drawthings_txt2img_proxy():
+    """Proxy to Draw Things txt2img (A1111-compatible: /sdapi/v1/txt2img).
+
+    Body is forwarded as JSON. Response is returned verbatim (typically includes base64 images).
+    """
+    import requests
+    body = parse_json_request()
+    url = f"{_drawthings_base()}/sdapi/v1/txt2img"
+    try:
+        res = requests.post(url, json=body, timeout=None)
+        res.raise_for_status()
+        # Return JSON payload (usually: { images: [b64...], parameters: {..}, info: "..." })
+        return jsonify(res.json())
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"DrawThings /txt2img failed: {exc}", status=503)
+
+
+@api.route("/drawthings/img2img", methods=["POST"])
+def drawthings_img2img_proxy():
+    """Proxy to Draw Things img2img (A1111-compatible: /sdapi/v1/img2img)."""
+    import requests
+    body = parse_json_request()
+    url = f"{_drawthings_base()}/sdapi/v1/img2img"
+    try:
+        res = requests.post(url, json=body, timeout=None)
+        res.raise_for_status()
+        return jsonify(res.json())
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"DrawThings /img2img failed: {exc}", status=503)
+
+
+# -------------------- Convenience: Telegram-friendly Draw endpoint --------------------
+
+def _round_dim(value: int, *, minimum: int = 64, maximum: int = 1024, multiple: int = 8) -> int:
+    try:
+        v = int(value)
+    except Exception:
+        v = minimum
+    v = max(minimum, min(maximum, v))
+    # round to nearest multiple
+    v = max(multiple, int(round(v / multiple) * multiple))
+    return v
+
+
+@api.route("/telegram/draw", methods=["POST"])
+def telegram_draw_endpoint():
+    """Simple prompt-in → PNG-out helper.
+
+    Body: { prompt: string, width?: int, height?: int, steps?: int, seed?: int, negative?: string,
+            sampler?: string, cfgScale?: float }
+
+    Returns: { url, filename, width, height, steps, seed?, sampler?, provider: 'drawthings' }
+    """
+    import requests
+
+    payload = parse_json_request()
+    prompt = str(payload.get("prompt") or "").strip()
+    if not prompt:
+        raise PlaygroundError("Field 'prompt' is required.", status=400)
+
+    width = _round_dim(int(payload.get("width", 512)))
+    height = _round_dim(int(payload.get("height", 512)))
+    try:
+        steps = int(payload.get("steps", 20))
+    except Exception:
+        steps = 20
+    steps = max(1, min(steps, 50))
+    seed = payload.get("seed")
+    negative = payload.get("negative") or payload.get("negative_prompt") or ""
+    sampler = str(payload.get("sampler") or payload.get("sampler_name") or "Euler a")
+    try:
+        cfg_scale = float(payload.get("cfgScale", payload.get("cfg_scale", 7.0)))
+    except Exception:
+        cfg_scale = 7.0
+    cfg_scale = max(1.0, min(cfg_scale, 20.0))
+
+    upstream = {
+        "prompt": prompt,
+        "negative_prompt": str(negative),
+        "width": width,
+        "height": height,
+        "steps": steps,
+        "sampler_name": sampler,
+        "cfg_scale": cfg_scale,
+        "batch_size": 1,
+        "n_iter": 1,
+    }
+    if seed is not None:
+        try:
+            upstream["seed"] = int(seed)
+        except Exception:
+            pass
+
+    url = f"{_drawthings_base()}/sdapi/v1/txt2img"
+    try:
+        res = requests.post(url, json=upstream, timeout=None)
+        res.raise_for_status()
+        data = res.json()
+        images = data.get("images") or []
+        if not images:
+            raise PlaygroundError("No image returned from Draw Things.", status=502)
+        img_b64 = images[0]
+        if isinstance(img_b64, str) and img_b64.startswith("data:image"):
+            img_b64 = img_b64.split(",", 1)[-1]
+        try:
+            img_bytes = base64.b64decode(img_b64, validate=False)
+        except Exception as exc:  # pragma: no cover
+            raise PlaygroundError(f"Failed to decode image: {exc}", status=500)
+        filename = f"{int(time.time())}-{uuid.uuid4().hex[:10]}.png"
+        out_path = DRAWTHINGS_IMAGE_DIR / filename
+        with open(out_path, "wb") as f:
+            f.write(img_bytes)
+        return jsonify(
+            {
+                "url": f"/image/drawthings/{filename}",
+                "filename": filename,
+                "width": width,
+                "height": height,
+                "steps": steps,
+                "seed": upstream.get("seed"),
+                "sampler": sampler,
+                "provider": "drawthings",
+            }
+        )
+    except PlaygroundError:
+        raise
+    except Exception as exc:  # pragma: no cover
+        raise PlaygroundError(f"DrawThings /telegram/draw failed: {exc}", status=503)
 
 
 @api.route("/ollama/pull", methods=["POST"])
@@ -4730,6 +4902,11 @@ _legacy_routes = [
     ("/ollama/ps", ollama_ps_proxy, ["GET"]),
     ("/ollama/show", ollama_show_proxy, ["GET", "POST"]),
     ("/ollama/delete", ollama_delete_proxy, ["GET", "POST"]),
+    # Draw Things HTTP API proxies (A1111-compatible)
+    ("/drawthings/models", drawthings_models_proxy, ["GET"]),
+    ("/drawthings/samplers", drawthings_samplers_proxy, ["GET"]),
+    ("/drawthings/txt2img", drawthings_txt2img_proxy, ["POST"]),
+    ("/drawthings/img2img", drawthings_img2img_proxy, ["POST"]),
     ("/random_text", random_text_endpoint, ["GET"]),
     ("/ollama_models", ollama_models_endpoint, ["GET"]),
     ("/synthesise", synthesise_endpoint, ["POST"]),
@@ -4759,6 +4936,19 @@ def openvoice_reference_endpoint(filename: str):
 @app.route("/audio/<path:filename>", methods=["GET"])
 def audio_endpoint(filename: str):
     return send_from_directory(OUTPUT_DIR, filename, as_attachment=False)
+
+
+@app.route("/image/drawthings/<path:filename>", methods=["GET"])
+def drawthings_image_endpoint(filename: str):
+    root = DRAWTHINGS_IMAGE_DIR.resolve()
+    candidate = (root / filename).resolve()
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError:
+        abort(404)
+    if not candidate.is_file():
+        abort(404)
+    return send_from_directory(root, str(relative), as_attachment=False)
 
 
 @app.route("/health", methods=["GET"])

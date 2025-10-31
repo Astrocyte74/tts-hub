@@ -277,6 +277,22 @@ Notes
 
 - The API returns all favorites across engines; clients that want a curated subset (e.g., for a bot) should implement their own filtering.
 
+### Draw Things (Stable Diffusion)
+
+If you run Draw Things on the same Mac and enable its HTTP API (Settings → API Server → HTTP), the hub can proxy it for peers over WireGuard.
+
+- Set `DRAWTHINGS_URL` (default `http://127.0.0.1:7859`).
+- Call via the hub base (e.g., `http://<WG_IP>:7860/api/drawthings/txt2img`).
+- Endpoints: `/drawthings/models`, `/drawthings/samplers`, `/drawthings/txt2img`, `/drawthings/img2img`.
+
+Example:
+
+```
+export TTSHUB_API_BASE=http://<WG_IP_OF_MAC>:7860/api
+curl -sS -X POST "$TTSHUB_API_BASE/drawthings/txt2img" -H 'content-type: application/json' \
+  -d '{"prompt":"Sunlit watercolor fox","steps":20,"width":512,"height":512}' | jq '.images | length'
+```
+
 ### YouTube Cookies (yt-dlp)
 
 If YouTube imports intermittently 429 or are age/consent blocked, provide a cookies.txt for yt-dlp. See docs/YOUTUBE_COOKIES.md for steps and server envs (`YT_DLP_COOKIES_PATH`, `YT_DLP_EXTRACTOR_ARGS`).
