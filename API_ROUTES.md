@@ -77,6 +77,7 @@ Draw Things exposes an AUTOMATIC1111‑compatible HTTP API when enabled in the a
 - `GET /drawthings/models` — proxy to `/sdapi/v1/sd-models`
 - `GET /drawthings/samplers` — proxy to `/sdapi/v1/samplers`
 - `GET /drawthings/options` — proxy to `/sdapi/v1/options` (e.g., `sd_model_checkpoint`)
+- `GET /drawthings/health` — quick probe: reports reachability, supportsModelSwitch, activeModel, and a 1‑step 128×128 trial with elapsedMs and a gpuLikely heuristic
 - `POST /drawthings/txt2img` — proxy to `/sdapi/v1/txt2img` (JSON body forwarded verbatim; response returned as-is with base64 images)
 - `POST /drawthings/img2img` — proxy to `/sdapi/v1/img2img`
 

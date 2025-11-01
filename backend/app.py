@@ -3692,6 +3692,87 @@ def drawthings_options_proxy():
         raise PlaygroundError(f"DrawThings /options failed: {exc}", status=503)
 
 
+@api.route("/drawthings/health", methods=["GET"])
+def drawthings_health_endpoint():
+    """Quick probe of Draw Things API availability and a very short txt2img trial.
+
+    Returns JSON with:
+      reachable: bool                # true when HTTP reachable
+      supportsModelSwitch: bool|null # true when /options returns 200, false when 404, null when offline
+      activeModel: str|null          # when available from /options (heuristic)
+      probe: { ok, elapsedMs, images } # 1-step 128x128 Euler a trial
+      gpuLikely: bool|null           # heuristic based on elapsedMs (< 5000ms considered GPU-likely)
+    """
+    import requests
+    t0 = time.time()
+    base = _drawthings_base()
+    reachable = False
+    supports = None
+    active_model = None
+    # Check options endpoint
+    try:
+        r = requests.get(f"{base}/sdapi/v1/options", timeout=3)
+        reachable = r.status_code < 500
+        if r.status_code == 404:
+            supports = False
+        elif r.ok:
+            supports = True
+            try:
+                data = r.json() or {}
+                cand = (data.get("sd_model_checkpoint") or data.get("sd_model_name") or "").strip()
+                if not cand:
+                    for k, v in data.items():
+                        lk = str(k).lower()
+                        if isinstance(v, str) and v and ("model" in lk) and all(x not in lk for x in ("vae", "clip", "token")):
+                            cand = v.strip(); break
+                active_model = cand or None
+            except Exception:
+                pass
+    except Exception:
+        reachable = False
+
+    # Very short txt2img probe
+    probe_ok = False
+    elapsed_ms = None
+    images_count = None
+    if reachable:
+        b = {
+            "prompt": "health probe",
+            "width": 128,
+            "height": 128,
+            "steps": 1,
+            "sampler_name": "Euler a",
+            "cfg_scale": 5,
+        }
+        t1 = time.time()
+        try:
+            pr = requests.post(f"{base}/sdapi/v1/txt2img", json=b, timeout=15)
+            if pr.ok:
+                try:
+                    j = pr.json() or {}
+                    imgs = j.get("images") or []
+                    images_count = len(imgs)
+                    probe_ok = images_count >= 1
+                except Exception:
+                    pass
+            elapsed_ms = int((time.time() - t1) * 1000)
+        except Exception:
+            elapsed_ms = int((time.time() - t1) * 1000)
+
+    gpu_likely = None
+    if elapsed_ms is not None:
+        # Heuristic: 1-step 128² txt2img under ~5s is likely GPU-backed on Apple Silicon
+        gpu_likely = elapsed_ms < 5000
+
+    return jsonify({
+        "reachable": bool(reachable),
+        "supportsModelSwitch": supports if supports is not None else None,
+        "activeModel": active_model,
+        "probe": {"ok": bool(probe_ok), "elapsedMs": elapsed_ms, "images": images_count},
+        "gpuLikely": gpu_likely,
+    })
+
+
 @api.route("/drawthings/txt2img", methods=["POST"])
 def drawthings_txt2img_proxy():
     """Proxy to Draw Things txt2img (A1111-compatible: /sdapi/v1/txt2img).
@@ -4007,26 +4088,26 @@ def telegram_presets_endpoint():
     }
     style_presets: Dict[str, Dict[str, str]] = {
         # New styles (preferred order below)
-        "portrait":      {"label": "Portrait",       "tags": "studio portrait, soft key light, rim light, shallow depth of field, 85mm, bokeh"},
-        "studio":        {"label": "Studio",         "tags": "studio lighting, softbox, high key, clean background, seamless backdrop"},
-        "cinematic_warm":{"label": "Cinematic Warm", "tags": "cinematic, golden hour, volumetric light, anamorphic bokeh"},
-        "retro_film":    {"label": "Retro Film",     "tags": "Kodak Portra 400, film grain, vignette"},
-        "oil_paint":     {"label": "Oil Paint",      "tags": "oil painting, impasto brush strokes, canvas texture"},
-        "pencil_sketch": {"label": "Pencil Sketch",  "tags": "pencil sketch, cross-hatching, paper texture"},
-        "ink_comic":     {"label": "Ink Comic",      "tags": "ink outline, halftone, comic style"},
-        "pixel_art":     {"label": "Pixel Art",      "tags": "pixel art, 16-bit, limited palette"},
-        "cyberpunk":     {"label": "Cyberpunk",      "tags": "neon, rain, reflections, night city, teal-orange"},
-        "fantasy":       {"label": "Fantasy",        "tags": "fantasy art, dramatic lighting, volumetric fog, epic"},
-        "pixar":         {"label": "Pixar",          "tags": "pixar style, 3d render, subsurface scattering, soft lighting"},
-        "landscape":     {"label": "Landscape",      "tags": "landscape photography, wide angle, HDR, dramatic sky, sharp detail"},
-        "macro":         {"label": "Macro",          "tags": "macro photography, extreme close-up, 100mm macro, shallow depth of field"},
+        "portrait":      {"label": "Portrait",       "tags": "studio portrait, soft key light, rim light, shallow depth of field, 85mm, bokeh", "desc": "Studio portrait, shallow DOF"},
+        "studio":        {"label": "Studio",         "tags": "studio lighting, softbox, high key, clean background, seamless backdrop", "desc": "Clean softbox lighting"},
+        "cinematic_warm":{"label": "Cinematic Warm", "tags": "cinematic, golden hour, volumetric light, anamorphic bokeh", "desc": "Golden hour cinematic"},
+        "retro_film":    {"label": "Retro Film",     "tags": "Kodak Portra 400, film grain, vignette", "desc": "Portra grain & vignette"},
+        "oil_paint":     {"label": "Oil Paint",      "tags": "oil painting, impasto brush strokes, canvas texture", "desc": "Oil on canvas"},
+        "pencil_sketch": {"label": "Pencil Sketch",  "tags": "pencil sketch, cross-hatching, paper texture", "desc": "Pencil cross‑hatching"},
+        "ink_comic":     {"label": "Ink Comic",      "tags": "ink outline, halftone, comic style", "desc": "Ink outline + halftone"},
+        "pixel_art":     {"label": "Pixel Art",      "tags": "pixel art, 16-bit, limited palette", "desc": "16‑bit pixel look"},
+        "cyberpunk":     {"label": "Cyberpunk",      "tags": "neon, rain, reflections, night city, teal-orange", "desc": "Neon rain reflections"},
+        "fantasy":       {"label": "Fantasy",        "tags": "fantasy art, dramatic lighting, volumetric fog, epic", "desc": "Epic light & fog"},
+        "pixar":         {"label": "Pixar",          "tags": "pixar style, 3d render, subsurface scattering, soft lighting", "desc": "Soft 3D, Pixar vibe"},
+        "landscape":     {"label": "Landscape",      "tags": "landscape photography, wide angle, HDR, dramatic sky, sharp detail", "desc": "Wide angle, HDR sky"},
+        "macro":         {"label": "Macro",          "tags": "macro photography, extreme close-up, 100mm macro, shallow depth of field", "desc": "Extreme close‑up"},
         # Existing styles kept for compatibility
-        "watercolor":    {"label": "Watercolor",     "tags": "watercolor, soft brush strokes, textured paper, gentle gradients, light bloom"},
-        "photoreal":     {"label": "Photoreal",      "tags": "photorealistic, natural lighting, detailed textures, shallow depth of field, 35mm"},
-        "anime":         {"label": "Anime",          "tags": "anime style, clean line art, cel shading, vibrant colors"},
-        "illustration":  {"label": "Illustration",   "tags": "illustration, ink and marker, bold outlines, flat colors"},
-        "cinematic":     {"label": "Cinematic",      "tags": "cinematic lighting, dramatic shadows, film grain"},
-        "product":       {"label": "Product",        "tags": "studio lighting, clean background, high key, softbox lighting, reflective surface"},
+        "watercolor":    {"label": "Watercolor",     "tags": "watercolor, soft brush strokes, textured paper, gentle gradients, light bloom", "desc": "Soft brush on paper"},
+        "photoreal":     {"label": "Photoreal",      "tags": "photorealistic, natural lighting, detailed textures, shallow depth of field, 35mm", "desc": "Natural light, shallow DOF"},
+        "anime":         {"label": "Anime",          "tags": "anime style, clean line art, cel shading, vibrant colors", "desc": "Clean line, cel shading"},
+        "illustration":  {"label": "Illustration",   "tags": "illustration, ink and marker, bold outlines, flat colors", "desc": "Bold outlines, flat color"},
+        "cinematic":     {"label": "Cinematic",      "tags": "cinematic lighting, dramatic shadows, film grain", "desc": "Dramatic shadows, grain"},
+        "product":       {"label": "Product",        "tags": "studio lighting, clean background, high key, softbox lighting, reflective surface", "desc": "High key, seamless backdrop"},
     }
     negative_presets: Dict[str, Dict[str, str]] = {
         "clean":        {"label": "Clean",        "tags": "lowres, blurry, deformed, bad anatomy, bad hands, extra fingers, extra limbs, disfigured, watermark, text, logo, signature, worst quality, low quality, jpeg artifacts"},
