@@ -3994,11 +3994,11 @@ def telegram_presets_endpoint():
         "flux_ultra":     {"label": "Flux · Ultra",       "family": "flux",   "sampler": "Euler a",            "steps": 3,  "cfgScale": 7.5, "defaultSize": {"width": 512, "height": 512}},
         "flux_fast":      {"label": "Flux · Fast",        "family": "flux",   "sampler": "Euler a",            "steps": 4,  "cfgScale": 7.5, "defaultSize": {"width": 512, "height": 512}},
         "flux_balanced":  {"label": "Flux · Balanced",    "family": "flux",   "sampler": "Euler a",            "steps": 6,  "cfgScale": 7.5, "defaultSize": {"width": 640, "height": 512}},
-        "flux_photoreal": {"label": "Flux · Photoreal",   "family": "flux",   "sampler": "Euler a",            "steps": 8,  "cfgScale": 7.5, "defaultSize": {"width": 768, "height": 512}},
+        "flux_photoreal": {"label": "Flux · Detail",     "family": "flux",   "sampler": "Euler a",            "steps": 8,  "cfgScale": 7.5, "defaultSize": {"width": 768, "height": 512}},
         # HiDream / SDXL family
         "hidream_fast":      {"label": "HiDream · Fast",     "family": "hidream","sampler": "Euler a",             "steps": 24, "cfgScale": 7.5, "defaultSize": {"width": 512, "height": 512}},
         "hidream_balanced":  {"label": "HiDream · Balanced", "family": "hidream","sampler": "DPM++ 2S a Karras",  "steps": 28, "cfgScale": 7.5, "defaultSize": {"width": 640, "height": 512}},
-        "hidream_photoreal": {"label": "HiDream · Photoreal","family": "hidream","sampler": "DPM++ 2S a Karras",  "steps": 32, "cfgScale": 7.0, "defaultSize": {"width": 896, "height": 640}},
+        "hidream_photoreal": {"label": "HiDream · Detail",  "family": "hidream","sampler": "DPM++ 2S a Karras",  "steps": 32, "cfgScale": 7.0, "defaultSize": {"width": 896, "height": 640}},
         # General SDXL/SD1.x
         "fast":           {"label": "General · Fast",      "family": "general","sampler": "Euler a",              "steps": 18, "cfgScale": 6.0, "defaultSize": {"width": 512, "height": 512}},
         "balanced":       {"label": "General · Balanced",  "family": "general","sampler": "DPM++ 2M Karras",     "steps": 28, "cfgScale": 6.5, "defaultSize": {"width": 768, "height": 512}},
