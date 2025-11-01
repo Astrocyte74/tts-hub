@@ -4042,6 +4042,25 @@ def telegram_draw_endpoint():
         out_path = DRAWTHINGS_IMAGE_DIR / filename
         with open(out_path, "wb") as f:
             f.write(img_bytes)
+
+        # Try to report the actual seed used by DT when available
+        used_seed = upstream.get("seed")
+        if used_seed is None:
+            try:
+                # A1111-compatible payloads sometimes include 'parameters.seed'
+                params = data.get("parameters") or {}
+                if isinstance(params, dict) and params.get("seed") is not None:
+                    used_seed = int(params.get("seed"))
+                else:
+                    # Or in 'info' as a JSON string
+                    info = data.get("info")
+                    if isinstance(info, str) and info.strip():
+                        import json as _json
+                        j = _json.loads(info)
+                        if isinstance(j, dict) and j.get("seed") is not None:
+                            used_seed = int(j.get("seed"))
+            except Exception:
+                pass
         return jsonify(
             {
                 "url": f"/image/drawthings/{filename}",
@@ -4049,7 +4068,7 @@ def telegram_draw_endpoint():
                 "width": width,
                 "height": height,
                 "steps": steps,
-                "seed": upstream.get("seed"),
+                "seed": used_seed,
                 "sampler": sampler,
                 "provider": "drawthings",
                 "preset": preset or None,
