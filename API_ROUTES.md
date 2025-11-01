@@ -108,6 +108,7 @@ Presets (optional)
 - `preset`: one of `flux_fast`, `flux_balanced`, `flux_photoreal`, `hidream_fast`, `hidream_balanced`, `hidream_photoreal`, `fast`, `balanced`, `illustration`, `anime`, or `auto`.
 - Presets fill sensible defaults for `sampler`, `steps`, `cfgScale` and a default size when `width/height` are not provided.
   - FLUX.1 [schnell]
+    - `flux_ultra`: Euler a, steps~3, cfg~7.5, default 512×512 (absolute speed)
     - `flux_fast`: Euler a, steps~4, cfg~7.5, default 512×512
     - `flux_balanced`: Euler a, steps~6, cfg~7.5, default 640×512
     - `flux_photoreal`: Euler a, steps~8, cfg~7.5, default 768×512
