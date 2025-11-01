@@ -4006,12 +4006,27 @@ def telegram_presets_endpoint():
         "anime":          {"label": "General · Anime",     "family": "general","sampler": "Euler a",              "steps": 24, "cfgScale": 8.0, "defaultSize": {"width": 640, "height": 640}},
     }
     style_presets: Dict[str, Dict[str, str]] = {
-        "watercolor": {"label": "Watercolor", "tags": "watercolor, soft brush strokes, textured paper, gentle gradients, light bloom"},
-        "photoreal":  {"label": "Photoreal",  "tags": "photorealistic, natural lighting, detailed textures, shallow depth of field, 35mm"},
-        "anime":      {"label": "Anime",      "tags": "anime style, clean line art, cel shading, vibrant colors"},
-        "illustration": {"label": "Illustration", "tags": "illustration, ink and marker, bold outlines, flat colors"},
-        "cinematic":  {"label": "Cinematic",  "tags": "cinematic lighting, dramatic shadows, film grain"},
-        "product":    {"label": "Product",    "tags": "studio lighting, clean background, high key, softbox lighting, reflective surface"},
+        # New styles (preferred order below)
+        "portrait":      {"label": "Portrait",       "tags": "studio portrait, soft key light, rim light, shallow depth of field, 85mm, bokeh"},
+        "studio":        {"label": "Studio",         "tags": "studio lighting, softbox, high key, clean background, seamless backdrop"},
+        "cinematic_warm":{"label": "Cinematic Warm", "tags": "cinematic, golden hour, volumetric light, anamorphic bokeh"},
+        "retro_film":    {"label": "Retro Film",     "tags": "Kodak Portra 400, film grain, vignette"},
+        "oil_paint":     {"label": "Oil Paint",      "tags": "oil painting, impasto brush strokes, canvas texture"},
+        "pencil_sketch": {"label": "Pencil Sketch",  "tags": "pencil sketch, cross-hatching, paper texture"},
+        "ink_comic":     {"label": "Ink Comic",      "tags": "ink outline, halftone, comic style"},
+        "pixel_art":     {"label": "Pixel Art",      "tags": "pixel art, 16-bit, limited palette"},
+        "cyberpunk":     {"label": "Cyberpunk",      "tags": "neon, rain, reflections, night city, teal-orange"},
+        "fantasy":       {"label": "Fantasy",        "tags": "fantasy art, dramatic lighting, volumetric fog, epic"},
+        "pixar":         {"label": "Pixar",          "tags": "pixar style, 3d render, subsurface scattering, soft lighting"},
+        "landscape":     {"label": "Landscape",      "tags": "landscape photography, wide angle, HDR, dramatic sky, sharp detail"},
+        "macro":         {"label": "Macro",          "tags": "macro photography, extreme close-up, 100mm macro, shallow depth of field"},
+        # Existing styles kept for compatibility
+        "watercolor":    {"label": "Watercolor",     "tags": "watercolor, soft brush strokes, textured paper, gentle gradients, light bloom"},
+        "photoreal":     {"label": "Photoreal",      "tags": "photorealistic, natural lighting, detailed textures, shallow depth of field, 35mm"},
+        "anime":         {"label": "Anime",          "tags": "anime style, clean line art, cel shading, vibrant colors"},
+        "illustration":  {"label": "Illustration",   "tags": "illustration, ink and marker, bold outlines, flat colors"},
+        "cinematic":     {"label": "Cinematic",      "tags": "cinematic lighting, dramatic shadows, film grain"},
+        "product":       {"label": "Product",        "tags": "studio lighting, clean background, high key, softbox lighting, reflective surface"},
     }
     negative_presets: Dict[str, Dict[str, str]] = {
         "clean":        {"label": "Clean",        "tags": "lowres, blurry, deformed, bad anatomy, bad hands, extra fingers, extra limbs, disfigured, watermark, text, logo, signature, worst quality, low quality, jpeg artifacts"},
@@ -4070,7 +4085,12 @@ def telegram_presets_endpoint():
                     "hidream_fast","hidream_balanced","hidream_photoreal",
                     "fast","balanced","illustration","anime"
                 ],
-                "stylePresets": ["watercolor","photoreal","anime","illustration","cinematic","product"],
+                "stylePresets": [
+                    "portrait","studio","cinematic_warm","retro_film",
+                    "oil_paint","pencil_sketch","ink_comic","pixel_art",
+                    "cyberpunk","fantasy","pixar","landscape","macro",
+                    "watercolor","photoreal","anime","illustration","cinematic","product"
+                ],
                 "negativePresets": ["clean","portrait","product","anime","nsfw_filter"],
             },
             "defaults": {"preset": "flux_balanced"},
