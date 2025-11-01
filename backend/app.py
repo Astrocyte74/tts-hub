@@ -3767,9 +3767,11 @@ def telegram_draw_endpoint():
     PRESETS = {
         # FLUX.1 [schnell]
         "flux_fast":      {"sampler": "Euler a",                 "steps": 6,  "cfg": 4.5, "w": 512, "h": 512},
-        # Note: On many Draw Things builds, FLUX works best with Euler a at low steps.
-        "flux_balanced":  {"sampler": "Euler a",                 "steps": 8,  "cfg": 5.0, "w": 640, "h": 512},
-        "flux_photoreal": {"sampler": "Euler a",                 "steps": 10, "cfg": 5.5, "w": 768, "h": 512},
+        # FLUX.1 [schnell] — aggressive speed tuning per community guidance
+        # Ultra-fast convergence with few steps and higher CFG
+        "flux_fast":      {"sampler": "Euler a",                 "steps": 4,  "cfg": 7.5, "w": 512, "h": 512},
+        "flux_balanced":  {"sampler": "Euler a",                 "steps": 6,  "cfg": 7.5, "w": 640, "h": 512},
+        "flux_photoreal": {"sampler": "Euler a",                 "steps": 8,  "cfg": 7.5, "w": 768, "h": 512},
         # HiDream / SDXL family
         # HiDream / SDXL family — sharper with Euler a or 2S a Karras
         "hidream_fast":      {"sampler": "Euler a",             "steps": 24, "cfg": 7.5, "w": 512, "h": 512},
@@ -3988,9 +3990,9 @@ def telegram_presets_endpoint():
     import requests
     image_presets: Dict[str, Dict[str, Any]] = {
         # FLUX.1 [schnell]
-        "flux_fast":      {"label": "Flux · Fast",        "family": "flux",   "sampler": "Euler a",              "steps": 6,  "cfgScale": 4.5, "defaultSize": {"width": 512, "height": 512}},
-        "flux_balanced":  {"label": "Flux · Balanced",    "family": "flux",   "sampler": "Euler a",            "steps": 8,  "cfgScale": 5.0, "defaultSize": {"width": 640, "height": 512}},
-        "flux_photoreal": {"label": "Flux · Photoreal",   "family": "flux",   "sampler": "Euler a",            "steps": 10, "cfgScale": 5.5, "defaultSize": {"width": 768, "height": 512}},
+        "flux_fast":      {"label": "Flux · Fast",        "family": "flux",   "sampler": "Euler a",            "steps": 4,  "cfgScale": 7.5, "defaultSize": {"width": 512, "height": 512}},
+        "flux_balanced":  {"label": "Flux · Balanced",    "family": "flux",   "sampler": "Euler a",            "steps": 6,  "cfgScale": 7.5, "defaultSize": {"width": 640, "height": 512}},
+        "flux_photoreal": {"label": "Flux · Photoreal",   "family": "flux",   "sampler": "Euler a",            "steps": 8,  "cfgScale": 7.5, "defaultSize": {"width": 768, "height": 512}},
         # HiDream / SDXL family
         "hidream_fast":      {"label": "HiDream · Fast",     "family": "hidream","sampler": "Euler a",             "steps": 24, "cfgScale": 7.5, "defaultSize": {"width": 512, "height": 512}},
         "hidream_balanced":  {"label": "HiDream · Balanced", "family": "hidream","sampler": "DPM++ 2S a Karras",  "steps": 28, "cfgScale": 7.5, "defaultSize": {"width": 640, "height": 512}},
